@@ -235,7 +235,8 @@ class CangjieSyntaxChecker:
         if kw_type in (TokenType.KW_CLASS, TokenType.KW_STRUCT,
                        TokenType.KW_ENUM, TokenType.KW_INTERFACE,
                        TokenType.KW_EXTEND):
-            return {TokenType.COLON, TokenType.LBRACE}
+            return {TokenType.COLON, TokenType.LBRACE,
+                    TokenType.OP_LT, TokenType.OP_LT_COLON}
         return None
 
     @staticmethod

@@ -43,6 +43,15 @@ tuple_type ::= "LPAREN" type "COMMA" type ("COMMA" type)* "RPAREN"
 # Any type expression
 type ::= func_type | array_type | nullable_type | tuple_type | type_name
 
+# Modifiers
+access_modifier ::= "PUBLIC" | "PRIVATE"
+static_modifier ::= "STATIC"
+
+# Type parameters (generics)
+type_param ::= any_ident
+type_param_list ::= type_param ("COMMA" type_param)*
+type_parameters ::= "LT" type_param_list "GT"
+
 # -----------------------------------------------------------
 # 3. Expressions
 # -----------------------------------------------------------
@@ -63,9 +72,11 @@ array_literal ::= "LBRACKET" (expression ("COMMA" expression)*)? "COMMA"? "RBRAC
 # Tuple literal: (expr1, expr2, expr3)
 tuple_literal ::= "LPAREN" expression "COMMA" expression ("COMMA" expression)* "RPAREN"
 
-# Lambda: { (params) => body }
-lambda_param_list ::= any_ident ("COMMA" any_ident)*
-lambda_expression ::= "LBRACE" lambda_param_list? "FAT_ARROW" expression "RBRACE"
+# Lambda: { (params) => body } or { params => { block } }
+lambda_param ::= any_ident ("COLON" type)?
+lambda_param_list ::= lambda_param ("COMMA" lambda_param)*
+lambda_body ::= expression | block
+lambda_expression ::= "LBRACE" lambda_param_list? "FAT_ARROW" lambda_body "RBRACE"
 
 # Struct/object init: Type { field1: val1, field2: val2, ... }
 struct_init_field ::= any_ident "COLON" expression
@@ -124,7 +135,7 @@ var_decl ::= ("VAR" | "LET") any_ident ("COLON" type)? ("ASSIGN" expression)? "S
 assign_stmt ::= expression assignment_op expression "SEMICOLON"?
 
 # Block
-block ::= "LBRACE" statements "RBRACE"
+block ::= "LBRACE" statements? "RBRACE"
 statements ::= statement statements?
 
 # If statement
@@ -183,50 +194,56 @@ statement ::= var_decl
 # -----------------------------------------------------------
 
 # Function parameter
-func_param ::= any_ident "COLON" type ("ASSIGN" expression)?
+func_param ::= any_ident "NOT"? "COLON" type ("ASSIGN" expression)?
 
 # Function parameter list
 func_param_list ::= func_param ("COMMA" func_param)*
 
-# Function declaration
-func_decl ::= "FUNC" any_ident "LPAREN" func_param_list? "RPAREN" ("COLON" type)? block
+# Function declaration (standalone, may have type_parameters)
+func_decl ::= access_modifier? static_modifier? "FUNC" any_ident type_parameters? "LPAREN" func_param_list? "RPAREN" ("COLON" type)? block
 
-# Field declaration
-field_decl ::= any_ident "COLON" type ("ASSIGN" expression)? "SEMICOLON"?
+# Method definition (in class, may have type_parameters after name)
+method_def ::= access_modifier? static_modifier? "FUNC" any_ident type_parameters? "LPAREN" func_param_list? "RPAREN" ("COLON" type)? block
+
+# Constructor definition
+constructor_def ::= access_modifier? "INIT" "LPAREN" func_param_list? "RPAREN" block
+
+# Field declaration (may have var/let before identifier)
+field_decl ::= access_modifier? static_modifier? ("VAR" | "LET")? any_ident "COLON" type ("ASSIGN" expression)? "SEMICOLON"?
 
 # Class member
-class_member ::= field_decl | func_decl
+class_member ::= field_decl | method_def | constructor_def
 
 # Class members (recursive)
 class_members ::= class_member class_members?
 
 # Class declaration
-class_parents ::= "COLON" type ("COMMA" type)*
-class_decl ::= "CLASS" any_ident class_parents? "LBRACE" class_members "RBRACE"
+class_parents ::= "LT_COLON" type ("BIT_AND" type)*
+class_decl ::= access_modifier? "CLASS" any_ident type_parameters? class_parents? "LBRACE" class_members? "RBRACE"
 
 # Fields (recursive)
 fields ::= field_decl fields?
 
 # Struct declaration
-struct_decl ::= "STRUCT" any_ident class_parents? "LBRACE" fields "RBRACE"
+struct_decl ::= access_modifier? "STRUCT" any_ident type_parameters? class_parents? "LBRACE" fields? "RBRACE"
 
 # Enum case
 enum_case ::= any_ident ("ASSIGN" expression)?
 
 # Enum declaration
-enum_decl ::= "ENUM" any_ident ("COLON" type)? "LBRACE" enum_case ("COMMA" enum_case)* "COMMA"? "RBRACE"
+enum_decl ::= access_modifier? "ENUM" any_ident ("COLON" type)? "LBRACE" enum_case ("COMMA" enum_case)* "COMMA"? "RBRACE"
 
-# Interface method
-interface_method ::= "FUNC" any_ident "LPAREN" func_param_list? "RPAREN" ("COLON" type)? "SEMICOLON"?
+# Interface method (abstract — no body, just signature)
+interface_method ::= type_parameters? "FUNC" any_ident "LPAREN" func_param_list? "RPAREN" "COLON" type "SEMICOLON"?
 
 # Interface methods (recursive)
 interface_methods ::= interface_method interface_methods?
 
 # Interface declaration
-interface_decl ::= "INTERFACE" any_ident class_parents? "LBRACE" interface_methods "RBRACE"
+interface_decl ::= access_modifier? "INTERFACE" any_ident type_parameters? class_parents? "LBRACE" interface_methods? "RBRACE"
 
 # Extension declaration
-extend_decl ::= "EXTEND" type class_parents? "LBRACE" class_members "RBRACE"
+extend_decl ::= access_modifier? "EXTEND" type class_parents? "LBRACE" class_members "RBRACE"
 
 # Operator overload
 operator_token ::= "PLUS" | "MINUS" | "STAR" | "SLASH" | "PERCENT" | "POW"
@@ -246,7 +263,7 @@ declaration ::= func_decl
               | interface_decl
               | extend_decl
               | operator_decl
-              | var_decl
+              | access_modifier? static_modifier? var_decl
 
 # -----------------------------------------------------------
 # 6. Program Structure

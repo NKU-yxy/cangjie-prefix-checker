@@ -57,6 +57,10 @@ TOKEN_TYPE_TO_VOCAB: dict[TokenType, str] = {
     TokenType.KW_FOREIGN:    "FOREIGN",
     TokenType.KW_MACRO:      "MACRO",
     TokenType.KW_QUOTE:      "QUOTE",
+    TokenType.KW_PUBLIC:     "PUBLIC",
+    TokenType.KW_PRIVATE:    "PRIVATE",
+    TokenType.KW_STATIC:     "STATIC",
+    TokenType.KW_INIT:       "INIT",
 
     # Identifier placeholders
     TokenType.IDENTIFIER:     "IDENT",
@@ -72,6 +76,7 @@ TOKEN_TYPE_TO_VOCAB: dict[TokenType, str] = {
     # Multi-character operators
     TokenType.OP_EQ:          "EQ",
     TokenType.OP_NE:          "NE",
+    TokenType.OP_LT_COLON:    "LT_COLON",
     TokenType.OP_LE:          "LE",
     TokenType.OP_GE:          "GE",
     TokenType.OP_AND:         "AND",

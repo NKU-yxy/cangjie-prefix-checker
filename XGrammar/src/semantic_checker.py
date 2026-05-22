@@ -139,6 +139,18 @@ class SemanticChecker:
         # Struct init context (Point { x: 0.0, y: 0.0 })
         self._in_struct_init: bool = False
 
+        # Lambda tracking: params collected before => is seen
+        self._lambda_pending_params: List[Tuple[str, Optional[str]]] = []
+        self._in_lambda_prefix: bool = False
+        self._entering_lambda_body: bool = False
+
+        # Type parameter tracking for generics: <T, U>
+        self._in_type_params: bool = False
+        self._pending_type_params: List[str] = []
+
+        # Inheritance clause tracking: after <:, identifiers are types
+        self._in_inheritance: bool = False
+
         # Class body context: deferred field declaration handling
         self._pending_class_ident: Optional[str] = None
 
@@ -225,11 +237,26 @@ class SemanticChecker:
             self._advance(tt)
             return SemanticResult(ok=True, token_text=text)
 
+        # --- Modifier keywords (public, private, static) ---
+        elif tt in _MODIFIER_KEYWORDS:
+            self._in_package_path = False
+            self._in_import_path = False
+            self._advance(tt)
+            return SemanticResult(ok=True, token_text=text)
+
         # --- Declaration keywords ---
         elif tt in _DECL_KEYWORDS:
             self._in_package_path = False
             self._in_import_path = False
-            self._start_decl(tt)
+            # init is special: no identifier, goes straight to params
+            if tt == TokenType.KW_INIT:
+                self._start_decl(tt)
+                self._decl_name = "init"  # implicit name
+                self._in_params = True
+                self._expecting_param_name = True
+                self._paren_depth = 0  # will be incremented by LPAREN
+            else:
+                self._start_decl(tt)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Loop keywords ---
@@ -340,8 +367,62 @@ class SemanticChecker:
             self._advance(tt)
             return SemanticResult(ok=True, token_text=text)
 
+        # --- Lambda arrow ---
+        elif tt == TokenType.OP_FAT_ARROW:
+            # Register pending lambda params in the current scope
+            if self._in_lambda_prefix:
+                for pname, ptype in self._lambda_pending_params:
+                    if pname:
+                        self.scopes.declare(pname, kind="param", declared_type=ptype)
+                self._lambda_pending_params.clear()
+                self._in_lambda_prefix = False
+                self._entering_lambda_body = True
+            self._advance(tt)
+            return SemanticResult(ok=True, token_text=text)
+
+        # --- Type parameter start <T> ---
+        elif tt == TokenType.OP_LT:
+            # Enter type parameter mode if in a declaration that supports generics
+            if (self._decl_kw in (TokenType.KW_FUNC, TokenType.KW_CLASS, TokenType.KW_STRUCT,
+                                  TokenType.KW_ENUM, TokenType.KW_INTERFACE)
+                    and self._decl_name is not None
+                    and not self._in_params):
+                self._in_type_params = True
+                self._pending_type_params.clear()
+            self._advance(tt)
+            return SemanticResult(ok=True, token_text=text)
+
+        # --- Type parameter end ---
+        elif tt == TokenType.OP_GT:
+            if self._in_type_params:
+                # Register type params in scope
+                for tp_name in self._pending_type_params:
+                    self.scopes.declare(tp_name, kind="class", declared_type=tp_name)
+                self._pending_type_params.clear()
+                self._in_type_params = False
+            self._advance(tt)
+            return SemanticResult(ok=True, token_text=text)
+
+        # --- Inheritance <: ---
+        elif tt == TokenType.OP_LT_COLON:
+            self._in_inheritance = True
+            self._advance(tt)
+            return SemanticResult(ok=True, token_text=text)
+
+        # --- Bit-and for type list separators ---
+        elif tt == TokenType.OP_BIT_AND:
+            self._advance(tt)
+            return SemanticResult(ok=True, token_text=text)
+
         # --- Default ---
         else:
+            # Non-lambda token in lambda prefix → not actually a lambda
+            if self._in_lambda_prefix and tt not in (
+                TokenType.IDENTIFIER, TokenType.COLON, TokenType.COMMA,
+                TokenType.LBRACE, TokenType.RBRACE,
+            ):
+                self._in_lambda_prefix = False
+                self._lambda_pending_params.clear()
             self._advance(tt)
             return SemanticResult(ok=True, token_text=text)
 
@@ -387,8 +468,13 @@ class SemanticChecker:
             tag = "loop"
             self._entering_loop = False
 
-        # Func body: only tag the outermost func body, not nested blocks
-        if tag == "block" and self._decl_kw == TokenType.KW_FUNC and self._decl_name is not None:
+        # Lambda body: block after => gets func tag for return support
+        if self._entering_lambda_body:
+            tag = "func"
+            self._entering_lambda_body = False
+
+        # Func/init body: only tag the outermost func body, not nested blocks
+        if tag == "block" and self._decl_kw in (TokenType.KW_FUNC, TokenType.KW_INIT) and self._decl_name is not None:
             tag = "func"
 
         # Class/struct/enum/interface body
@@ -404,6 +490,17 @@ class SemanticChecker:
                 and self._paren_depth == 0):
             # Likely struct init: Point { x: 0.0, y: 0.0 }
             self._in_struct_init = True
+
+        # Detect potential lambda context: { params => ... }
+        if (tag == "block"
+                and not self._in_struct_init
+                and not self._in_params
+                and self._decl_kw in (None, TokenType.KW_VAR, TokenType.KW_LET)):
+            self._in_lambda_prefix = True
+            self._lambda_pending_params.clear()
+
+        # Clear inheritance context on entering body
+        self._in_inheritance = False
 
         # Push scope
         self.scopes.push(tag)
@@ -435,6 +532,9 @@ class SemanticChecker:
         tag = self.scopes.pop()
         self._in_struct_init = False
         self._pending_class_ident = None
+        # Clear lambda prefix mode (if => was never seen, it wasn't a lambda)
+        self._in_lambda_prefix = False
+        self._lambda_pending_params.clear()
         if tag in ("func", "class"):
             self._end_decl()
         self._advance(TokenType.RBRACE)
@@ -443,12 +543,33 @@ class SemanticChecker:
     # ── Internal: identifier handling ─────────────────────────────────────
 
     def _handle_identifier(self, text: str, token: Token) -> SemanticResult:
+        # Case -3: Type parameter names in <T, U>
+        if self._in_type_params:
+            self._pending_type_params.append(text)
+            return SemanticResult(ok=True, token_text=text)
+
+        # Case -2: Lambda param prefix — collect param name, don't look up
+        if self._in_lambda_prefix:
+            # After COLON, this is the type of the last param
+            if self._prev_type == TokenType.COLON and self._lambda_pending_params:
+                last_name, _ = self._lambda_pending_params[-1]
+                self._lambda_pending_params[-1] = (last_name, text)
+            elif self._prev_type in (TokenType.COMMA, TokenType.LBRACE, None):
+                # New lambda param name
+                self._lambda_pending_params.append((text, None))
+            return SemanticResult(ok=True, token_text=text)
+
         # Case -1: Struct init field label — don't look up
         if self._in_struct_init:
             return SemanticResult(ok=True, token_text=text)
 
         # Case -1b: Package/import path — skip lookup
         if self._in_package_path or self._in_import_path:
+            return SemanticResult(ok=True, token_text=text)
+
+        # Case -1c: Inheritance clause — identifiers are type references
+        if self._in_inheritance:
+            # Clear after seeing the first non-identifier, non-BIT_AND token
             return SemanticResult(ok=True, token_text=text)
 
         # Case 0: Param name in function declaration
@@ -647,6 +768,11 @@ _DECL_KEYWORDS = frozenset({
     TokenType.KW_VAR, TokenType.KW_LET, TokenType.KW_FUNC,
     TokenType.KW_CLASS, TokenType.KW_STRUCT, TokenType.KW_ENUM,
     TokenType.KW_INTERFACE, TokenType.KW_EXTEND,
+    TokenType.KW_INIT,
+})
+
+_MODIFIER_KEYWORDS = frozenset({
+    TokenType.KW_PUBLIC, TokenType.KW_PRIVATE, TokenType.KW_STATIC,
 })
 
 # Tokens that start a new statement (trigger deferred type check)

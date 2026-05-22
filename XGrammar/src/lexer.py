@@ -53,6 +53,10 @@ class TokenType(Enum):
     KW_FOREIGN = auto()
     KW_MACRO = auto()
     KW_QUOTE = auto()
+    KW_PUBLIC = auto()
+    KW_PRIVATE = auto()
+    KW_STATIC = auto()
+    KW_INIT = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -66,6 +70,7 @@ class TokenType(Enum):
     # Operators (multi-char checked first)
     OP_EQ = auto()           # ==
     OP_NE = auto()           # !=
+    OP_LT_COLON = auto()     # <:
     OP_LE = auto()           # <=
     OP_GE = auto()           # >=
     OP_AND = auto()          # &&
@@ -195,12 +200,16 @@ KEYWORDS: dict[str, TokenType] = {
     "foreign": TokenType.KW_FOREIGN,
     "macro": TokenType.KW_MACRO,
     "quote": TokenType.KW_QUOTE,
+    "public": TokenType.KW_PUBLIC,
+    "private": TokenType.KW_PRIVATE,
+    "static": TokenType.KW_STATIC,
+    "init": TokenType.KW_INIT,
 }
 
 # Contextual keywords (can be identifiers, but also have special meaning)
 CONTEXTUAL_KEYWORDS: set[str] = {
-    "abstract", "open", "override", "private", "protected",
-    "public", "redef", "get", "set", "sealed", "internal",
+    "abstract", "open", "override", "protected",
+    "redef", "get", "set", "sealed", "internal",
 }
 
 # Primitive type names (treated as identifiers in lexer, semantics in checker)
@@ -233,6 +242,7 @@ class CangjieLexer:
         (r'\.\.', TokenType.OP_RANGE),
         (r'==', TokenType.OP_EQ),
         (r'!=', TokenType.OP_NE),
+        (r'<:', TokenType.OP_LT_COLON),
         (r'<=', TokenType.OP_LE),
         (r'>=', TokenType.OP_GE),
         (r'&&=', TokenType.OP_ANDAND_EQ),
