@@ -1,0 +1,269 @@
+# ============================================================
+# Cangjie Programming Language - Token-Level GBNF Grammar
+# For XGrammar accept_token() -- bitmask O(1) lookup
+#
+# Whitespace (WS, NEWLINE) is filtered from the token stream
+# before feeding to the grammar matcher. Comments are also
+# stripped.  This grammar directly references vocab token names
+# as string literals.
+# ============================================================
+
+# -----------------------------------------------------------
+# 1. Token Placeholders (replacing character-level lexical rules)
+# -----------------------------------------------------------
+
+# Identifier token (all identifiers, primitive type names, '_')
+# The lexer maps any_identifier -> IDENT, raw_identifier -> RAW_IDENT
+any_ident ::= "IDENT" | "RAW_IDENT"
+
+# Literals
+literal ::= "INT_LIT" | "FLOAT_LIT" | "TRUE" | "FALSE"
+          | "STR_LIT" | "ML_STR_LIT" | "RUNE_LIT"
+
+# -----------------------------------------------------------
+# 2. Types
+# -----------------------------------------------------------
+
+# Type reference: IDENT or IDENT.IDENT...
+type_name ::= any_ident ("DOT" any_ident)*
+
+# Array type: Array<T> or T[]
+array_type ::= "IDENT" "LT" type "GT" | type "LBRACKET" "RBRACKET"
+
+# Function type: (T1, T2) -> TRet
+func_type_param_list ::= type ("COMMA" type)*
+func_type ::= "LPAREN" func_type_param_list? "RPAREN" "ARROW" type
+
+# Nullable type: T?
+nullable_type ::= type "QUESTION"
+
+# Tuple type: (T1, T2, ...)
+tuple_type ::= "LPAREN" type "COMMA" type ("COMMA" type)* "RPAREN"
+
+# Any type expression
+type ::= func_type | array_type | nullable_type | tuple_type | type_name
+
+# -----------------------------------------------------------
+# 3. Expressions
+# -----------------------------------------------------------
+
+# Primary expressions
+primary ::= literal
+          | any_ident
+          | "LPAREN" expression "RPAREN"
+          | "THIS"
+          | "SUPER"
+          | array_literal
+          | tuple_literal
+          | lambda_expression
+
+# Array literal: [expr1, expr2, ...]
+array_literal ::= "LBRACKET" (expression ("COMMA" expression)*)? "COMMA"? "RBRACKET"
+
+# Tuple literal: (expr1, expr2, expr3)
+tuple_literal ::= "LPAREN" expression "COMMA" expression ("COMMA" expression)* "RPAREN"
+
+# Lambda: { (params) => body }
+lambda_param_list ::= any_ident ("COMMA" any_ident)*
+lambda_expression ::= "LBRACE" lambda_param_list? "FAT_ARROW" expression "RBRACE"
+
+# Struct/object init: Type { field1: val1, field2: val2, ... }
+struct_init_field ::= any_ident "COLON" expression
+struct_init_fields ::= struct_init_field ("COMMA" struct_init_field)* "COMMA"?
+
+# Postfix expressions
+postfix_expr ::= primary postfix_op*
+postfix_op ::= "DOT" any_ident
+             | "LPAREN" argument_list? "RPAREN"
+             | "LBRACKET" expression "RBRACKET"
+             | "NOT"
+             | "LBRACE" struct_init_fields "RBRACE"
+
+# Argument list
+argument_list ::= expression ("COMMA" expression)*
+
+# Unary expressions
+unary_expr ::= ("MINUS" | "NOT" | "INC" | "DEC") unary_expr | postfix_expr
+
+# Binary expressions (precedence chain)
+multiplicative_expr ::= unary_expr (("STAR" | "SLASH" | "PERCENT" | "POW") unary_expr)*
+additive_expr ::= multiplicative_expr (("PLUS" | "MINUS") multiplicative_expr)*
+shift_expr ::= additive_expr (("SHL" | "SHR") additive_expr)*
+range_expr ::= shift_expr (("RANGE" | "RANGE_INCL") shift_expr)?
+comparison_expr ::= range_expr (("LE" | "GE" | "LT" | "GT") range_expr)*
+type_check_expr ::= comparison_expr (("IS" | "AS") type)?
+equality_expr ::= type_check_expr (("EQ" | "NE") type_check_expr)*
+bitwise_and_expr ::= equality_expr ("BIT_AND" equality_expr)*
+bitwise_xor_expr ::= bitwise_and_expr ("BIT_XOR" bitwise_and_expr)*
+bitwise_or_expr ::= bitwise_xor_expr ("BIT_OR" bitwise_xor_expr)*
+logical_and_expr ::= bitwise_or_expr ("AND" bitwise_or_expr)*
+logical_or_expr ::= logical_and_expr ("OR" logical_and_expr)*
+coalescing_expr ::= logical_or_expr ("COALESCE" logical_or_expr)*
+pipeline_expr ::= coalescing_expr (("PIPE" | "COMPOSE") coalescing_expr)*
+
+# Assignment
+assignment_op ::= "ASSIGN" | "PLUS_EQ" | "MINUS_EQ" | "MUL_EQ" | "DIV_EQ"
+                | "MOD_EQ" | "POW_EQ" | "SHL_EQ" | "SHR_EQ"
+                | "AND_EQ" | "XOR_EQ" | "OR_EQ" | "ANDAND_EQ" | "OROR_EQ"
+assignment_expr ::= pipeline_expr (assignment_op assignment_expr)?
+
+# Full expression
+expression ::= assignment_expr
+
+# -----------------------------------------------------------
+# 4. Statements
+# -----------------------------------------------------------
+
+# Expression statement
+expr_stmt ::= expression "SEMICOLON"?
+
+# Variable declaration
+var_decl ::= ("VAR" | "LET") any_ident ("COLON" type)? ("ASSIGN" expression)? "SEMICOLON"?
+
+# Assignment statement (non-declaration)
+assign_stmt ::= expression assignment_op expression "SEMICOLON"?
+
+# Block
+block ::= "LBRACE" statements "RBRACE"
+statements ::= statement statements?
+
+# If statement
+if_stmt ::= "IF" expression block ("ELSE" (block | if_stmt))?
+
+# While statement
+while_stmt ::= "WHILE" expression block
+
+# For statement
+for_stmt ::= "FOR" "LPAREN" any_ident "IN" expression "RPAREN" block
+
+# Do-while
+do_while_stmt ::= "DO" block "WHILE" expression "SEMICOLON"?
+
+# Break / Continue
+break_stmt ::= "BREAK" "SEMICOLON"?
+continue_stmt ::= "CONTINUE" "SEMICOLON"?
+
+# Return statement
+return_stmt ::= "RETURN" expression? "SEMICOLON"?
+
+# Throw statement
+throw_stmt ::= "THROW" expression "SEMICOLON"?
+
+# Try-catch-finally
+catch_clause ::= "CATCH" "LPAREN" any_ident ("COLON" type)? "RPAREN" block
+finally_clause ::= "FINALLY" block
+try_stmt ::= "TRY" block catch_clause? finally_clause?
+
+# Match statement
+match_case ::= "CASE" pattern "FAT_ARROW" (expression | block)
+match_case_list ::= match_case ("COMMA" match_case)* "COMMA"?
+match_stmt ::= "MATCH" "LPAREN" expression "RPAREN" "LBRACE" match_case_list "RBRACE"
+
+# Pattern (simplified -- wildcard '_' is lexed as IDENT)
+pattern ::= literal | any_ident
+
+# All statements
+statement ::= var_decl
+            | assign_stmt
+            | if_stmt
+            | while_stmt
+            | for_stmt
+            | do_while_stmt
+            | break_stmt
+            | continue_stmt
+            | return_stmt
+            | throw_stmt
+            | try_stmt
+            | match_stmt
+            | expr_stmt
+            | block
+
+# -----------------------------------------------------------
+# 5. Declarations
+# -----------------------------------------------------------
+
+# Function parameter
+func_param ::= any_ident "COLON" type ("ASSIGN" expression)?
+
+# Function parameter list
+func_param_list ::= func_param ("COMMA" func_param)*
+
+# Function declaration
+func_decl ::= "FUNC" any_ident "LPAREN" func_param_list? "RPAREN" ("COLON" type)? block
+
+# Field declaration
+field_decl ::= any_ident "COLON" type ("ASSIGN" expression)? "SEMICOLON"?
+
+# Class member
+class_member ::= field_decl | func_decl
+
+# Class members (recursive)
+class_members ::= class_member class_members?
+
+# Class declaration
+class_parents ::= "COLON" type ("COMMA" type)*
+class_decl ::= "CLASS" any_ident class_parents? "LBRACE" class_members "RBRACE"
+
+# Fields (recursive)
+fields ::= field_decl fields?
+
+# Struct declaration
+struct_decl ::= "STRUCT" any_ident class_parents? "LBRACE" fields "RBRACE"
+
+# Enum case
+enum_case ::= any_ident ("ASSIGN" expression)?
+
+# Enum declaration
+enum_decl ::= "ENUM" any_ident ("COLON" type)? "LBRACE" enum_case ("COMMA" enum_case)* "COMMA"? "RBRACE"
+
+# Interface method
+interface_method ::= "FUNC" any_ident "LPAREN" func_param_list? "RPAREN" ("COLON" type)? "SEMICOLON"?
+
+# Interface methods (recursive)
+interface_methods ::= interface_method interface_methods?
+
+# Interface declaration
+interface_decl ::= "INTERFACE" any_ident class_parents? "LBRACE" interface_methods "RBRACE"
+
+# Extension declaration
+extend_decl ::= "EXTEND" type class_parents? "LBRACE" class_members "RBRACE"
+
+# Operator overload
+operator_token ::= "PLUS" | "MINUS" | "STAR" | "SLASH" | "PERCENT" | "POW"
+                 | "EQ" | "NE" | "LT" | "GT" | "LE" | "GE"
+                 | "LBRACKET" "RBRACKET" | "LPAREN" "RPAREN"
+operator_decl ::= "OPERATOR" "LPAREN" operator_token "RPAREN" "LPAREN" func_param_list? "RPAREN" ("COLON" type)? block
+
+# Main entry point (without 'func' keyword)
+main_decl ::= "IDENT" "LPAREN" func_param_list? "RPAREN" block
+
+# All declarations
+declaration ::= func_decl
+              | main_decl
+              | class_decl
+              | struct_decl
+              | enum_decl
+              | interface_decl
+              | extend_decl
+              | operator_decl
+              | var_decl
+
+# -----------------------------------------------------------
+# 6. Program Structure
+# -----------------------------------------------------------
+
+# Package declaration
+package_name ::= any_ident ("DOT" any_ident)*
+package_decl ::= "PACKAGE" package_name "SEMICOLON"?
+
+# Import declaration
+import_single ::= package_name
+import_alias ::= package_name "AS" any_ident
+import_all ::= package_name "DOT" "STAR"
+import_decl ::= "IMPORT" (import_all | import_alias | import_single) "SEMICOLON"?
+
+# Top-level item
+top_level_item ::= package_decl | import_decl | declaration
+
+# Root: the entire program
+root ::= top_level_item top_level_item*

@@ -1,0 +1,80 @@
+{
+  "timestamp": "2026-05-20T09:33:09.454906",
+  "entries": [
+    {
+      "name": "valid/factorial.cj",
+      "source_len": 198,
+      "token_count": 48,
+      "char_check_ms": 4.267,
+      "token_check_ms": 1.198,
+      "speedup": 3.6,
+      "char_passed": true,
+      "token_passed": true,
+      "note": ""
+    },
+    {
+      "name": "valid/geometry.cj",
+      "source_len": 380,
+      "token_count": 103,
+      "char_check_ms": 7.557,
+      "token_check_ms": 2.723,
+      "speedup": 2.8,
+      "char_passed": true,
+      "token_passed": true,
+      "note": ""
+    },
+    {
+      "name": "invalid/dangling_operator.cj",
+      "source_len": 55,
+      "token_count": 18,
+      "char_check_ms": 0.43,
+      "token_check_ms": 0.419,
+      "speedup": 1.0,
+      "char_passed": false,
+      "token_passed": false,
+      "note": ""
+    },
+    {
+      "name": "invalid/missing_id.cj",
+      "source_len": 9,
+      "token_count": 3,
+      "char_check_ms": 0.007,
+      "token_check_ms": 0.074,
+      "speedup": 0.1,
+      "char_passed": false,
+      "token_passed": false,
+      "note": ""
+    },
+    {
+      "name": "benchmark/large_benchmark.cj",
+      "source_len": 7427,
+      "token_count": 1772,
+      "char_check_ms": 785.392,
+      "token_check_ms": 46.734,
+      "speedup": 16.8,
+      "char_passed": true,
+      "token_passed": true,
+      "note": ""
+    }
+  ],
+  "test_results": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "failures": []
+  },
+  "summary": {
+    "total_files": 5,
+    "total_chars": 8069,
+    "total_tokens": 1944,
+    "total_char_ms": 797.65,
+    "total_token_ms": 51.15,
+    "overall_speedup": 15.6,
+    "avg_us_per_token": 26.3,
+    "est_500_token_ms": 13.16,
+    "goal_500_token_lt_50ms": true,
+    "tests_passed": 15,
+    "tests_total": 15,
+    "tests_all_pass": true
+  }
+}

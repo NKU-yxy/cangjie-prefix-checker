@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls *)",
+      "Read(///wsl.localhost/Ubuntu-OS/home/yuxiangyou/Compiling_Competiotion/**)",
+      "Bash(python3 main.py benchmark/large_benchmark.cj)",
+      "Bash(python3 -c \"import xgrammar; print\\('xgrammar OK'\\)\")",
+      "Bash(python -c \"import xgrammar; print\\('xgrammar OK'\\)\")",
+      "Bash(python main.py benchmark/large_benchmark.cj)",
+      "Bash(python \"//wsl.localhost/Ubuntu-OS/home/yuxiangyou/Compiling_Competiotion/XGrammar/main.py\" \"//wsl.localhost/Ubuntu-OS/home/yuxiangyou/Compiling_Competiotion/XGrammar/benchmark/large_benchmark.cj\")",
+      "Bash(python *)"
+    ]
+  }
+}
