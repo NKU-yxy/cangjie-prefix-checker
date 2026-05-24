@@ -136,6 +136,20 @@ def run_tests(grammar_path=None, verbose=False):
          "func same<T>(a: T, b: T): T { return a } func main() { var x: Int64 = same(1, 2); }",
          True),
 
+        # --- P1-5 valid: init constructor semantic checking ---
+        ("P1-5: init assigns this field",
+         "class Point { var x: Int64 init(x: Int64) { this.x = x; } }",
+         True),
+        ("P1-5: init allows bare return",
+         "class Point { init() { return; } }",
+         True),
+        ("P1-5: constructor call checks valid args",
+         "class Point { init(x: Int64) { } } func main() { var p = Point(1); }",
+         True),
+        ("P1-5: delegated this constructor call",
+         "class Point { init(x: Int64) { } init() { this(0); } }",
+         True),
+
         # --- Invalid cases ---
         ("Invalid: var without id", "var = 42", False),
         ("Invalid: extra paren", "var x = 1 + )", False),
@@ -160,6 +174,23 @@ def run_tests(grammar_path=None, verbose=False):
          False),
         ("P1-4: concrete param still checked",
          'func take<T>(x: T, count: Int64): T { return x } func main() { var x: String = take("x", "bad"); }',
+         False),
+
+        # --- P1-5 invalid: init constructor semantic checking ---
+        ("P1-5: init rejects return value",
+         "class Point { init() { return 1; } }",
+         False),
+        ("P1-5: constructor arg count mismatch",
+         "class Point { init(x: Int64) { } } func main() { var p = Point(); }",
+         False),
+        ("P1-5: constructor arg type mismatch",
+         'class Point { init(x: Int64) { } } func main() { var p = Point("bad"); }',
+         False),
+        ("P1-5: delegated this arg type mismatch",
+         'class Point { init(x: Int64) { } init() { this("bad"); } }',
+         False),
+        ("P1-5: this field must exist",
+         "class Point { var x: Int64 init() { this.y = 1; } }",
          False),
     ]
 

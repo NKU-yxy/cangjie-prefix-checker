@@ -22,10 +22,12 @@ from .lexer import Token, TokenType
 class SymbolInfo:
     name: str
     declared_type: Optional[str] = None
-    kind: str = "variable"  # variable, function, class, param, field
+    kind: str = "variable"  # variable, function, class, param, field, constructor
     param_types: List[str] = field(default_factory=list)   # P1-2: func param types
     param_names: List[str] = field(default_factory=list)   # P1-2: func param names
     type_params: List[str] = field(default_factory=list)   # P1-4: func generic params
+    constructors: List[List[str]] = field(default_factory=list)  # P1-5: init signatures
+    fields: Dict[str, str] = field(default_factory=dict)   # P1-5: class fields
 
 
 # ── Scope stack ───────────────────────────────────────────────────────────────
@@ -58,6 +60,10 @@ class ScopeStack:
     @property
     def in_func(self) -> int:
         return sum(1 for t in self._tags if t == 'func')
+
+    @property
+    def in_constructor(self) -> int:
+        return sum(1 for t in self._tags if t == 'constructor')
 
     @property
     def in_class_body(self) -> bool:
@@ -157,6 +163,7 @@ class SemanticChecker:
 
         # Class body context: deferred field declaration handling
         self._pending_class_ident: Optional[str] = None
+        self._class_stack: List[str] = []
 
         # Package/import path tracking (don't look up identifiers in paths)
         self._in_package_path: bool = False
@@ -185,6 +192,10 @@ class SemanticChecker:
         self._call_arg_types: List[str] = []
         self._call_paren_depth: int = 0
         self._last_call_return_type: Optional[str] = None
+        self._call_kind: str = "function"
+
+        # P1-5: Constructor-specific tracking
+        self._constructor_return_pending: bool = False
 
         # Main function tracking (P1-3)
         self._has_main: bool = False
@@ -232,6 +243,18 @@ class SemanticChecker:
                 return unwind_err
             # Fall through: the current token is processed normally below
 
+        if self._constructor_return_pending:
+            if tt in (TokenType.SEMICOLON, TokenType.RBRACE):
+                self._constructor_return_pending = False
+            else:
+                self._constructor_return_pending = False
+                self._advance(tt, text)
+                return SemanticResult(
+                    ok=False,
+                    error="Constructor 'init' cannot return a value",
+                    token_text=text,
+                )
+
         # --- Brace ---
         if tt == TokenType.LBRACE:
             return self._enter_brace(token)
@@ -244,6 +267,18 @@ class SemanticChecker:
             if self._decl_kw == TokenType.KW_FUNC and self._decl_name:
                 self._in_params = True
                 self._expecting_param_name = True
+            elif (self._prev_type == TokenType.KW_THIS
+                    and not self._in_params
+                    and not self._in_call_args):
+                current_class = self._current_class_name()
+                if self.scopes.in_constructor == 0 or current_class is None:
+                    self._advance(tt, text)
+                    return SemanticResult(
+                        ok=False,
+                        error="'this(...)' constructor delegation outside init",
+                        token_text=text,
+                    )
+                self._start_call(current_class, "constructor")
             # P1-2: Detect function call: IDENTIFIER followed by LPAREN
             elif (self._prev_type == TokenType.IDENTIFIER
                     and not self._in_params
@@ -251,13 +286,9 @@ class SemanticChecker:
                 func_name = self._prev_text
                 sym = self.scopes.lookup(func_name)
                 if sym is not None and sym.kind == "function":
-                    self._in_call_args = True
-                    self._call_func_name = func_name
-                    self._call_arg_types = []
-                    self._call_paren_depth = self._paren_depth
-                    self._last_call_return_type = None
-                    self._expr_has_comparison = False
-                    self._current_expr_type = None
+                    self._start_call(func_name, "function")
+                elif sym is not None and sym.kind == "class":
+                    self._start_call(func_name, "constructor")
             self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
@@ -277,6 +308,7 @@ class SemanticChecker:
                 self._in_call_args = False
                 self._call_func_name = None
                 self._call_arg_types = []
+                self._call_kind = "function"
                 if not result.ok:
                     self._paren_depth -= 1
                     return result
@@ -365,6 +397,7 @@ class SemanticChecker:
                 self._decl_name = name
                 self._decl_kw = None  # Not a keyword decl, just a field
                 self._pending_class_ident = None
+                self._record_current_class_field(name)
             self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
@@ -432,14 +465,32 @@ class SemanticChecker:
         # --- Return (P1-3 + P1-2) ---
         elif tt == TokenType.KW_RETURN:
             self._advance(tt, text)
-            if self.scopes.in_func == 0:
+            if self.scopes.in_func == 0 and self.scopes.in_constructor == 0:
                 return SemanticResult(
                     ok=False, error="'return' outside of function",
                     token_text=text
                 )
+            if self.scopes.in_constructor > 0 and self.scopes.in_func == 0:
+                self._constructor_return_pending = True
+                self._expected_type = None
+                self._current_expr_type = None
+                return SemanticResult(ok=True, token_text=text)
             # Set expected type for return expression checking
             self._expected_type = self._func_return_type
             self._current_expr_type = None
+            return SemanticResult(ok=True, token_text=text)
+
+        # --- this ---
+        elif tt == TokenType.KW_THIS:
+            current_class = self._current_class_name()
+            if current_class is None:
+                self._advance(tt, text)
+                return SemanticResult(
+                    ok=False, error="'this' outside of class",
+                    token_text=text
+                )
+            self._current_expr_type = current_class
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Literals: track expression type ---
@@ -570,6 +621,68 @@ class SemanticChecker:
         self._func_decl_name = None
         self._pending_params.clear()
 
+    def _current_class_name(self) -> Optional[str]:
+        return self._class_stack[-1] if self._class_stack else None
+
+    def _start_call(self, name: str, kind: str = "function") -> None:
+        self._in_call_args = True
+        self._call_func_name = name
+        self._call_kind = kind
+        self._call_arg_types = []
+        self._call_paren_depth = self._paren_depth
+        self._last_call_return_type = None
+        self._expr_has_comparison = False
+        self._current_expr_type = None
+
+    def _record_current_class_field(
+        self, name: str, declared_type: Optional[str] = None
+    ) -> None:
+        class_name = self._current_class_name()
+        if class_name is None:
+            return
+        class_sym = self.scopes.lookup(class_name)
+        if class_sym is not None and class_sym.kind == "class":
+            class_sym.fields[name] = declared_type or class_sym.fields.get(name, "")
+
+    def _register_constructor_signature(self, token: Token) -> SemanticResult:
+        class_name = self._current_class_name()
+        if class_name is None:
+            return SemanticResult(
+                ok=False, error="'init' outside of class", token_text=token.text
+            )
+
+        class_sym = self.scopes.lookup(class_name)
+        if class_sym is None or class_sym.kind != "class":
+            return SemanticResult(ok=True, token_text=token.text)
+
+        signature = [ptype or "" for _, ptype in self._pending_params]
+        if signature in class_sym.constructors:
+            return SemanticResult(
+                ok=False,
+                error=f"Duplicate constructor in '{class_name}' with signature {signature}",
+                token_text=token.text,
+            )
+        class_sym.constructors.append(signature)
+
+        init_sym = self.scopes.lookup("init")
+        if init_sym is None:
+            ok, err = self.scopes.declare(
+                "init", kind="constructor", declared_type=class_name
+            )
+            if not ok:
+                return SemanticResult(ok=False, error=err, token_text=token.text)
+            init_sym = self.scopes.lookup("init")
+        if init_sym is not None and init_sym.kind != "constructor":
+            return SemanticResult(
+                ok=False,
+                error=f"Duplicate declaration: 'init' (already declared as {init_sym.kind})",
+                token_text=token.text,
+            )
+        if init_sym is not None:
+            init_sym.param_types = signature
+            init_sym.param_names = [pname for pname, _ in self._pending_params]
+        return SemanticResult(ok=True, token_text=token.text)
+
     def _unwind_lambda_prefix(self) -> Optional[SemanticResult]:
         """P1-3: Clear lambda prefix mode and validate collected identifiers.
 
@@ -599,6 +712,7 @@ class SemanticChecker:
     def _enter_brace(self, token: Token) -> SemanticResult:
         # Determine scope tag
         tag = "block"
+        class_name_for_scope: Optional[str] = None
 
         if self._entering_loop:
             tag = "loop"
@@ -612,14 +726,18 @@ class SemanticChecker:
             tag = "func"
             self._entering_lambda_body = False
 
-        # Func/init body: only tag the outermost func body, not nested blocks
-        if tag == "block" and self._decl_kw in (TokenType.KW_FUNC, TokenType.KW_INIT) and self._decl_name is not None:
+        # Func body: only tag the outermost func body, not nested blocks
+        if tag == "block" and self._decl_kw == TokenType.KW_FUNC and self._decl_name is not None:
             tag = "func"
+
+        if tag == "block" and self._decl_kw == TokenType.KW_INIT:
+            tag = "constructor"
 
         # Class/struct/enum/interface body
         if tag == "block" and self._decl_kw in (TokenType.KW_CLASS, TokenType.KW_STRUCT,
                                                   TokenType.KW_ENUM, TokenType.KW_INTERFACE):
             tag = "class"
+            class_name_for_scope = self._decl_name
 
         # Detect struct init: IDENT { ... } in expression context
         if (tag == "block"
@@ -647,8 +765,18 @@ class SemanticChecker:
         # Clear inheritance context on entering body
         self._in_inheritance = False
 
+        if tag == "constructor":
+            result = self._register_constructor_signature(token)
+            if not result.ok:
+                self._pending_params.clear()
+                self._end_decl()
+                self._advance(TokenType.LBRACE)
+                return result
+
         # Push scope
         self.scopes.push(tag)
+        if tag == "class" and class_name_for_scope:
+            self._class_stack.append(class_name_for_scope)
 
         # Register pending params in the new scope (func body)
         for pname, ptype in self._pending_params:
@@ -675,7 +803,7 @@ class SemanticChecker:
             self._func_return_type = self._decl_type
 
         # Clear declaration context after entering body scope
-        if tag in ("func", "class"):
+        if tag in ("func", "class", "constructor"):
             self._end_decl()
 
         self._advance(TokenType.LBRACE)
@@ -685,6 +813,8 @@ class SemanticChecker:
         tag = self.scopes.pop()
         self._in_struct_init = False
         self._pending_class_ident = None
+        if tag == "constructor":
+            self._constructor_return_pending = False
         # P1-3: If lambda prefix was never confirmed (no => seen), validate
         # the collected identifiers as regular variable references.
         if self._in_lambda_prefix:
@@ -703,7 +833,9 @@ class SemanticChecker:
                         )
             self._in_lambda_prefix = False
             self._lambda_pending_params.clear()
-        if tag in ("func", "class"):
+        if tag == "class" and self._class_stack:
+            self._class_stack.pop()
+        if tag in ("func", "class", "constructor"):
             self._end_decl()
         self._advance(TokenType.RBRACE)
         return SemanticResult(ok=True, token_text=token.text)
@@ -783,6 +915,8 @@ class SemanticChecker:
             self._decl_type = text
             self.scopes.update_type(self._decl_name, text)
             self._expected_type = text  # For assignment type checking
+            if self.scopes.in_class_body:
+                self._record_current_class_field(self._decl_name, text)
             return SemanticResult(ok=True, token_text=text)
 
         # Case 3: For-loop variable
@@ -790,7 +924,11 @@ class SemanticChecker:
             self.scopes.declare(text, kind="variable")
             return SemanticResult(ok=True, token_text=text)
 
-        # Case 3b: Dot notation member access (prev was DOT)
+        # Case 3b: this.field access
+        if self._prev_type == TokenType.OP_DOT and self._prev2_type == TokenType.KW_THIS:
+            return self._lookup_this_field(text)
+
+        # Case 3c: Dot notation member access (prev was DOT)
         if self._prev_type == TokenType.OP_DOT:
             return SemanticResult(ok=True, token_text=text)
 
@@ -825,12 +963,16 @@ class SemanticChecker:
         elif kw in (TokenType.KW_CLASS, TokenType.KW_STRUCT,
                     TokenType.KW_ENUM, TokenType.KW_INTERFACE):
             kind = "class"
+        elif kw in (TokenType.KW_VAR, TokenType.KW_LET) and self.scopes.in_class_body:
+            kind = "field"
 
         ok, err = self.scopes.declare(text, kind=kind)
         if not ok:
             return SemanticResult(ok=False, error=err, token_text=text)
 
         self._decl_name = text
+        if kind == "field":
+            self._record_current_class_field(text)
         if kw == TokenType.KW_FUNC:
             self._func_decl_name = text  # P1-2: track func name separately
         return SemanticResult(ok=True, token_text=text)
@@ -851,9 +993,87 @@ class SemanticChecker:
                 )
         return SemanticResult(ok=True, token_text=token.text)
 
+    def _lookup_this_field(self, text: str) -> SemanticResult:
+        class_name = self._current_class_name()
+        if class_name is None:
+            return SemanticResult(
+                ok=False, error="'this' outside of class", token_text=text
+            )
+        class_sym = self.scopes.lookup(class_name)
+        if class_sym is None or class_sym.kind != "class":
+            return SemanticResult(ok=True, token_text=text)
+        if text not in class_sym.fields:
+            return SemanticResult(
+                ok=False,
+                error=f"Unknown field '{text}' on '{class_name}'",
+                token_text=text,
+            )
+        field_type = class_sym.fields.get(text)
+        if field_type:
+            self._current_expr_type = field_type
+        return SemanticResult(ok=True, token_text=text)
+
+    def _check_constructor_call_args(self, token: Token) -> SemanticResult:
+        if not self._call_func_name:
+            return SemanticResult(ok=True, token_text=token.text)
+
+        class_name = self._call_func_name
+        class_sym = self.scopes.lookup(class_name)
+        if class_sym is None or class_sym.kind != "class":
+            return SemanticResult(ok=True, token_text=token.text)
+
+        signatures = class_sym.constructors
+        actual_count = len(self._call_arg_types)
+        if not signatures:
+            if actual_count == 0:
+                self._last_call_return_type = class_name
+                return SemanticResult(ok=True, token_text=token.text)
+            return SemanticResult(
+                ok=False,
+                error=f"Constructor argument count mismatch in call to '{class_name}': "
+                      f"expected 0, got {actual_count}",
+                token_text=token.text,
+            )
+
+        count_matches = [sig for sig in signatures if len(sig) == actual_count]
+        if not count_matches:
+            expected_counts = sorted({len(sig) for sig in signatures})
+            return SemanticResult(
+                ok=False,
+                error=f"Constructor argument count mismatch in call to '{class_name}': "
+                      f"expected one of {expected_counts}, got {actual_count}",
+                token_text=token.text,
+            )
+
+        first_type_error = ""
+        for sig in count_matches:
+            ok = True
+            for i, (expected, actual) in enumerate(zip(sig, self._call_arg_types)):
+                if expected and actual and expected != actual:
+                    if not _are_types_compatible(expected, actual):
+                        ok = False
+                        if not first_type_error:
+                            first_type_error = (
+                                f"Constructor argument {i + 1} type mismatch in call to "
+                                f"'{class_name}': expected '{expected}', got '{actual}'"
+                            )
+                        break
+            if ok:
+                self._last_call_return_type = class_name
+                return SemanticResult(ok=True, token_text=token.text)
+
+        return SemanticResult(
+            ok=False,
+            error=first_type_error or f"No matching constructor for '{class_name}'",
+            token_text=token.text,
+        )
+
     def _check_call_args(self, token: Token) -> SemanticResult:
         """P1-2/P1-4: Check function call args and infer generic return type."""
         self._last_call_return_type = None
+        if self._call_kind == "constructor":
+            return self._check_constructor_call_args(token)
+
         if not self._call_func_name:
             return SemanticResult(ok=True, token_text=token.text)
 
