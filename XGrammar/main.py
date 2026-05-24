@@ -119,6 +119,23 @@ def run_tests(grammar_path=None, verbose=False):
         ("P1-3: lambda multi params", "func f() { var g = { x: Int32, y: Int32 => x + y }; }", True),
         ("P1-3: lambda IIFE", "func f(): Int64 { var r = { x: Int32 => x + 1 }(5); return r; }", True),
 
+        # --- P1-4 valid: Generic type parameter inference ---
+        ("P1-4: infer Int64 generic return",
+         "func identity<T>(x: T): T { return x } func main() { var a: Int64 = identity(42); }",
+         True),
+        ("P1-4: infer String generic return",
+         'func identity<T>(x: T): T { return x } func main() { var s: String = identity("hello"); }',
+         True),
+        ("P1-4: infer multiple generic params",
+         'func second<T, U>(a: T, b: U): U { return b } func main() { var s: String = second(1, "ok"); }',
+         True),
+        ("P1-4: generic return can use non-last arg",
+         'func first<T, U>(a: T, b: U): T { return a } func main() { var x: Int64 = first(1, "ok"); }',
+         True),
+        ("P1-4: repeated generic param consistent",
+         "func same<T>(a: T, b: T): T { return a } func main() { var x: Int64 = same(1, 2); }",
+         True),
+
         # --- Invalid cases ---
         ("Invalid: var without id", "var = 42", False),
         ("Invalid: extra paren", "var x = 1 + )", False),
@@ -130,6 +147,20 @@ def run_tests(grammar_path=None, verbose=False):
         ("P1-3: block expr undefined var", "func f() { var r = { y + 1 }; }", False),
         ("P1-3: nested block undefined var", "func f() { var x = 1; var r = { { z + 1 } }; }", False),
         ("P1-3: lambda body undefined var", "func f() { var g = { x: Int32 => z }; }", False),
+
+        # --- P1-4 invalid: Generic inference rejects bad constraints ---
+        ("P1-4: inferred return type mismatch",
+         "func identity<T>(x: T): T { return x } func main() { var s: String = identity(42); }",
+         False),
+        ("P1-4: repeated generic param mismatch",
+         'func same<T>(a: T, b: T): T { return a } func main() { var x: Int64 = same(1, "x"); }',
+         False),
+        ("P1-4: non-last generic return type mismatch",
+         'func first<T, U>(a: T, b: U): T { return a } func main() { var s: String = first(1, "ok"); }',
+         False),
+        ("P1-4: concrete param still checked",
+         'func take<T>(x: T, count: Int64): T { return x } func main() { var x: String = take("x", "bad"); }',
+         False),
     ]
 
     passed = 0

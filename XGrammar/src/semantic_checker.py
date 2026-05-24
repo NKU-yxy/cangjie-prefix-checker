@@ -25,6 +25,7 @@ class SymbolInfo:
     kind: str = "variable"  # variable, function, class, param, field
     param_types: List[str] = field(default_factory=list)   # P1-2: func param types
     param_names: List[str] = field(default_factory=list)   # P1-2: func param names
+    type_params: List[str] = field(default_factory=list)   # P1-4: func generic params
 
 
 # ── Scope stack ───────────────────────────────────────────────────────────────
@@ -183,6 +184,7 @@ class SemanticChecker:
         self._call_func_name: Optional[str] = None
         self._call_arg_types: List[str] = []
         self._call_paren_depth: int = 0
+        self._last_call_return_type: Optional[str] = None
 
         # Main function tracking (P1-3)
         self._has_main: bool = False
@@ -253,6 +255,7 @@ class SemanticChecker:
                     self._call_func_name = func_name
                     self._call_arg_types = []
                     self._call_paren_depth = self._paren_depth
+                    self._last_call_return_type = None
                     self._expr_has_comparison = False
                     self._current_expr_type = None
             self._advance(tt, text)
@@ -277,9 +280,12 @@ class SemanticChecker:
                 if not result.ok:
                     self._paren_depth -= 1
                     return result
-                # P1-2: After call, expression type = function return type
-                if func_sym and func_sym.declared_type:
+                # P1-2/P1-4: After call, expression type = function return type
+                if self._last_call_return_type:
+                    self._current_expr_type = self._last_call_return_type
+                elif func_sym and func_sym.declared_type:
                     self._current_expr_type = func_sym.declared_type
+                self._last_call_return_type = None
                 self._expr_has_comparison = False
             # P1-1: Apply comparison→Bool at subexpression boundary
             elif self._expr_has_comparison and self._current_expr_type is not None:
@@ -478,9 +484,15 @@ class SemanticChecker:
         # --- Type parameter end ---
         elif tt == TokenType.OP_GT:
             if self._in_type_params:
-                # Register type params in scope
-                for tp_name in self._pending_type_params:
-                    self.scopes.declare(tp_name, kind="class", declared_type=tp_name)
+                # P1-4: Function generic params belong to the function symbol.
+                # Other declaration kinds keep the previous scope-visible behavior.
+                if self._decl_kw == TokenType.KW_FUNC and self._func_decl_name:
+                    func_sym = self.scopes.lookup(self._func_decl_name)
+                    if func_sym and func_sym.kind == "function":
+                        func_sym.type_params = list(self._pending_type_params)
+                else:
+                    for tp_name in self._pending_type_params:
+                        self.scopes.declare(tp_name, kind="class", declared_type=tp_name)
                 self._pending_type_params.clear()
                 self._in_type_params = False
             else:
@@ -761,7 +773,7 @@ class SemanticChecker:
                 and self._decl_name is not None
                 and not self._in_params):
             self._decl_type = text
-            self.scopes.update_type(self._decl_name, text)
+            self.scopes.update_type(self._func_decl_name or self._decl_name, text)
             return SemanticResult(ok=True, token_text=text)
 
         # Case 2: Type annotation (after colon in var/let decl)
@@ -840,7 +852,8 @@ class SemanticChecker:
         return SemanticResult(ok=True, token_text=token.text)
 
     def _check_call_args(self, token: Token) -> SemanticResult:
-        """P1-2: Check function call argument types against function signature."""
+        """P1-2/P1-4: Check function call args and infer generic return type."""
+        self._last_call_return_type = None
         if not self._call_func_name:
             return SemanticResult(ok=True, token_text=token.text)
 
@@ -860,8 +873,30 @@ class SemanticChecker:
                 token_text=token.text,
             )
 
+        type_bindings: Dict[str, str] = {}
+        type_params = set(func_sym.type_params)
+
         for i, (expected, actual) in enumerate(zip(expected_params, self._call_arg_types)):
-            if expected and actual and expected != actual:
+            if expected in type_params:
+                if not actual:
+                    return SemanticResult(
+                        ok=False,
+                        error=f"Cannot infer generic type parameter '{expected}' "
+                              f"in call to '{self._call_func_name}'",
+                        token_text=token.text,
+                    )
+                bound = type_bindings.get(expected)
+                if bound is None:
+                    type_bindings[expected] = actual
+                elif bound != actual:
+                    return SemanticResult(
+                        ok=False,
+                        error=f"Generic type parameter '{expected}' mismatch in "
+                              f"call to '{self._call_func_name}': "
+                              f"expected '{bound}', got '{actual}'",
+                        token_text=token.text,
+                    )
+            elif expected and actual and expected != actual:
                 if not _are_types_compatible(expected, actual):
                     return SemanticResult(
                         ok=False,
@@ -870,6 +905,20 @@ class SemanticChecker:
                               f"expected '{expected}', got '{actual}'",
                         token_text=token.text,
                     )
+
+        return_type = func_sym.declared_type
+        if return_type in type_params:
+            inferred = type_bindings.get(return_type)
+            if inferred is None:
+                return SemanticResult(
+                    ok=False,
+                    error=f"Cannot infer generic return type '{return_type}' "
+                          f"in call to '{self._call_func_name}'",
+                    token_text=token.text,
+                )
+            self._last_call_return_type = inferred
+        else:
+            self._last_call_return_type = return_type
 
         return SemanticResult(ok=True, token_text=token.text)
 
