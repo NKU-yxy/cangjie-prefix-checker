@@ -108,12 +108,28 @@ def run_tests(grammar_path=None, verbose=False):
         ("Valid: package+import", "package app\n\nimport std.io\n\nfunc main() { io.println(\"hello\") }", True),
         ("Valid: match", 'func f(x: Int32) { match (x) { case 0 => "zero", case 1 => "one", case _ => "other" } }', True),
 
+        # --- P1-3 valid: Lambda semantic checking ---
+        ("P1-3: lambda typed param", "func f() { var g = { x: Int32 => x + 1 }; var r = g(5); }", True),
+        ("P1-3: lambda untyped param", "func f() { var g = { x => x + 1 }; var r = g(5); }", True),
+        ("P1-3: lambda no params", "func f() { var g = { => 42 }; var r = g(); }", True),
+        ("P1-3: lambda block body", "func f() { var g = { x: Int32 => { return x + 1; } }; var r = g(5); }", True),
+        ("P1-3: block expression with defined var", "func f(): Int64 { var x = 1; var r = { x + 1 }; return r; }", True),
+        ("P1-3: empty block expression", "func f() { var x = { }; }", True),
+        ("P1-3: nested lambda", "func f() { var g = { x: Int32 => { y: Int32 => x + y } }; }", True),
+        ("P1-3: lambda multi params", "func f() { var g = { x: Int32, y: Int32 => x + y }; }", True),
+        ("P1-3: lambda IIFE", "func f(): Int64 { var r = { x: Int32 => x + 1 }(5); return r; }", True),
+
         # --- Invalid cases ---
         ("Invalid: var without id", "var = 42", False),
         ("Invalid: extra paren", "var x = 1 + )", False),
         ("Prefix: unclosed string", 'var x = "hello', True),
         ("Prefix: missing brace", "func f() { var x = 1", True),
         ("Invalid: bad keyword order", "if var x = 1", False),
+
+        # --- P1-3 invalid: Lambda semantic checking ---
+        ("P1-3: block expr undefined var", "func f() { var r = { y + 1 }; }", False),
+        ("P1-3: nested block undefined var", "func f() { var x = 1; var r = { { z + 1 } }; }", False),
+        ("P1-3: lambda body undefined var", "func f() { var g = { x: Int32 => z }; }", False),
     ]
 
     passed = 0
@@ -122,10 +138,7 @@ def run_tests(grammar_path=None, verbose=False):
     for name, code, expect_pass in test_cases:
         result = check_cangjie(code, grammar_path=grammar_path)
 
-        # For valid cases, all results should be 1
-        # For invalid cases, at least one result should be 0
-        all_ones = all(r == 1 for r in result.results)
-        correct = (expect_pass and all_ones) or (not expect_pass and not all_ones)
+        correct = (expect_pass == result.passed)
 
         status = "OK" if correct else "FAIL"
         if correct:
@@ -136,11 +149,14 @@ def run_tests(grammar_path=None, verbose=False):
         if verbose or not correct:
             print(f"[{status}] {name}")
             if not correct:
-                print(f"       Expected pass={expect_pass}, got all_ones={all_ones}")
+                print(f"       Expected pass={expect_pass}, got passed={result.passed}")
                 print(f"       Code: {code!r}")
+                if result.error_message:
+                    print(f"       Error: [{result.error_type}] {result.error_message}")
                 print(f"       {result.format_output()}")
         else:
-            print(f"[{status}] {name}: {result.format_output().split(chr(10))[1] if chr(10) in result.format_output() else '?'}")
+            syn_part = result.format_output().split('\n')[1] if '\n' in result.format_output() else '?'
+            print(f"[{status}] {name}: {syn_part}")
 
     print(f"\nTotal: {passed} passed, {failed} failed out of {len(test_cases)} tests")
 

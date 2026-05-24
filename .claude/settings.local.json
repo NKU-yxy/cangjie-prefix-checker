@@ -13,7 +13,14 @@
       "Bash(cd \"\\\\\\\\wsl.localhost\\\\Ubuntu-OS\\\\home\\\\yuxiangyou\\\\Compiling_Competiotion\\\\XGrammar\")",
       "Bash(python3 main.py --test)",
       "Bash(python3 -c \"from src.semantic_checker import SemanticChecker; print\\('import OK'\\)\")",
-      "Bash(sed -n '423,427p' 总计划.md)"
+      "Bash(sed -n '423,427p' 总计划.md)",
+      "Bash(timeout 30 python3 -c ' *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(timeout 10 python3 -c \"from src.lexer import Lexer; print\\('OK'\\)\")",
+      "Bash(timeout 5 python3 *)",
+      "Bash(PYTHONPATH=. timeout 10 python main.py --test)",
+      "Bash(PYTHONPATH=. timeout 30 python *)",
+      "Bash(PYTHONPATH=. timeout 60 python *)"
     ]
   }
 }

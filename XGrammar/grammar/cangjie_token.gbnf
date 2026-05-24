@@ -65,6 +65,7 @@ primary ::= literal
           | array_literal
           | tuple_literal
           | lambda_expression
+          | block
 
 # Array literal: [expr1, expr2, ...]
 array_literal ::= "LBRACKET" (expression ("COMMA" expression)*)? "COMMA"? "RBRACKET"

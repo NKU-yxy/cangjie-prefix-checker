@@ -220,6 +220,16 @@ class SemanticChecker:
                 self._in_package_path = False
                 self._in_import_path = False
 
+        # P1-3: Lambda prefix unwind — if we see a token that can't be part of
+        # a lambda param list, this block is not a lambda. Validate any
+        # identifiers that were collected as tentative param names.
+        if self._in_lambda_prefix and tt not in _LAMBDA_PREFIX_VALID_TOKENS:
+            unwind_err = self._unwind_lambda_prefix()
+            if unwind_err is not None:
+                self._advance(tt, text)
+                return unwind_err
+            # Fall through: the current token is processed normally below
+
         # --- Brace ---
         if tt == TokenType.LBRACE:
             return self._enter_brace(token)
@@ -503,13 +513,6 @@ class SemanticChecker:
 
         # --- Default ---
         else:
-            # Non-lambda token in lambda prefix → not actually a lambda
-            if self._in_lambda_prefix and tt not in (
-                TokenType.IDENTIFIER, TokenType.COLON, TokenType.COMMA,
-                TokenType.LBRACE, TokenType.RBRACE,
-            ):
-                self._in_lambda_prefix = False
-                self._lambda_pending_params.clear()
             self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
@@ -555,6 +558,30 @@ class SemanticChecker:
         self._func_decl_name = None
         self._pending_params.clear()
 
+    def _unwind_lambda_prefix(self) -> Optional[SemanticResult]:
+        """P1-3: Clear lambda prefix mode and validate collected identifiers.
+
+        Called when a non-lambda-prefix token proves this block is not a lambda.
+        Any identifiers collected as tentative param names are looked up as
+        regular variable references. Returns an error if any is undefined.
+        Returns None if all identifiers are valid (caller falls through).
+        """
+        for pname, _ in self._lambda_pending_params:
+            if pname:
+                sym = self.scopes.lookup(pname)
+                if sym is None and pname not in _BUILTIN_NAMES:
+                    self._in_lambda_prefix = False
+                    self._lambda_pending_params.clear()
+                    return SemanticResult(
+                        ok=False, error=f"Undefined variable: '{pname}'",
+                        token_text=pname
+                    )
+                if sym is not None and sym.declared_type:
+                    self._current_expr_type = sym.declared_type
+        self._in_lambda_prefix = False
+        self._lambda_pending_params.clear()
+        return None
+
     # ── Internal: brace handling ──────────────────────────────────────────
 
     def _enter_brace(self, token: Token) -> SemanticResult:
@@ -565,7 +592,10 @@ class SemanticChecker:
             tag = "loop"
             self._entering_loop = False
 
-        # Lambda body: block after => gets func tag for return support
+        # Lambda body: block after => gets func tag for return support.
+        # Also track that we entered a lambda body — this allows nested lambda
+        # detection (P1-3).
+        entered_lambda_body = self._entering_lambda_body
         if self._entering_lambda_body:
             tag = "func"
             self._entering_lambda_body = False
@@ -588,8 +618,14 @@ class SemanticChecker:
             # Likely struct init: Point { x: 0.0, y: 0.0 }
             self._in_struct_init = True
 
-        # Detect potential lambda context: { params => ... }
-        if (tag == "block"
+        # P1-3: Detect potential lambda context: { params => ... }
+        # Also applicable when entering a lambda body (the body itself might
+        # be a nested lambda expression like { y => x + y }).
+        allow_lambda = (
+            tag == "block"
+            or (tag == "func" and entered_lambda_body)
+        )
+        if (allow_lambda
                 and not self._in_struct_init
                 and not self._in_params
                 and self._decl_kw in (None, TokenType.KW_VAR, TokenType.KW_LET)):
@@ -637,9 +673,24 @@ class SemanticChecker:
         tag = self.scopes.pop()
         self._in_struct_init = False
         self._pending_class_ident = None
-        # Clear lambda prefix mode (if => was never seen, it wasn't a lambda)
-        self._in_lambda_prefix = False
-        self._lambda_pending_params.clear()
+        # P1-3: If lambda prefix was never confirmed (no => seen), validate
+        # the collected identifiers as regular variable references.
+        if self._in_lambda_prefix:
+            for pname, _ in self._lambda_pending_params:
+                if pname:
+                    sym = self.scopes.lookup(pname)
+                    if sym is None and pname not in _BUILTIN_NAMES:
+                        self._in_lambda_prefix = False
+                        self._lambda_pending_params.clear()
+                        if tag in ("func", "class"):
+                            self._end_decl()
+                        self._advance(TokenType.RBRACE)
+                        return SemanticResult(
+                            ok=False, error=f"Undefined variable: '{pname}'",
+                            token_text=pname
+                        )
+            self._in_lambda_prefix = False
+            self._lambda_pending_params.clear()
         if tag in ("func", "class"):
             self._end_decl()
         self._advance(TokenType.RBRACE)
@@ -955,4 +1006,14 @@ _BUILTIN_NAMES: frozenset[str] = frozenset({
     "VArray", "This",
     "print", "println", "io", "math", "std",
     "_",
+})
+
+# P1-3: Tokens that are valid inside a lambda param list (before => is seen)
+_LAMBDA_PREFIX_VALID_TOKENS = frozenset({
+    TokenType.IDENTIFIER,
+    TokenType.COLON,
+    TokenType.COMMA,
+    TokenType.OP_FAT_ARROW,  # confirms lambda
+    TokenType.OP_DOT,        # dotted type names like module.Type
+    TokenType.RBRACE,        # handled by _exit_brace, not unwound here
 })
