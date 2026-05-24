@@ -23,6 +23,8 @@ class SymbolInfo:
     name: str
     declared_type: Optional[str] = None
     kind: str = "variable"  # variable, function, class, param, field
+    param_types: List[str] = field(default_factory=list)   # P1-2: func param types
+    param_names: List[str] = field(default_factory=list)   # P1-2: func param names
 
 
 # ── Scope stack ───────────────────────────────────────────────────────────────
@@ -124,6 +126,7 @@ class SemanticChecker:
         self._decl_kw: Optional[TokenType] = None   # var / let / func / class / ...
         self._decl_name: Optional[str] = None        # name being declared
         self._decl_type: Optional[str] = None        # type annotation
+        self._func_decl_name: Optional[str] = None   # P1-2: function name (not overwritten by params)
 
         # params pending registration (func params registered when body scope pushes)
         self._pending_params: List[Tuple[str, Optional[str]]] = []
@@ -171,6 +174,16 @@ class SemanticChecker:
         self._func_return_type: Optional[str] = None  # Return type of current func
         self._pending_decl_type: Optional[str] = None  # Type from `: Type` annotation
 
+        # P1-1: Operator result type tracking
+        self._expr_has_comparison: bool = False  # True if any comparison/logical op in current expr
+        self._prev_text: str = ""  # Previous token text (for function call detection)
+
+        # P1-2: Function call argument checking
+        self._in_call_args: bool = False
+        self._call_func_name: Optional[str] = None
+        self._call_arg_types: List[str] = []
+        self._call_paren_depth: int = 0
+
         # Main function tracking (P1-3)
         self._has_main: bool = False
 
@@ -183,19 +196,23 @@ class SemanticChecker:
 
         # Clear type tracking when starting a new statement
         if tt in _STATEMENT_START_TOKENS:
+            # P1-1: Apply comparison→Bool conversion before type check
+            resolved_type = self._resolve_expr_type()
             # Check deferred type compatibility before clearing
             if (self._expected_type is not None
-                    and self._current_expr_type is not None
-                    and self._expected_type != self._current_expr_type
-                    and not _are_types_compatible(self._expected_type, self._current_expr_type)):
+                    and resolved_type is not None
+                    and self._expected_type != resolved_type
+                    and not _are_types_compatible(self._expected_type, resolved_type)):
                 err_msg = (f"Type mismatch: expected '{self._expected_type}', "
-                           f"got '{self._current_expr_type}'")
+                           f"got '{resolved_type}'")
                 self._expected_type = None
                 self._current_expr_type = None
+                self._expr_has_comparison = False
                 return SemanticResult(ok=False, error=err_msg, token_text=text)
             # Clear on statement boundary (next statement or block end)
             self._expected_type = None
             self._current_expr_type = None
+            self._expr_has_comparison = False
 
         # Reset package/import path on tokens that can't be part of a path
         if self._in_package_path or self._in_import_path:
@@ -215,33 +232,72 @@ class SemanticChecker:
             if self._decl_kw == TokenType.KW_FUNC and self._decl_name:
                 self._in_params = True
                 self._expecting_param_name = True
-            self._advance(tt)
+            # P1-2: Detect function call: IDENTIFIER followed by LPAREN
+            elif (self._prev_type == TokenType.IDENTIFIER
+                    and not self._in_params
+                    and not self._in_call_args):
+                func_name = self._prev_text
+                sym = self.scopes.lookup(func_name)
+                if sym is not None and sym.kind == "function":
+                    self._in_call_args = True
+                    self._call_func_name = func_name
+                    self._call_arg_types = []
+                    self._call_paren_depth = self._paren_depth
+                    self._expr_has_comparison = False
+                    self._current_expr_type = None
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         elif tt == TokenType.RPAREN:
+            # P1-2: Collect last argument type before closing paren
+            if self._in_call_args and self._paren_depth == self._call_paren_depth:
+                resolved = self._resolve_expr_type()
+                if resolved is not None:
+                    self._call_arg_types.append(resolved)
+                elif self._call_arg_types:
+                    pass  # No expression before ) — e.g., f() with 0 args
+                # Check for zero-arg call: if no commas were seen, arg_types is empty
+                # Trigger signature check
+                result = self._check_call_args(token)
+                # Set current expr type to function's return type for nested calls
+                func_sym = self.scopes.lookup(self._call_func_name) if self._call_func_name else None
+                self._in_call_args = False
+                self._call_func_name = None
+                self._call_arg_types = []
+                if not result.ok:
+                    self._paren_depth -= 1
+                    return result
+                # P1-2: After call, expression type = function return type
+                if func_sym and func_sym.declared_type:
+                    self._current_expr_type = func_sym.declared_type
+                self._expr_has_comparison = False
+            # P1-1: Apply comparison→Bool at subexpression boundary
+            elif self._expr_has_comparison and self._current_expr_type is not None:
+                self._current_expr_type = "Bool"
+                self._expr_has_comparison = False
             self._paren_depth -= 1
             if self._paren_depth == 0:
                 self._in_params = False
                 self._expecting_param_name = False
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Package / Import ---
         elif tt == TokenType.KW_PACKAGE:
             self._in_package_path = True
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         elif tt == TokenType.KW_IMPORT:
             self._in_import_path = True
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Modifier keywords (public, private, static) ---
         elif tt in _MODIFIER_KEYWORDS:
             self._in_package_path = False
             self._in_import_path = False
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Declaration keywords ---
@@ -262,13 +318,13 @@ class SemanticChecker:
         # --- Loop keywords ---
         elif tt in (TokenType.KW_WHILE, TokenType.KW_FOR, TokenType.KW_DO):
             self._entering_loop = True
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Identifier ---
         elif tt == TokenType.IDENTIFIER:
             result = self._handle_identifier(text, token)
-            self._advance(tt)
+            self._advance(tt, text)
             return result
 
         # --- Assignment operator ---
@@ -277,7 +333,7 @@ class SemanticChecker:
             if self._decl_kw in (TokenType.KW_VAR, TokenType.KW_LET) and self._decl_type:
                 self._expected_type = self._decl_type
             self._current_expr_type = None  # Reset for RHS
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Colon ---
@@ -288,33 +344,46 @@ class SemanticChecker:
                 ok, err = self.scopes.declare(name, kind="field")
                 if not ok:
                     self._pending_class_ident = None
-                    self._advance(tt)
+                    self._advance(tt, text)
                     return SemanticResult(ok=False, error=err, token_text=text)
                 self._decl_name = name
                 self._decl_kw = None  # Not a keyword decl, just a field
                 self._pending_class_ident = None
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
-        # --- Comma in params ---
+        # --- Comma in params / call args ---
         elif tt == TokenType.COMMA:
             if self._in_params:
                 self._expecting_param_name = True
                 self._decl_name = None
                 self._decl_type = None
-            self._advance(tt)
+            # P1-2: Collect argument type at comma in call args
+            if self._in_call_args:
+                resolved = self._resolve_expr_type()
+                if resolved is not None:
+                    self._call_arg_types.append(resolved)
+                self._expr_has_comparison = False
+                self._current_expr_type = None
+            # P1-1: Apply comparison→Bool at subexpression boundary
+            elif self._expr_has_comparison and self._current_expr_type is not None:
+                self._current_expr_type = "Bool"
+                self._expr_has_comparison = False
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Semicolon ---
         elif tt == TokenType.SEMICOLON:
             self._in_package_path = False
             self._in_import_path = False
+            # P1-1: Apply comparison→Bool conversion
+            resolved_type = self._resolve_expr_type()
             # Type inference: if var/let without type annotation, infer from RHS
             if (self._decl_kw in (TokenType.KW_VAR, TokenType.KW_LET)
                     and self._decl_name
                     and not self._decl_type
-                    and self._current_expr_type):
-                self.scopes.update_type(self._decl_name, self._current_expr_type)
+                    and resolved_type):
+                self.scopes.update_type(self._decl_name, resolved_type)
             # Check assignment type compatibility
             result = self._check_assignment_type(token)
             if not result.ok:
@@ -323,12 +392,13 @@ class SemanticChecker:
                 self._end_decl()
             self._current_expr_type = None
             self._expected_type = None
-            self._advance(tt)
+            self._expr_has_comparison = False
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Break/Continue (P1-3) ---
         elif tt == TokenType.KW_BREAK:
-            self._advance(tt)
+            self._advance(tt, text)
             if self.scopes.in_loop == 0:
                 return SemanticResult(
                     ok=False, error="'break' outside of loop", token_text=text
@@ -336,7 +406,7 @@ class SemanticChecker:
             return SemanticResult(ok=True, token_text=text)
 
         elif tt == TokenType.KW_CONTINUE:
-            self._advance(tt)
+            self._advance(tt, text)
             if self.scopes.in_loop == 0:
                 return SemanticResult(
                     ok=False, error="'continue' outside of loop", token_text=text
@@ -345,7 +415,7 @@ class SemanticChecker:
 
         # --- Return (P1-3 + P1-2) ---
         elif tt == TokenType.KW_RETURN:
-            self._advance(tt)
+            self._advance(tt, text)
             if self.scopes.in_func == 0:
                 return SemanticResult(
                     ok=False, error="'return' outside of function",
@@ -359,12 +429,12 @@ class SemanticChecker:
         # --- Literals: track expression type ---
         elif tt in _LITERAL_TYPES:
             self._current_expr_type = _LITERAL_TYPES[tt]
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         elif tt in _BOOL_LITERAL_TYPES:
             self._current_expr_type = "Bool"
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Lambda arrow ---
@@ -377,10 +447,10 @@ class SemanticChecker:
                 self._lambda_pending_params.clear()
                 self._in_lambda_prefix = False
                 self._entering_lambda_body = True
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
-        # --- Type parameter start <T> ---
+        # --- Type parameter start / Less-than comparison <T> ---
         elif tt == TokenType.OP_LT:
             # Enter type parameter mode if in a declaration that supports generics
             if (self._decl_kw in (TokenType.KW_FUNC, TokenType.KW_CLASS, TokenType.KW_STRUCT,
@@ -389,7 +459,10 @@ class SemanticChecker:
                     and not self._in_params):
                 self._in_type_params = True
                 self._pending_type_params.clear()
-            self._advance(tt)
+            else:
+                # P1-1: Outside type params context, < is a comparison operator
+                self._expr_has_comparison = True
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Type parameter end ---
@@ -400,18 +473,32 @@ class SemanticChecker:
                     self.scopes.declare(tp_name, kind="class", declared_type=tp_name)
                 self._pending_type_params.clear()
                 self._in_type_params = False
-            self._advance(tt)
+            else:
+                # P1-1: Outside type params, > is a comparison operator
+                self._expr_has_comparison = True
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Inheritance <: ---
         elif tt == TokenType.OP_LT_COLON:
             self._in_inheritance = True
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Bit-and for type list separators ---
         elif tt == TokenType.OP_BIT_AND:
-            self._advance(tt)
+            self._advance(tt, text)
+            return SemanticResult(ok=True, token_text=text)
+
+        # --- Comparison operators: result type is Bool ---
+        elif tt in _COMPARISON_OPS or tt in _LOGICAL_OPS:
+            self._expr_has_comparison = True
+            self._advance(tt, text)
+            return SemanticResult(ok=True, token_text=text)
+
+        # --- Arithmetic operators: keep numeric, doesn't change result type ---
+        elif tt in _ARITHMETIC_OPS:
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
         # --- Default ---
@@ -423,28 +510,37 @@ class SemanticChecker:
             ):
                 self._in_lambda_prefix = False
                 self._lambda_pending_params.clear()
-            self._advance(tt)
+            self._advance(tt, text)
             return SemanticResult(ok=True, token_text=text)
 
     def finalize(self) -> SemanticResult:
         """Check any deferred type compatibility at end of input."""
+        resolved = self._resolve_expr_type()
         if (self._expected_type is not None
-                and self._current_expr_type is not None
-                and self._expected_type != self._current_expr_type
-                and not _are_types_compatible(self._expected_type, self._current_expr_type)):
+                and resolved is not None
+                and self._expected_type != resolved
+                and not _are_types_compatible(self._expected_type, resolved)):
             return SemanticResult(
                 ok=False,
                 error=f"Type mismatch: expected '{self._expected_type}', "
-                      f"got '{self._current_expr_type}'",
+                      f"got '{resolved}'",
                 token_text="<end>",
             )
         return SemanticResult(ok=True)
 
     # ── Internal: state tracking ──────────────────────────────────────────
 
-    def _advance(self, tt: TokenType) -> None:
+    def _resolve_expr_type(self) -> Optional[str]:
+        """Apply comparison→Bool conversion to current expression type (P1-1)."""
+        if self._expr_has_comparison and self._current_expr_type is not None:
+            return "Bool"
+        return self._current_expr_type
+
+    def _advance(self, tt: TokenType, text: str = "") -> None:
         self._prev2_type = self._prev_type
         self._prev_type = tt
+        if text:
+            self._prev_text = text
 
     def _start_decl(self, tt: TokenType) -> None:
         self._decl_kw = tt
@@ -456,6 +552,7 @@ class SemanticChecker:
         self._decl_kw = None
         self._decl_name = None
         self._decl_type = None
+        self._func_decl_name = None
         self._pending_params.clear()
 
     # ── Internal: brace handling ──────────────────────────────────────────
@@ -515,6 +612,14 @@ class SemanticChecker:
                         self._end_decl()
                     self._advance(TokenType.LBRACE)
                     return SemanticResult(ok=False, error=err, token_text=token.text)
+
+        # P1-2: Save param info to function's SymbolInfo for later call checking
+        if tag == "func" and self._func_decl_name:
+            func_sym = self.scopes.lookup(self._func_decl_name)
+            if func_sym and func_sym.kind == "function":
+                func_sym.param_types = [ptype or "" for _, ptype in self._pending_params]
+                func_sym.param_names = [pname for pname, _ in self._pending_params]
+
         self._pending_params.clear()
 
         # Save func return type for return-statement checking
@@ -663,21 +768,58 @@ class SemanticChecker:
             return SemanticResult(ok=False, error=err, token_text=text)
 
         self._decl_name = text
+        if kw == TokenType.KW_FUNC:
+            self._func_decl_name = text  # P1-2: track func name separately
         return SemanticResult(ok=True, token_text=text)
 
     def _check_assignment_type(self, token: Token) -> SemanticResult:
         """Check type compatibility for assignments and returns."""
+        resolved = self._resolve_expr_type()
         if (self._expected_type is not None
-                and self._current_expr_type is not None
+                and resolved is not None
                 and self._expected_type != "Void"  # Void from no return type annotation
-                and self._current_expr_type != self._expected_type):
-            if not _are_types_compatible(self._expected_type, self._current_expr_type):
+                and resolved != self._expected_type):
+            if not _are_types_compatible(self._expected_type, resolved):
                 return SemanticResult(
                     ok=False,
                     error=f"Type mismatch: expected '{self._expected_type}', "
-                          f"got '{self._current_expr_type}'",
+                          f"got '{resolved}'",
                     token_text=token.text,
                 )
+        return SemanticResult(ok=True, token_text=token.text)
+
+    def _check_call_args(self, token: Token) -> SemanticResult:
+        """P1-2: Check function call argument types against function signature."""
+        if not self._call_func_name:
+            return SemanticResult(ok=True, token_text=token.text)
+
+        func_sym = self.scopes.lookup(self._call_func_name)
+        if func_sym is None or func_sym.kind != "function":
+            return SemanticResult(ok=True, token_text=token.text)
+
+        expected_params = func_sym.param_types
+        expected_count = len(expected_params)
+        actual_count = len(self._call_arg_types)
+
+        if actual_count != expected_count:
+            return SemanticResult(
+                ok=False,
+                error=f"Argument count mismatch in call to '{self._call_func_name}': "
+                      f"expected {expected_count}, got {actual_count}",
+                token_text=token.text,
+            )
+
+        for i, (expected, actual) in enumerate(zip(expected_params, self._call_arg_types)):
+            if expected and actual and expected != actual:
+                if not _are_types_compatible(expected, actual):
+                    return SemanticResult(
+                        ok=False,
+                        error=f"Argument {i + 1} type mismatch in call to "
+                              f"'{self._call_func_name}': "
+                              f"expected '{expected}', got '{actual}'",
+                        token_text=token.text,
+                    )
+
         return SemanticResult(ok=True, token_text=token.text)
 
     def _lookup_identifier(self, text: str) -> SemanticResult:
@@ -785,6 +927,24 @@ _STATEMENT_START_TOKENS = frozenset({
     TokenType.KW_CONTINUE, TokenType.KW_THROW, TokenType.KW_TRY,
     TokenType.KW_MATCH, TokenType.KW_PACKAGE, TokenType.KW_IMPORT,
     TokenType.RBRACE,
+})
+
+# P1-1: Operator type classification
+_COMPARISON_OPS = frozenset({
+    TokenType.OP_EQ, TokenType.OP_NE,
+    TokenType.OP_LT, TokenType.OP_GT,
+    TokenType.OP_LE, TokenType.OP_GE,
+})
+
+_LOGICAL_OPS = frozenset({
+    TokenType.OP_AND, TokenType.OP_OR,
+})
+
+_ARITHMETIC_OPS = frozenset({
+    TokenType.OP_PLUS, TokenType.OP_MINUS,
+    TokenType.OP_STAR, TokenType.OP_SLASH, TokenType.OP_PERCENT,
+    TokenType.OP_POW, TokenType.OP_SHL, TokenType.OP_SHR,
+    TokenType.OP_BIT_AND, TokenType.OP_BIT_OR, TokenType.OP_BIT_XOR,
 })
 
 _BUILTIN_NAMES: frozenset[str] = frozenset({

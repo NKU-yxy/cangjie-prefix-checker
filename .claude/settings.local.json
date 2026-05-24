@@ -10,7 +10,10 @@
       "Bash(python \"//wsl.localhost/Ubuntu-OS/home/yuxiangyou/Compiling_Competiotion/XGrammar/main.py\" \"//wsl.localhost/Ubuntu-OS/home/yuxiangyou/Compiling_Competiotion/XGrammar/benchmark/large_benchmark.cj\")",
       "Bash(python *)",
       "WebSearch",
-      "Bash(cd \"\\\\\\\\wsl.localhost\\\\Ubuntu-OS\\\\home\\\\yuxiangyou\\\\Compiling_Competiotion\\\\XGrammar\")"
+      "Bash(cd \"\\\\\\\\wsl.localhost\\\\Ubuntu-OS\\\\home\\\\yuxiangyou\\\\Compiling_Competiotion\\\\XGrammar\")",
+      "Bash(python3 main.py --test)",
+      "Bash(python3 -c \"from src.semantic_checker import SemanticChecker; print\\('import OK'\\)\")",
+      "Bash(sed -n '423,427p' 总计划.md)"
     ]
   }
 }
