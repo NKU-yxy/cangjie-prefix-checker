@@ -58,6 +58,7 @@ type_parameters ::= "LT" type_param_list "GT"
 
 # Primary expressions
 primary ::= literal
+          | generic_construct
           | any_ident
           | "LPAREN" expression "RPAREN"
           | "THIS"
@@ -66,6 +67,8 @@ primary ::= literal
           | tuple_literal
           | lambda_expression
           | block
+
+generic_construct ::= type_name "LT" type ("COMMA" type)* "GT" "LPAREN" argument_list? "RPAREN"
 
 # Array literal: [expr1, expr2, ...]
 array_literal ::= "LBRACKET" (expression ("COMMA" expression)*)? "COMMA"? "RBRACKET"

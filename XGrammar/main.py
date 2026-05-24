@@ -150,6 +150,26 @@ def run_tests(grammar_path=None, verbose=False):
          "class Point { init(x: Int64) { } init() { this(0); } }",
          True),
 
+        # --- P1-6 valid: Expression-position generic construction ---
+        ("P1-6: generic class construct substitutes Int64",
+         "class Box<T> { init(x: T) { } } func main() { var b = Box<Int64>(1); }",
+         True),
+        ("P1-6: generic class construct substitutes multiple params",
+         'class Pair<T, U> { init(a: T, b: U) { } } func main() { var p = Pair<String, Int64>("id", 7); }',
+         True),
+        ("P1-6: zero-arg generic class construct",
+         'class Empty<T> { } func main() { var e = Empty<String>(); }',
+         True),
+        ("P1-6: builtin Array generic construct with size",
+         "func main() { var a = Array<Int64>(10); }",
+         True),
+        ("P1-6: builtin Map generic construct",
+         "func main() { var m = Map<String, Int64>(); }",
+         True),
+        ("P1-6: generic construct as function argument",
+         "class Box<T> { init(x: T) { } } func useBox(b: Box): Int64 { return 0 } func main() { var x: Int64 = useBox(Box<Int64>(1)); }",
+         True),
+
         # --- Invalid cases ---
         ("Invalid: var without id", "var = 42", False),
         ("Invalid: extra paren", "var x = 1 + )", False),
@@ -191,6 +211,26 @@ def run_tests(grammar_path=None, verbose=False):
          False),
         ("P1-5: this field must exist",
          "class Point { var x: Int64 init() { this.y = 1; } }",
+         False),
+
+        # --- P1-6 invalid: Generic construction must be checked semantically ---
+        ("P1-6: generic class construct type mismatch",
+         'class Box<T> { init(x: T) { } } func main() { var b = Box<Int64>("bad"); }',
+         False),
+        ("P1-6: generic class multi-param substitution direction",
+         'class Pair<T, U> { init(a: T, b: U) { } } func main() { var p = Pair<String, Int64>(1, "id"); }',
+         False),
+        ("P1-6: generic class constructor arg count mismatch",
+         "class Box<T> { init(x: T) { } } func main() { var b = Box<Int64>(); }",
+         False),
+        ("P1-6: generic class type arg count mismatch",
+         "class Pair<T, U> { init(a: T, b: U) { } } func main() { var p = Pair<Int64>(1, 2); }",
+         False),
+        ("P1-6: builtin Array constructor arg type mismatch",
+         'func main() { var a = Array<Int64>("bad"); }',
+         False),
+        ("P1-6: malformed generic construct missing gt",
+         "class Box<T> { init(x: T) { } } func main() { var b = Box<Int64(1); }",
          False),
     ]
 

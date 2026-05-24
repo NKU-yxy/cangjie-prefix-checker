@@ -193,9 +193,17 @@ class SemanticChecker:
         self._call_paren_depth: int = 0
         self._last_call_return_type: Optional[str] = None
         self._call_kind: str = "function"
+        self._call_type_args: List[str] = []
+        self._call_stack: List[Tuple[Optional[str], List[str], int, str, List[str]]] = []
 
         # P1-5: Constructor-specific tracking
         self._constructor_return_pending: bool = False
+
+        # P1-6: Expression-position generic construction
+        self._generic_construct_name: Optional[str] = None
+        self._generic_type_args: List[str] = []
+        self._in_generic_construct_type_args: bool = False
+        self._generic_construct_waiting_lparen: bool = False
 
         # Main function tracking (P1-3)
         self._has_main: bool = False
@@ -255,6 +263,46 @@ class SemanticChecker:
                     token_text=text,
                 )
 
+        if self._in_generic_construct_type_args:
+            if tt == TokenType.IDENTIFIER:
+                self._generic_type_args.append(text)
+                self._advance(tt, text)
+                return SemanticResult(ok=True, token_text=text)
+            if tt == TokenType.COMMA:
+                self._advance(tt, text)
+                return SemanticResult(ok=True, token_text=text)
+            if tt == TokenType.OP_GT:
+                if not self._generic_type_args:
+                    self._advance(tt, text)
+                    return SemanticResult(
+                        ok=False,
+                        error="Generic construct requires at least one type argument",
+                        token_text=text,
+                    )
+                self._in_generic_construct_type_args = False
+                self._generic_construct_waiting_lparen = True
+                self._advance(tt, text)
+                return SemanticResult(ok=True, token_text=text)
+            self._in_generic_construct_type_args = False
+            self._generic_construct_waiting_lparen = False
+            self._advance(tt, text)
+            return SemanticResult(
+                ok=False,
+                error="Malformed generic construct: expected type argument or '>'",
+                token_text=text,
+            )
+
+        if self._generic_construct_waiting_lparen and tt != TokenType.LPAREN:
+            self._generic_construct_waiting_lparen = False
+            self._generic_construct_name = None
+            self._generic_type_args.clear()
+            self._advance(tt, text)
+            return SemanticResult(
+                ok=False,
+                error="Malformed generic construct: expected '(' after type arguments",
+                token_text=text,
+            )
+
         # --- Brace ---
         if tt == TokenType.LBRACE:
             return self._enter_brace(token)
@@ -264,7 +312,23 @@ class SemanticChecker:
         # --- Paren ---
         elif tt == TokenType.LPAREN:
             self._paren_depth += 1
-            if self._decl_kw == TokenType.KW_FUNC and self._decl_name:
+            if self._generic_construct_waiting_lparen:
+                if self._generic_construct_name is None:
+                    self._advance(tt, text)
+                    return SemanticResult(
+                        ok=False,
+                        error="Malformed generic construct",
+                        token_text=text,
+                    )
+                self._start_call(
+                    self._generic_construct_name,
+                    "generic_constructor",
+                    self._generic_type_args,
+                )
+                self._generic_construct_name = None
+                self._generic_type_args = []
+                self._generic_construct_waiting_lparen = False
+            elif self._decl_kw == TokenType.KW_FUNC and self._decl_name:
                 self._in_params = True
                 self._expecting_param_name = True
             elif (self._prev_type == TokenType.KW_THIS
@@ -282,7 +346,7 @@ class SemanticChecker:
             # P1-2: Detect function call: IDENTIFIER followed by LPAREN
             elif (self._prev_type == TokenType.IDENTIFIER
                     and not self._in_params
-                    and not self._in_call_args):
+                    ):
                 func_name = self._prev_text
                 sym = self.scopes.lookup(func_name)
                 if sym is not None and sym.kind == "function":
@@ -305,18 +369,26 @@ class SemanticChecker:
                 result = self._check_call_args(token)
                 # Set current expr type to function's return type for nested calls
                 func_sym = self.scopes.lookup(self._call_func_name) if self._call_func_name else None
+                result_type = self._last_call_return_type
+                if not result_type and func_sym and func_sym.declared_type:
+                    result_type = func_sym.declared_type
                 self._in_call_args = False
                 self._call_func_name = None
                 self._call_arg_types = []
                 self._call_kind = "function"
+                self._call_type_args = []
                 if not result.ok:
                     self._paren_depth -= 1
                     return result
-                # P1-2/P1-4: After call, expression type = function return type
-                if self._last_call_return_type:
-                    self._current_expr_type = self._last_call_return_type
-                elif func_sym and func_sym.declared_type:
-                    self._current_expr_type = func_sym.declared_type
+                if self._call_stack:
+                    (self._call_func_name,
+                     self._call_arg_types,
+                     self._call_paren_depth,
+                     self._call_kind,
+                     self._call_type_args) = self._call_stack.pop()
+                    self._in_call_args = True
+                if result_type:
+                    self._current_expr_type = result_type
                 self._last_call_return_type = None
                 self._expr_has_comparison = False
             # P1-1: Apply comparison→Bool at subexpression boundary
@@ -526,6 +598,8 @@ class SemanticChecker:
                     and not self._in_params):
                 self._in_type_params = True
                 self._pending_type_params.clear()
+            elif self._can_start_generic_construct():
+                self._start_generic_construct(self._prev_text)
             else:
                 # P1-1: Outside type params context, < is a comparison operator
                 self._expr_has_comparison = True
@@ -541,6 +615,11 @@ class SemanticChecker:
                     func_sym = self.scopes.lookup(self._func_decl_name)
                     if func_sym and func_sym.kind == "function":
                         func_sym.type_params = list(self._pending_type_params)
+                elif self._decl_kw in (TokenType.KW_CLASS, TokenType.KW_STRUCT,
+                                       TokenType.KW_ENUM, TokenType.KW_INTERFACE) and self._decl_name:
+                    class_sym = self.scopes.lookup(self._decl_name)
+                    if class_sym and class_sym.kind == "class":
+                        class_sym.type_params = list(self._pending_type_params)
                 else:
                     for tp_name in self._pending_type_params:
                         self.scopes.declare(tp_name, kind="class", declared_type=tp_name)
@@ -581,6 +660,12 @@ class SemanticChecker:
 
     def finalize(self) -> SemanticResult:
         """Check any deferred type compatibility at end of input."""
+        if self._in_generic_construct_type_args or self._generic_construct_waiting_lparen:
+            return SemanticResult(
+                ok=False,
+                error="Malformed generic construct",
+                token_text="<end>",
+            )
         resolved = self._resolve_expr_type()
         if (self._expected_type is not None
                 and resolved is not None
@@ -624,15 +709,44 @@ class SemanticChecker:
     def _current_class_name(self) -> Optional[str]:
         return self._class_stack[-1] if self._class_stack else None
 
-    def _start_call(self, name: str, kind: str = "function") -> None:
+    def _start_call(
+        self, name: str, kind: str = "function",
+        type_args: Optional[List[str]] = None,
+    ) -> None:
+        if self._in_call_args:
+            self._call_stack.append((
+                self._call_func_name,
+                list(self._call_arg_types),
+                self._call_paren_depth,
+                self._call_kind,
+                list(self._call_type_args),
+            ))
         self._in_call_args = True
         self._call_func_name = name
         self._call_kind = kind
         self._call_arg_types = []
+        self._call_type_args = list(type_args or [])
         self._call_paren_depth = self._paren_depth
         self._last_call_return_type = None
         self._expr_has_comparison = False
         self._current_expr_type = None
+
+    def _start_generic_construct(self, name: str) -> None:
+        self._generic_construct_name = name
+        self._generic_type_args = []
+        self._in_generic_construct_type_args = True
+        self._generic_construct_waiting_lparen = False
+        self._expr_has_comparison = False
+        self._current_expr_type = None
+
+    def _can_start_generic_construct(self) -> bool:
+        if self._prev_type != TokenType.IDENTIFIER:
+            return False
+        name = self._prev_text
+        if name in _BUILTIN_GENERIC_ARITY:
+            return True
+        sym = self.scopes.lookup(name)
+        return sym is not None and sym.kind == "class"
 
     def _record_current_class_field(
         self, name: str, declared_type: Optional[str] = None
@@ -1018,9 +1132,25 @@ class SemanticChecker:
             return SemanticResult(ok=True, token_text=token.text)
 
         class_name = self._call_func_name
+        if class_name in _BUILTIN_GENERIC_ARITY:
+            return self._check_builtin_generic_constructor_args(token)
+
         class_sym = self.scopes.lookup(class_name)
         if class_sym is None or class_sym.kind != "class":
             return SemanticResult(ok=True, token_text=token.text)
+
+        if self._call_type_args:
+            if len(self._call_type_args) != len(class_sym.type_params):
+                return SemanticResult(
+                    ok=False,
+                    error=f"Generic constructor '{class_name}' expects "
+                          f"{len(class_sym.type_params)} type arguments, "
+                          f"got {len(self._call_type_args)}",
+                    token_text=token.text,
+                )
+            type_bindings = dict(zip(class_sym.type_params, self._call_type_args))
+        else:
+            type_bindings = {}
 
         signatures = class_sym.constructors
         actual_count = len(self._call_arg_types)
@@ -1047,6 +1177,7 @@ class SemanticChecker:
 
         first_type_error = ""
         for sig in count_matches:
+            sig = [type_bindings.get(expected, expected) for expected in sig]
             ok = True
             for i, (expected, actual) in enumerate(zip(sig, self._call_arg_types)):
                 if expected and actual and expected != actual:
@@ -1068,10 +1199,47 @@ class SemanticChecker:
             token_text=token.text,
         )
 
+    def _check_builtin_generic_constructor_args(self, token: Token) -> SemanticResult:
+        name = self._call_func_name or ""
+        expected_arity = _BUILTIN_GENERIC_ARITY[name]
+        if len(self._call_type_args) != expected_arity:
+            return SemanticResult(
+                ok=False,
+                error=f"Generic constructor '{name}' expects {expected_arity} "
+                      f"type arguments, got {len(self._call_type_args)}",
+                token_text=token.text,
+            )
+
+        actual_count = len(self._call_arg_types)
+        if name == "Array":
+            if actual_count > 1:
+                return SemanticResult(
+                    ok=False,
+                    error=f"Array constructor expects 0 or 1 arguments, got {actual_count}",
+                    token_text=token.text,
+                )
+            if actual_count == 1 and self._call_arg_types[0] != "Int64":
+                return SemanticResult(
+                    ok=False,
+                    error=f"Array constructor size expects 'Int64', got "
+                          f"'{self._call_arg_types[0]}'",
+                    token_text=token.text,
+                )
+        elif name == "Map":
+            if actual_count != 0:
+                return SemanticResult(
+                    ok=False,
+                    error=f"Map constructor expects 0 arguments, got {actual_count}",
+                    token_text=token.text,
+                )
+
+        self._last_call_return_type = name
+        return SemanticResult(ok=True, token_text=token.text)
+
     def _check_call_args(self, token: Token) -> SemanticResult:
         """P1-2/P1-4: Check function call args and infer generic return type."""
         self._last_call_return_type = None
-        if self._call_kind == "constructor":
+        if self._call_kind in ("constructor", "generic_constructor"):
             return self._check_constructor_call_args(token)
 
         if not self._call_func_name:
@@ -1272,10 +1440,15 @@ _BUILTIN_NAMES: frozenset[str] = frozenset({
     "UInt8", "UInt16", "UInt32", "UInt64", "UIntNative",
     "Float16", "Float32", "Float64",
     "Bool", "Rune", "String", "Unit", "Nothing",
-    "VArray", "This",
+    "VArray", "This", "Array", "Map",
     "print", "println", "io", "math", "std",
     "_",
 })
+
+_BUILTIN_GENERIC_ARITY: dict[str, int] = {
+    "Array": 1,
+    "Map": 2,
+}
 
 # P1-3: Tokens that are valid inside a lambda param list (before => is seen)
 _LAMBDA_PREFIX_VALID_TOKENS = frozenset({
