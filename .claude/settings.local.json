@@ -20,7 +20,13 @@
       "Bash(timeout 5 python3 *)",
       "Bash(PYTHONPATH=. timeout 10 python main.py --test)",
       "Bash(PYTHONPATH=. timeout 30 python *)",
-      "Bash(PYTHONPATH=. timeout 60 python *)"
+      "Bash(PYTHONPATH=. timeout 60 python *)",
+      "WebFetch(domain:gitcode.com)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('Top keys:', list\\(d.keys\\(\\)\\)\\); print\\('Nominals:', list\\(d.get\\('nominals',{}\\).keys\\(\\)\\)[:20]\\); print\\('Interfaces:', list\\(d.get\\('interfaces',{}\\).keys\\(\\)\\)[:20]\\); print\\('Global funcs:', list\\(d.get\\('global_functions',{}\\).keys\\(\\)\\)[:20]\\); print\\('Global vars:', [\\(v['name'],v['type']\\) for v in d.get\\('global_variables',[]\\)][:20]\\)\")",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"import tiktoken; print\\('ok'\\)\")",
+      "Bash(python3 -c \"import tiktoken\")",
+      "Bash(dpkg --print-architecture)"
     ]
   }
 }

@@ -1,0 +1,4 @@
+xgrammar>=0.1.0
+tiktoken>=0.7.0
+lark>=1.1.0
+pyinstaller>=6.0

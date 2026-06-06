@@ -11,7 +11,7 @@ Checks:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .lexer import Token, TokenType
 
@@ -126,7 +126,7 @@ class SemanticChecker:
     the syntax checker, one token at a time.
     """
 
-    def __init__(self):
+    def __init__(self, preload_context: Optional[dict[str, Any]] = None):
         self.scopes = ScopeStack()
 
         # Declaration tracking
@@ -208,7 +208,71 @@ class SemanticChecker:
         # Main function tracking (P1-3)
         self._has_main: bool = False
 
+        if preload_context:
+            self._preload_context(preload_context)
+
     # ── Public API ────────────────────────────────────────────────────────
+
+    def _preload_context(self, context: dict[str, Any]) -> None:
+        """Register competition-provided global declarations."""
+        global_scope = self.scopes._stack[0]
+
+        for variable in context.get("variables", []):
+            name = variable.get("name") if isinstance(variable, dict) else None
+            if not name:
+                continue
+            global_scope[str(name)] = SymbolInfo(
+                name=str(name),
+                kind="variable",
+                declared_type=variable.get("type"),
+            )
+
+        for function in context.get("functions", []):
+            if not isinstance(function, dict):
+                continue
+            name = function.get("name")
+            if not name:
+                continue
+            global_scope[str(name)] = SymbolInfo(
+                name=str(name),
+                kind="function",
+                declared_type=function.get("return_type"),
+                param_types=[p or "" for p in function.get("param_types", [])],
+                param_names=[p or "" for p in function.get("param_names", [])],
+                type_params=[p for p in function.get("type_params", []) if p],
+            )
+
+        for class_info in context.get("classes", []):
+            if not isinstance(class_info, dict):
+                continue
+            name = class_info.get("name")
+            if not name:
+                continue
+            global_scope[str(name)] = SymbolInfo(
+                name=str(name),
+                kind="class",
+                declared_type=str(name),
+                type_params=[p for p in class_info.get("type_params", []) if p],
+                constructors=[
+                    [p or "" for p in ctor]
+                    for ctor in class_info.get("constructors", [])
+                    if isinstance(ctor, list)
+                ],
+                fields=dict(class_info.get("fields", {})),
+            )
+
+        for interface in context.get("interfaces", []):
+            if not isinstance(interface, dict):
+                continue
+            name = interface.get("name")
+            if not name:
+                continue
+            global_scope[str(name)] = SymbolInfo(
+                name=str(name),
+                kind="interface",
+                declared_type=str(name),
+                type_params=[p for p in interface.get("type_params", []) if p],
+            )
 
     def process(self, token: Token) -> SemanticResult:
         """Process one token. Returns SemanticResult."""
