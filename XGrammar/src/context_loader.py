@@ -148,7 +148,32 @@ def _type_from_entry(entry: Any) -> str | None:
         return entry
     if not isinstance(entry, dict):
         return None
-    return entry.get("type") or entry.get("declared_type") or entry.get("variable_type") or entry.get("ty")
+    if "type" in entry:
+        return _format_type(entry.get("type"))
+    if "declared_type" in entry:
+        return _format_type(entry.get("declared_type"))
+    if "variable_type" in entry:
+        return _format_type(entry.get("variable_type"))
+    if "ty" in entry:
+        return _format_type(entry.get("ty"))
+    return _format_type(entry)
+
+
+def _format_type(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, dict):
+        return str(value)
+    if "tparam" in value:
+        return str(value["tparam"])
+    if "nominal" in value:
+        name = str(value["nominal"])
+        args = [_format_type(arg) or "" for arg in value.get("args", [])]
+        args = [arg for arg in args if arg]
+        return f"{name}<{', '.join(args)}>" if args else name
+    return None
 
 
 def _as_dict_list(value: Any) -> list[dict[str, Any]]:

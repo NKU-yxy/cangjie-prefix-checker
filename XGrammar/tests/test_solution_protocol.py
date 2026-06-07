@@ -39,18 +39,18 @@ class SolutionProtocolTests(unittest.TestCase):
         )
         return proc, [line.strip() for line in proc.stdout.splitlines()]
 
-    def test_valid_prefixes_output_one(self):
+    def test_valid_prefixes_output_zero_for_public_harness(self):
         proc, lines = self.run_solution("func main() { return 1 }")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(lines)
-        self.assertTrue(all(line == "1" for line in lines), lines)
+        self.assertTrue(all(line == "0" for line in lines), lines)
 
-    def test_invalid_prefix_outputs_zero_and_stops(self):
+    def test_invalid_prefix_outputs_one_and_stops_for_public_harness(self):
         proc, lines = self.run_solution("var +")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("0", lines)
-        first_zero = lines.index("0")
-        self.assertEqual(lines[first_zero:], ["0"])
+        self.assertIn("1", lines)
+        first_one = lines.index("1")
+        self.assertEqual(lines[first_one:], ["1"])
 
 
 if __name__ == "__main__":

@@ -27,8 +27,9 @@ literal ::= "INT_LIT" | "FLOAT_LIT" | "TRUE" | "FALSE"
 # Type reference: IDENT or IDENT.IDENT...
 type_name ::= any_ident ("DOT" any_ident)*
 
-# Array type: Array<T> or T[]
-array_type ::= "IDENT" "LT" type "GT" | type "LBRACKET" "RBRACKET"
+# Generic and array types: HashMap<K, V>, Array<T>, or T[]
+generic_type ::= type_name "LT" type ("COMMA" type)* "GT"
+array_type ::= generic_type | type_name "LBRACKET" "RBRACKET"
 
 # Function type: (T1, T2) -> TRet
 func_type_param_list ::= type ("COMMA" type)*
@@ -59,6 +60,7 @@ type_parameters ::= "LT" type_param_list "GT"
 # Primary expressions
 primary ::= literal
           | generic_construct
+          | if_stmt
           | any_ident
           | "LPAREN" expression "RPAREN"
           | "THIS"
@@ -95,7 +97,8 @@ postfix_op ::= "DOT" any_ident
              | "LBRACE" struct_init_fields "RBRACE"
 
 # Argument list
-argument_list ::= expression ("COMMA" expression)*
+argument ::= any_ident "COLON" expression | expression
+argument_list ::= argument ("COMMA" argument)*
 
 # Unary expressions
 unary_expr ::= ("MINUS" | "NOT" | "INC" | "DEC") unary_expr | postfix_expr
@@ -238,7 +241,7 @@ enum_case ::= any_ident ("ASSIGN" expression)?
 enum_decl ::= access_modifier? "ENUM" any_ident ("COLON" type)? "LBRACE" enum_case ("COMMA" enum_case)* "COMMA"? "RBRACE"
 
 # Interface method (abstract — no body, just signature)
-interface_method ::= type_parameters? "FUNC" any_ident "LPAREN" func_param_list? "RPAREN" "COLON" type "SEMICOLON"?
+interface_method ::= "FUNC" any_ident type_parameters? "LPAREN" func_param_list? "RPAREN" "COLON" type "SEMICOLON"?
 
 # Interface methods (recursive)
 interface_methods ::= interface_method interface_methods?
@@ -256,7 +259,7 @@ operator_token ::= "PLUS" | "MINUS" | "STAR" | "SLASH" | "PERCENT" | "POW"
 operator_decl ::= "OPERATOR" "LPAREN" operator_token "RPAREN" "LPAREN" func_param_list? "RPAREN" ("COLON" type)? block
 
 # Main entry point (without 'func' keyword)
-main_decl ::= "IDENT" "LPAREN" func_param_list? "RPAREN" block
+main_decl ::= "IDENT" "LPAREN" func_param_list? "RPAREN" ("COLON" type)? block
 
 # All declarations
 declaration ::= func_decl

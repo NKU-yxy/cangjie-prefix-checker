@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
+os.environ["TVM_FFI_BUILD_DOCS"] = "1"
+
 from xgrammar import GrammarCompiler, GrammarMatcher
 
 from .lexer import CangjieLexer, Token, TokenType

@@ -195,6 +195,7 @@ class SemanticChecker:
         self._call_kind: str = "function"
         self._call_type_args: List[str] = []
         self._call_stack: List[Tuple[Optional[str], List[str], int, str, List[str]]] = []
+        self._pending_call_arg_ident: Optional[str] = None
 
         # P1-5: Constructor-specific tracking
         self._constructor_return_pending: bool = False
@@ -232,6 +233,8 @@ class SemanticChecker:
                 continue
             name = function.get("name")
             if not name:
+                continue
+            if str(name) in _BUILTIN_NAMES:
                 continue
             global_scope[str(name)] = SymbolInfo(
                 name=str(name),
@@ -278,6 +281,19 @@ class SemanticChecker:
         """Process one token. Returns SemanticResult."""
         tt = token.type
         text = token.text
+
+        if self._pending_call_arg_ident is not None and tt != TokenType.COLON:
+            pending = self._pending_call_arg_ident
+            self._pending_call_arg_ident = None
+            sym = self.scopes.lookup(pending)
+            if sym is None and pending not in _BUILTIN_NAMES:
+                return SemanticResult(
+                    ok=False,
+                    error=f"Undefined variable: '{pending}'",
+                    token_text=pending,
+                )
+            if sym is not None and sym.declared_type:
+                self._current_expr_type = sym.declared_type
 
         # Clear type tracking when starting a new statement
         if tt in _STATEMENT_START_TOKENS:
@@ -522,6 +538,10 @@ class SemanticChecker:
 
         # --- Colon ---
         elif tt == TokenType.COLON:
+            if self._pending_call_arg_ident is not None:
+                self._pending_call_arg_ident = None
+                self._advance(tt, text)
+                return SemanticResult(ok=True, token_text=text)
             # If we have a pending class ident, register it as a field now
             if self._pending_class_ident is not None:
                 name = self._pending_class_ident
@@ -806,6 +826,8 @@ class SemanticChecker:
     def _can_start_generic_construct(self) -> bool:
         if self._prev_type != TokenType.IDENTIFIER:
             return False
+        if self._prev2_type == TokenType.COLON:
+            return False
         name = self._prev_text
         if name in _BUILTIN_GENERIC_ARITY:
             return True
@@ -1050,6 +1072,13 @@ class SemanticChecker:
             # Clear after seeing the first non-identifier, non-BIT_AND token
             return SemanticResult(ok=True, token_text=text)
 
+        if (self._in_call_args
+                and self._prev_type in (TokenType.LPAREN, TokenType.COMMA)
+                and self.scopes.lookup(text) is None
+                and text not in _BUILTIN_NAMES):
+            self._pending_call_arg_ident = text
+            return SemanticResult(ok=True, token_text=text)
+
         # Case 0: Param name in function declaration
         if self._in_params and self._expecting_param_name:
             # Check duplicate in pending params
@@ -1276,19 +1305,28 @@ class SemanticChecker:
 
         actual_count = len(self._call_arg_types)
         if name == "Array":
-            if actual_count > 1:
+            elem_type = self._call_type_args[0] if self._call_type_args else ""
+            if actual_count > 2:
                 return SemanticResult(
                     ok=False,
-                    error=f"Array constructor expects 0 or 1 arguments, got {actual_count}",
+                    error=f"Array constructor expects 0, 1, or 2 arguments, got {actual_count}",
                     token_text=token.text,
                 )
-            if actual_count == 1 and self._call_arg_types[0] != "Int64":
+            if actual_count >= 1 and self._call_arg_types[0] != "Int64":
                 return SemanticResult(
                     ok=False,
                     error=f"Array constructor size expects 'Int64', got "
                           f"'{self._call_arg_types[0]}'",
                     token_text=token.text,
                 )
+            if actual_count == 2 and elem_type and self._call_arg_types[1] != elem_type:
+                if not _are_types_compatible(elem_type, self._call_arg_types[1]):
+                    return SemanticResult(
+                        ok=False,
+                        error=f"Array constructor repeat expects '{elem_type}', got "
+                              f"'{self._call_arg_types[1]}'",
+                        token_text=token.text,
+                    )
         elif name == "Map":
             if actual_count != 0:
                 return SemanticResult(
@@ -1393,6 +1431,9 @@ class SemanticChecker:
                     )
                 self._has_main = True
                 self.scopes.declare(text, kind="function")
+                self._decl_kw = TokenType.KW_FUNC
+                self._decl_name = text
+                self._func_decl_name = text
                 return SemanticResult(ok=True, token_text=text)
             return SemanticResult(
                 ok=False,

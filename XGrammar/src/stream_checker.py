@@ -6,11 +6,14 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+os.environ["TVM_FFI_BUILD_DOCS"] = "1"
+
 from xgrammar import GrammarCompiler, GrammarMatcher
 
+from .batch_semantic_validator import BatchSemanticValidator
 from .incremental_lexer import IncrementalLexer, IncrementalLexResult
 from .lexer import Token, TokenType
-from .semantic_checker import SemanticChecker
+from .prefix_semantic_checker import PrefixSemanticChecker
 from .token_vocab import TOKENIZER_INFO, get_token_id
 
 
@@ -40,7 +43,14 @@ class StreamStatus:
 class CangjieStreamChecker:
     """Incremental checker for the competition stdin/stdout protocol."""
 
-    def __init__(self, grammar_path: Optional[str] = None, *, preload_context: Optional[dict] = None) -> None:
+    def __init__(
+        self,
+        grammar_path: Optional[str] = None,
+        *,
+        preload_context: Optional[dict] = None,
+        context_path: Optional[str] = None,
+    ) -> None:
+        _ = preload_context
         self.lexer = IncrementalLexer()
         self._grammar_path = grammar_path or self._default_grammar_path()
         with open(self._grammar_path, "r", encoding="utf-8") as f:
@@ -48,7 +58,10 @@ class CangjieStreamChecker:
         self._compiler = GrammarCompiler(TOKENIZER_INFO, cache_enabled=False)
         self._compiled_grammar = self._compiler.compile_grammar(grammar_str)
         self._matcher = GrammarMatcher(self._compiled_grammar)
-        self._semantic = SemanticChecker(preload_context=preload_context)
+        self._semantic = BatchSemanticValidator(context_path=context_path)
+        self._prefix_semantic = PrefixSemanticChecker()
+        self._source_prefix = ""
+        self._last_semantic_source = ""
         self._accepted_token_ids: list[int] = []
         self._accepted_tokens: list[Token] = []
         self._failed = False
@@ -71,6 +84,8 @@ class CangjieStreamChecker:
         if self._failed:
             return self._last_error
 
+        if text:
+            self._source_prefix += text
         lex_result = self.lexer.feed(text)
         for token in lex_result.tokens:
             status = self._accept_complete_token(token)
@@ -83,18 +98,32 @@ class CangjieStreamChecker:
         if not status.ok:
             self._failed = True
             self._last_error = status
+            return status
+
+        prefix_status = self._prefix_semantic.validate(self._source_prefix)
+        if not prefix_status.ok:
+            status = StreamStatus(ok=False, error_type="semantic", error_message=prefix_status.message)
+            self._failed = True
+            self._last_error = status
+            return status
+
+        status = self._check_semantic_prefix(lex_result)
+        if not status.ok:
+            self._failed = True
+            self._last_error = status
         return status
 
     def _accept_complete_token(self, token: Token) -> StreamStatus:
-        token_id = get_token_id(token.type)
+        if token.type == TokenType.UNKNOWN:
+            return StreamStatus(ok=False, error_type="syntax", error_message=f"Unknown token {token.text!r}")
+        try:
+            token_id = get_token_id(token.type)
+        except Exception:
+            return StreamStatus(ok=False, error_type="syntax", error_message=f"Unsupported token {token.text!r}")
         if not self._matcher.accept_token(token_id):
             return StreamStatus(ok=False, error_type="syntax", error_message=f"Unexpected token {token.text!r}")
         if self._token_invalid_in_kw_context(token):
             return StreamStatus(ok=False, error_type="syntax", error_message=f"Invalid declaration token {token.text!r}")
-
-        sem_result = self._semantic.process(token)
-        if not sem_result.ok:
-            return StreamStatus(ok=False, error_type="semantic", error_message=sem_result.error)
 
         self._accepted_token_ids.append(token_id)
         self._accepted_tokens.append(token)
@@ -121,7 +150,28 @@ class CangjieStreamChecker:
         for token_id in self._accepted_token_ids:
             if not matcher.accept_token(token_id):
                 return False
-        return matcher.accept_token(get_token_id(token_type))
+        try:
+            token_id = get_token_id(token_type)
+        except Exception:
+            return False
+        return matcher.accept_token(token_id)
+
+    def _check_semantic_prefix(self, lex_result: IncrementalLexResult) -> StreamStatus:
+        if lex_result.remaining:
+            return StreamStatus(ok=True)
+        stable_source = self._source_prefix
+        if stable_source == self._last_semantic_source:
+            return StreamStatus(ok=True)
+        if stable_source.rstrip().endswith(")") and not stable_source.endswith(("\n", "\r", ";")):
+            return StreamStatus(ok=True)
+        self._last_semantic_source = stable_source
+
+        result = self._semantic.validate_prefix(stable_source)
+        if result.ok:
+            return StreamStatus(ok=True)
+        diag = result.diagnostic
+        message = diag.message if diag else "Semantic error"
+        return StreamStatus(ok=False, error_type="semantic", error_message=message)
 
     def _token_invalid_in_kw_context(self, token: Token) -> bool:
         entries = self._accepted_tokens + [token]
