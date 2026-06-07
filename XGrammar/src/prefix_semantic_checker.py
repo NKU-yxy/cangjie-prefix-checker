@@ -59,6 +59,7 @@ class _Context:
     interfaces: dict[str, InterfaceInfo]
     classes: dict[str, ClassInfo]
     vars: dict[str, str]
+    params: set[str]
     current_ret: str | None
     current_chunk: str
 
@@ -95,7 +96,7 @@ class PrefixSemanticChecker:
         current_ret, current_chunk, params = self._current_function_context(source)
         vars_ = dict(params)
         vars_.update(self._collect_local_vars(current_chunk))
-        return _Context(funcs, interfaces, classes, vars_, current_ret, current_chunk)
+        return _Context(funcs, interfaces, classes, vars_, set(params), current_ret, current_chunk)
 
     def _collect_functions(self, source: str) -> dict[str, list[FunctionSig]]:
         funcs: dict[str, list[FunctionSig]] = {}
@@ -237,7 +238,7 @@ class PrefixSemanticChecker:
         if m:
             ty = self._expr_type(m.group(2), ctx)
             expr = m.group(2).strip()
-            if ty and not _is_iterable(ty):
+            if ty and not _is_iterable(ty) and _for_operand_committed(expr, ctx):
                 return PrefixSemanticResult(False, f"not iterable: {ty}")
         m2 = re.search(r"\bfor\s*\(\s*([A-Za-z_]\w*)$", source.rstrip())
         if m2:
@@ -301,6 +302,9 @@ class PrefixSemanticChecker:
                 continue
             if not _compatible(aty, want):
                 return PrefixSemanticResult(False, f"expected {want}, got {aty}")
+        commit_result = self._check_generic_hof_commit(stripped, sig, explicit_args, complete_args, ctx)
+        if not commit_result.ok:
+            return commit_result
         return PrefixSemanticResult(ok=True)
 
     def _check_member_and_index_prefix(self, source: str, ctx: _Context) -> PrefixSemanticResult:
@@ -317,7 +321,7 @@ class PrefixSemanticChecker:
                 return PrefixSemanticResult(False, f"cannot index {base_ty}")
             inner = idx.group(2).strip()
             inner_ty = self._expr_type(inner, ctx) if inner else None
-            if inner_ty and not inner_ty.startswith("unknown:") and inner_ty != "Int64":
+            if inner_ty and _safe_index_mismatch(inner, inner_ty):
                 return PrefixSemanticResult(False, "index must be Int64")
 
         mem = re.search(r"(.+)\.([A-Za-z_]\w*)$", stripped)
@@ -367,6 +371,10 @@ class PrefixSemanticChecker:
     def _check_expr_against(self, expr: str, want: str, ctx: _Context) -> PrefixSemanticResult:
         if _looks_like_generic_construct_prefix(expr):
             return PrefixSemanticResult(ok=True)
+
+        lambda_result = self._check_lambdas_in_call(expr, ctx)
+        if not lambda_result.ok:
+            return lambda_result
 
         member_call = _completed_member_call(expr)
         if member_call:
@@ -428,6 +436,115 @@ class PrefixSemanticChecker:
         got = self._expr_type(expr, ctx)
         if got and _type_head(got) == "interface-type":
             return PrefixSemanticResult(False, "interface cannot be used as a value")
+        return PrefixSemanticResult(ok=True)
+
+    def _check_lambdas_in_call(self, expr: str, ctx: _Context) -> PrefixSemanticResult:
+        call = _call_expr_prefix(expr)
+        if not call:
+            return PrefixSemanticResult(ok=True)
+        callee, explicit_args, arg_text = call
+        sig = self._call_sig(callee, ctx, explicit_args)
+        if not sig:
+            return PrefixSemanticResult(ok=True)
+        subst = _subst_from_explicit(sig, explicit_args)
+        args = [a.strip() for a in _split_top_level(arg_text, ",")]
+        for idx, arg in enumerate(args):
+            if idx >= len(sig.param_types):
+                continue
+            want = _apply_subst(sig.param_types[idx], subst)
+            if not _function_type_parts(want):
+                continue
+            if explicit_args and idx == 0 and "=>" not in arg:
+                result = self._check_explicit_hof_lambda_header(arg, want)
+                if not result.ok:
+                    return result
+                continue
+            if "=>" not in arg:
+                continue
+            result = self._check_lambda_against(arg, want, ctx)
+            if not result.ok:
+                return result
+        return PrefixSemanticResult(ok=True)
+
+    def _check_generic_hof_commit(
+        self,
+        source: str,
+        sig: FunctionSig,
+        explicit_args: list[str],
+        complete_args: list[str],
+        ctx: _Context,
+    ) -> PrefixSemanticResult:
+        if explicit_args or not sig.type_params or not source.rstrip().endswith(","):
+            return PrefixSemanticResult(ok=True)
+        for tparam in sig.type_params:
+            value_positions = [
+                idx for idx, ty in enumerate(sig.param_types)
+                if _norm_type(ty) == tparam
+            ]
+            if len(value_positions) < 2:
+                continue
+            has_later_lambda = any(
+                _function_type_mentions(sig.param_types[idx], tparam)
+                for idx in range(value_positions[-1] + 1, len(sig.param_types))
+            )
+            if not has_later_lambda:
+                continue
+            commit_count = len(value_positions) - 1
+            if len(complete_args) != commit_count:
+                continue
+            inferred_types: list[str] = []
+            for pos in value_positions[:commit_count]:
+                if pos >= len(complete_args):
+                    break
+                arg = complete_args[pos]
+                if not arg or ":" in arg:
+                    break
+                aty = self._expr_type(arg, ctx)
+                if not aty or aty.startswith("unknown:"):
+                    break
+                inferred_types.append(aty)
+            if len(inferred_types) == commit_count and len({_norm_type(t) for t in inferred_types}) == 1:
+                return PrefixSemanticResult(False, f"generic inference for {tparam} is committed before lambda")
+        return PrefixSemanticResult(ok=True)
+
+    def _check_explicit_hof_lambda_header(self, expr: str, want: str) -> PrefixSemanticResult:
+        parts = _function_type_parts(want)
+        if not parts or len(parts[0]) != 1:
+            return PrefixSemanticResult(ok=True)
+        header = _lambda_header_prefix(expr)
+        if header is None:
+            return PrefixSemanticResult(ok=True)
+        if re.fullmatch(r"[A-Za-z_]\w*", header):
+            return PrefixSemanticResult(False, f"expected explicit lambda parameter type {parts[0][0]}")
+        return PrefixSemanticResult(ok=True)
+
+    def _check_lambda_against(self, expr: str, want: str, ctx: _Context) -> PrefixSemanticResult:
+        parts = _function_type_parts(want)
+        if not parts:
+            return PrefixSemanticResult(ok=True)
+        want_params, want_ret = parts
+        parsed = _parse_lambda_expr(expr)
+        if not parsed:
+            return PrefixSemanticResult(ok=True)
+        lambda_params, body = parsed
+        if len(lambda_params) != len(want_params):
+            return PrefixSemanticResult(False, "lambda arity mismatch")
+        for (_name, got_ty), want_ty in zip(lambda_params, want_params):
+            if got_ty and not _same_type(got_ty, want_ty):
+                return PrefixSemanticResult(False, f"expected {want_ty}, got {got_ty}")
+        lambda_closed = _matching_brace(expr.strip(), 0) is not None
+        ret_parts = _function_type_parts(want_ret)
+        if ret_parts:
+            nested = _first_lambda_in_body(body)
+            if nested:
+                return self._check_lambda_against(nested, want_ret, ctx)
+            return PrefixSemanticResult(ok=True)
+        if not lambda_closed:
+            return PrefixSemanticResult(ok=True)
+        body_expr = _strip_lambda_body_expr(body)
+        got = self._expr_type(body_expr, ctx)
+        if got and _safe_lambda_body_mismatch(body_expr, got, want_ret):
+            return PrefixSemanticResult(False, f"expected {want_ret}, got {got}")
         return PrefixSemanticResult(ok=True)
 
     def _expr_type(self, expr: str, ctx: _Context) -> str | None:
@@ -575,6 +692,30 @@ def _subst_from_explicit(sig: FunctionSig, explicit_args: list[str]) -> dict[str
     return {name: val for name, val in zip(sig.type_params, explicit_args)}
 
 
+def _function_type_parts(ty: str) -> tuple[list[str], str] | None:
+    ty = _norm_type(ty)
+    if not ty.startswith("("):
+        return None
+    close = _matching_paren(ty, 0)
+    if close is None:
+        return None
+    rest = ty[close + 1 :].strip()
+    if not rest.startswith("->"):
+        return None
+    params = [_norm_type(x) for x in _split_top_level(ty[1:close], ",") if x.strip()]
+    return params, _norm_type(rest[2:])
+
+
+def _function_type_mentions(ty: str, tparam: str) -> bool:
+    parts = _function_type_parts(ty)
+    if not parts:
+        return False
+    params, ret = parts
+    return any(re.search(rf"\b{re.escape(tparam)}\b", p) for p in params) or bool(
+        re.search(rf"\b{re.escape(tparam)}\b", ret)
+    )
+
+
 def _parse_type_params(text: str) -> tuple[str, ...]:
     text = text.strip()
     if text.startswith("<") and text.endswith(">"):
@@ -587,6 +728,75 @@ def _parse_type_arg_list(text: str) -> list[str]:
     if not text:
         return []
     return [_norm_type(x) for x in _split_top_level(text, ",") if x.strip()]
+
+
+def _parse_lambda_expr(expr: str) -> tuple[list[tuple[str | None, str | None]], str] | None:
+    expr = expr.strip()
+    if not expr.startswith("{"):
+        return None
+    arrow = _find_top_level_fat_arrow(expr)
+    if arrow < 0:
+        return None
+    header = expr[1:arrow].strip()
+    params: list[tuple[str | None, str | None]] = []
+    if header:
+        for part in _split_top_level(header, ","):
+            part = part.strip()
+            if not part:
+                continue
+            if ":" in part:
+                name, ty = part.split(":", 1)
+                params.append((_leading_ident(name.strip()), _norm_type(ty)))
+            else:
+                params.append((_leading_ident(part), None))
+    return params, expr[arrow + 2 :].strip()
+
+
+def _lambda_header_prefix(expr: str) -> str | None:
+    expr = expr.strip()
+    if not expr.startswith("{") or "=>" in expr:
+        return None
+    header = expr[1:].strip()
+    if not header or "," in header or ":" in header:
+        return None
+    return header
+
+
+def _find_top_level_fat_arrow(expr: str) -> int:
+    paren = bracket = brace = angle = 0
+    in_str = False
+    esc = False
+    for i, ch in enumerate(expr):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+            continue
+        if ch == "{":
+            brace += 1
+        elif ch == "}":
+            brace = max(0, brace - 1)
+        elif ch == "(":
+            paren += 1
+        elif ch == ")":
+            paren = max(0, paren - 1)
+        elif ch == "[":
+            bracket += 1
+        elif ch == "]":
+            bracket = max(0, bracket - 1)
+        elif ch == "<":
+            angle += 1
+        elif ch == ">" and angle:
+            angle -= 1
+        if brace == 1 and not (paren or bracket or angle) and expr.startswith("=>", i):
+            return i
+    return -1
 
 
 def _parse_params(text: str) -> tuple[list[str | None], list[str]]:
@@ -830,6 +1040,17 @@ def _safe_final_expr_mismatch(expr: str, got: str, want: str, ended: bool) -> bo
     return False
 
 
+def _safe_index_mismatch(expr: str, got: str) -> bool:
+    if got.startswith("unknown:") or got == "Int64":
+        return False
+    expr = expr.strip()
+    return bool(
+        re.fullmatch(r"true|false", expr)
+        or expr.startswith('"')
+        or expr.startswith("'")
+    )
+
+
 def _defer_var_rhs_mismatch(expr: str, got: str, want: str, ended: bool) -> bool:
     if ended:
         return False
@@ -869,6 +1090,19 @@ def _last_call_prefix(source: str) -> tuple[str, list[str], str] | None:
     return m.group(1), _parse_type_arg_list(m.group(2) or ""), m.group(3)
 
 
+def _call_expr_prefix(expr: str) -> tuple[str, list[str], str] | None:
+    expr = expr.strip()
+    m = re.match(r"([A-Za-z_]\w*(?:\s*<([^>(){}\n]*)>)?)\s*\(", expr, re.S)
+    if not m:
+        return None
+    open_idx = expr.find("(", m.start())
+    if open_idx < 0:
+        return None
+    close_idx = _matching_paren(expr, open_idx)
+    end = close_idx if close_idx is not None else len(expr)
+    return m.group(1), _parse_type_arg_list(m.group(2) or ""), expr[open_idx + 1 : end]
+
+
 def _completed_member_call(expr: str) -> tuple[str, str, str] | None:
     m = re.match(r"(.+)\.([A-Za-z_]\w*)\s*\((.*)\)$", expr.strip(), re.S)
     if not m:
@@ -876,8 +1110,48 @@ def _completed_member_call(expr: str) -> tuple[str, str, str] | None:
     return m.group(1).strip(), m.group(2), m.group(3)
 
 
+def _first_lambda_in_body(body: str) -> str | None:
+    idx = body.find("{")
+    if idx < 0:
+        return None
+    return body[idx:].strip()
+
+
+def _strip_lambda_body_expr(body: str) -> str:
+    body = body.strip()
+    while body.endswith("}"):
+        candidate = body[:-1].rstrip()
+        if candidate.count("{") <= candidate.count("}"):
+            body = candidate
+        else:
+            break
+    return body.strip()
+
+
+def _safe_lambda_body_mismatch(expr: str, got: str, want: str) -> bool:
+    if _compatible(got, want):
+        return False
+    expr = expr.strip()
+    return bool(
+        re.fullmatch(r"true|false", expr)
+        or re.fullmatch(r"\d[\d_]*", expr)
+        or re.fullmatch(r"\d[\d_]*\.\d*", expr)
+        or expr.startswith('"')
+        or expr.startswith("'")
+    )
+
+
 def _is_iterable(ty: str) -> bool:
     return _type_head(ty) in _ITERABLE_HEADS
+
+
+def _for_operand_committed(expr: str, ctx: _Context) -> bool:
+    expr = expr.strip()
+    if re.fullmatch(r"\d[\d_]*", expr):
+        return False
+    if re.fullmatch(r"[A-Za-z_]\w*", expr):
+        return expr in ctx.vars and expr not in ctx.params
+    return True
 
 
 def _is_indexable(ty: str) -> bool:
