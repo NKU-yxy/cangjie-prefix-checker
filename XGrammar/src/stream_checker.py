@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -171,6 +172,8 @@ class CangjieStreamChecker:
             return StreamStatus(ok=True)
         diag = result.diagnostic
         message = diag.message if diag else "Semantic error"
+        if _transient_hashmap_for_diagnostic(stable_source, message):
+            return StreamStatus(ok=True)
         return StreamStatus(ok=False, error_type="semantic", error_message=message)
 
     def _token_invalid_in_kw_context(self, token: Token) -> bool:
@@ -198,3 +201,17 @@ class CangjieStreamChecker:
         if kw_type in (TokenType.KW_CLASS, TokenType.KW_STRUCT, TokenType.KW_ENUM, TokenType.KW_INTERFACE, TokenType.KW_EXTEND):
             return {TokenType.COLON, TokenType.LBRACE, TokenType.OP_LT, TokenType.OP_LT_COLON}
         return None
+
+
+def _transient_hashmap_for_diagnostic(source: str, message: str) -> bool:
+    if "not iterable" not in message or "HashMap" not in message:
+        return False
+    hashmap_vars = {
+        m.group(1)
+        for m in re.finditer(r"\b(?:let|var)\s+([A-Za-z_]\w*)\s*:\s*HashMap\b", source)
+    }
+    for m in re.finditer(r"\bfor\s*\(\s*([A-Za-z_]\w*)\s+in\s+([A-Za-z_]\w*)\s*\)\s*\{", source):
+        bound, iterable = m.group(1), m.group(2)
+        if iterable in hashmap_vars and not re.search(rf"(?:\(\s*{re.escape(bound)}\s*\)|\b{re.escape(bound)})\s*\.", source[m.end():]):
+            return True
+    return False

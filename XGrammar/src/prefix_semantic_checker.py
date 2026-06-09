@@ -186,6 +186,8 @@ class PrefixSemanticChecker:
             name = _leading_ident(part.strip())
             if name:
                 seen.add(name)
+        if ":" not in parts[-1]:
+            return PrefixSemanticResult(ok=True)
         cur = _leading_ident(parts[-1].strip())
         if cur and cur in seen:
             return PrefixSemanticResult(False, f"duplicate parameter {cur}")
@@ -236,15 +238,22 @@ class PrefixSemanticChecker:
     def _check_for_prefix(self, source: str, ctx: _Context) -> PrefixSemanticResult:
         m = re.search(r"\bfor\s*\(\s*([A-Za-z_]\w*)\s+in\s+([^()\n{}]*)$", source.rstrip())
         if m:
-            ty = self._expr_type(m.group(2), ctx)
             expr = m.group(2).strip()
-            if ty and not _is_iterable(ty) and _for_operand_committed(expr, ctx):
+            range_result = self._check_for_range_prefix(expr, ctx)
+            if not range_result.ok:
+                return range_result
+            ty = self._expr_type(expr, ctx)
+            if ty and _type_head(ty) != "HashMap" and not _is_iterable(ty) and _for_operand_committed(expr, ctx):
                 return PrefixSemanticResult(False, f"not iterable: {ty}")
-        m2 = re.search(r"\bfor\s*\(\s*([A-Za-z_]\w*)$", source.rstrip())
-        if m2:
-            hashmaps = [t for t in ctx.vars.values() if _type_head(t) == "HashMap"]
-            if hashmaps:
-                return PrefixSemanticResult(False, "HashMap for pattern requires key/value binding")
+        return PrefixSemanticResult(ok=True)
+
+    def _check_for_range_prefix(self, expr: str, ctx: _Context) -> PrefixSemanticResult:
+        if ".." not in expr:
+            return PrefixSemanticResult(ok=True)
+        left = expr.split("..", 1)[0].strip()
+        left_ty = self._expr_type(left, ctx) if left else None
+        if left_ty and left_ty not in {"Int64", "Rune"}:
+            return PrefixSemanticResult(False, "range endpoint must be integral")
         return PrefixSemanticResult(ok=True)
 
     def _check_generic_arity_prefix(self, source: str, ctx: _Context) -> PrefixSemanticResult:
@@ -302,9 +311,6 @@ class PrefixSemanticChecker:
                 continue
             if not _compatible(aty, want):
                 return PrefixSemanticResult(False, f"expected {want}, got {aty}")
-        commit_result = self._check_generic_hof_commit(stripped, sig, explicit_args, complete_args, ctx)
-        if not commit_result.ok:
-            return commit_result
         return PrefixSemanticResult(ok=True)
 
     def _check_member_and_index_prefix(self, source: str, ctx: _Context) -> PrefixSemanticResult:
@@ -323,6 +329,11 @@ class PrefixSemanticChecker:
             inner_ty = self._expr_type(inner, ctx) if inner else None
             if inner_ty and _safe_index_mismatch(inner, inner_ty):
                 return PrefixSemanticResult(False, "index must be Int64")
+
+        if stripped.endswith("."):
+            base = _member_base_before_trailing_dot(stripped)
+            if base in _hashmap_single_for_bound_names(source, ctx):
+                return PrefixSemanticResult(False, "HashMap for pattern requires key/value binding")
 
         mem = re.search(r"(.+)\.([A-Za-z_]\w*)$", stripped)
         if mem:
@@ -426,7 +437,8 @@ class PrefixSemanticChecker:
                 if lt and not right.strip() and lt not in _NUMERIC:
                     return PrefixSemanticResult(False, "relational operator requires numeric operands")
             if op in {"==", "!="} and lt and rt and not _same_type(lt, rt):
-                return PrefixSemanticResult(False, "operands not comparable")
+                if not _string_literal_unclosed(right):
+                    return PrefixSemanticResult(False, "operands not comparable")
             if op in {"..", "..="}:
                 if lt and lt not in {"Int64", "Rune"}:
                     return PrefixSemanticResult(False, "range endpoint must be integral")
@@ -455,7 +467,7 @@ class PrefixSemanticChecker:
             if not _function_type_parts(want):
                 continue
             if explicit_args and idx == 0 and "=>" not in arg:
-                result = self._check_explicit_hof_lambda_header(arg, want)
+                result = self._check_explicit_hof_lambda_header(arg, want, ctx)
                 if not result.ok:
                     return result
                 continue
@@ -466,56 +478,19 @@ class PrefixSemanticChecker:
                 return result
         return PrefixSemanticResult(ok=True)
 
-    def _check_generic_hof_commit(
-        self,
-        source: str,
-        sig: FunctionSig,
-        explicit_args: list[str],
-        complete_args: list[str],
-        ctx: _Context,
-    ) -> PrefixSemanticResult:
-        if explicit_args or not sig.type_params or not source.rstrip().endswith(","):
-            return PrefixSemanticResult(ok=True)
-        for tparam in sig.type_params:
-            value_positions = [
-                idx for idx, ty in enumerate(sig.param_types)
-                if _norm_type(ty) == tparam
-            ]
-            if len(value_positions) < 2:
-                continue
-            has_later_lambda = any(
-                _function_type_mentions(sig.param_types[idx], tparam)
-                for idx in range(value_positions[-1] + 1, len(sig.param_types))
-            )
-            if not has_later_lambda:
-                continue
-            commit_count = len(value_positions) - 1
-            if len(complete_args) != commit_count:
-                continue
-            inferred_types: list[str] = []
-            for pos in value_positions[:commit_count]:
-                if pos >= len(complete_args):
-                    break
-                arg = complete_args[pos]
-                if not arg or ":" in arg:
-                    break
-                aty = self._expr_type(arg, ctx)
-                if not aty or aty.startswith("unknown:"):
-                    break
-                inferred_types.append(aty)
-            if len(inferred_types) == commit_count and len({_norm_type(t) for t in inferred_types}) == 1:
-                return PrefixSemanticResult(False, f"generic inference for {tparam} is committed before lambda")
-        return PrefixSemanticResult(ok=True)
-
-    def _check_explicit_hof_lambda_header(self, expr: str, want: str) -> PrefixSemanticResult:
+    def _check_explicit_hof_lambda_header(self, expr: str, want: str, ctx: _Context) -> PrefixSemanticResult:
         parts = _function_type_parts(want)
         if not parts or len(parts[0]) != 1:
             return PrefixSemanticResult(ok=True)
         header = _lambda_header_prefix(expr)
         if header is None:
             return PrefixSemanticResult(ok=True)
-        if re.fullmatch(r"[A-Za-z_]\w*", header):
-            return PrefixSemanticResult(False, f"expected explicit lambda parameter type {parts[0][0]}")
+        if ":" not in header:
+            return PrefixSemanticResult(ok=True)
+        _name, got_ty = header.split(":", 1)
+        got_ty = _norm_type(got_ty)
+        if _is_complete_type_name(got_ty, ctx) and not _same_type(got_ty, parts[0][0]):
+            return PrefixSemanticResult(False, f"expected {parts[0][0]}, got {got_ty}")
         return PrefixSemanticResult(ok=True)
 
     def _check_lambda_against(self, expr: str, want: str, ctx: _Context) -> PrefixSemanticResult:
@@ -532,19 +507,35 @@ class PrefixSemanticChecker:
         for (_name, got_ty), want_ty in zip(lambda_params, want_params):
             if got_ty and not _same_type(got_ty, want_ty):
                 return PrefixSemanticResult(False, f"expected {want_ty}, got {got_ty}")
+        local_ctx = _ctx_with_lambda_params(ctx, lambda_params, want_params)
         lambda_closed = _matching_brace(expr.strip(), 0) is not None
         ret_parts = _function_type_parts(want_ret)
         if ret_parts:
             nested = _first_lambda_in_body(body)
             if nested:
-                return self._check_lambda_against(nested, want_ret, ctx)
+                return self._check_lambda_against(nested, want_ret, local_ctx)
             return PrefixSemanticResult(ok=True)
         if not lambda_closed:
-            return PrefixSemanticResult(ok=True)
+            return self._check_lambda_body_prefix(body, want_ret, local_ctx)
         body_expr = _strip_lambda_body_expr(body)
-        got = self._expr_type(body_expr, ctx)
+        got = self._expr_type(body_expr, local_ctx)
         if got and _safe_lambda_body_mismatch(body_expr, got, want_ret):
             return PrefixSemanticResult(False, f"expected {want_ret}, got {got}")
+        return PrefixSemanticResult(ok=True)
+
+    def _check_lambda_body_prefix(self, body: str, want_ret: str, ctx: _Context) -> PrefixSemanticResult:
+        body_expr = _strip_lambda_body_expr(body)
+        binop = _find_tail_binary(body_expr)
+        if not binop:
+            return PrefixSemanticResult(ok=True)
+        left, op, right = binop
+        if right.strip():
+            return PrefixSemanticResult(ok=True)
+        left_ty = self._expr_type(left, ctx)
+        if op in {"+", "-", "*", "/", "%"} and left_ty and left_ty not in _SIGNED_NUMERIC:
+            return PrefixSemanticResult(False, f"arithmetic operator requires numeric operands, got {left_ty}")
+        if op in {"+", "-", "*", "/", "%"} and left_ty in _SIGNED_NUMERIC and want_ret not in _SIGNED_NUMERIC:
+            return PrefixSemanticResult(False, f"expected {want_ret}, got {left_ty}")
         return PrefixSemanticResult(ok=True)
 
     def _expr_type(self, expr: str, ctx: _Context) -> str | None:
@@ -716,6 +707,19 @@ def _function_type_mentions(ty: str, tparam: str) -> bool:
     )
 
 
+def _ctx_with_lambda_params(ctx: _Context, params: list[tuple[str | None, str | None]], expected: list[str]) -> _Context:
+    vars_ = dict(ctx.vars)
+    param_names = set(ctx.params)
+    for idx, (name, got_ty) in enumerate(params):
+        if not name:
+            continue
+        ty = got_ty or (expected[idx] if idx < len(expected) else None)
+        if ty:
+            vars_[name] = ty
+            param_names.add(name)
+    return _Context(ctx.funcs, ctx.interfaces, ctx.classes, vars_, param_names, ctx.current_ret, ctx.current_chunk)
+
+
 def _parse_type_params(text: str) -> tuple[str, ...]:
     text = text.strip()
     if text.startswith("<") and text.endswith(">"):
@@ -757,7 +761,7 @@ def _lambda_header_prefix(expr: str) -> str | None:
     if not expr.startswith("{") or "=>" in expr:
         return None
     header = expr[1:].strip()
-    if not header or "," in header or ":" in header:
+    if not header or "," in header:
         return None
     return header
 
@@ -1057,9 +1061,9 @@ def _defer_var_rhs_mismatch(expr: str, got: str, want: str, ended: bool) -> bool
     if got.startswith("unknown:"):
         return False
     expr = expr.strip()
-    if re.fullmatch(r"[A-Za-z_]\w*", expr):
-        return True
     if re.fullmatch(r"true|false", expr):
+        return False
+    if re.fullmatch(r"[A-Za-z_]\w*", expr):
         return True
     if re.fullmatch(r"\d[\d_]*", expr):
         return True
@@ -1072,6 +1076,25 @@ def _defer_var_rhs_mismatch(expr: str, got: str, want: str, ended: bool) -> bool
 
 def _looks_like_generic_construct_prefix(expr: str) -> bool:
     return re.search(r"\b[A-Z][A-Za-z_0-9]*\s*<[^>\n{}()]*$", expr.strip()) is not None
+
+
+def _string_literal_unclosed(expr: str) -> bool:
+    expr = expr.strip()
+    if not expr.startswith('"'):
+        return False
+    escaped = False
+    closed = False
+    for ch in expr[1:]:
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            closed = True
+            break
+    return not closed
 
 
 def _last_expr(prefix: str) -> str:
@@ -1108,6 +1131,23 @@ def _completed_member_call(expr: str) -> tuple[str, str, str] | None:
     if not m:
         return None
     return m.group(1).strip(), m.group(2), m.group(3)
+
+
+def _member_base_before_trailing_dot(source: str) -> str:
+    base = source[:-1].rstrip()
+    paren = re.search(r"\(([A-Za-z_]\w*)\)$", base)
+    if paren:
+        return paren.group(1)
+    return _strip_outer(_last_expr(base))
+
+
+def _hashmap_single_for_bound_names(source: str, ctx: _Context) -> set[str]:
+    names: set[str] = set()
+    for m in re.finditer(r"\bfor\s*\(\s*([A-Za-z_]\w*)\s+in\s+([A-Za-z_]\w*)\s*\)", source):
+        iter_name = m.group(2)
+        if _type_head(ctx.vars.get(iter_name, "")) == "HashMap":
+            names.add(m.group(1))
+    return names
 
 
 def _first_lambda_in_body(body: str) -> str | None:
@@ -1148,6 +1188,8 @@ def _is_iterable(ty: str) -> bool:
 def _for_operand_committed(expr: str, ctx: _Context) -> bool:
     expr = expr.strip()
     if re.fullmatch(r"\d[\d_]*", expr):
+        return False
+    if re.fullmatch(r"\d[\d_]*\.\d*", expr):
         return False
     if re.fullmatch(r"[A-Za-z_]\w*", expr):
         return expr in ctx.vars and expr not in ctx.params
