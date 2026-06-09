@@ -39,9 +39,8 @@ htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
-**/.claude/settings.local.json
+**/.claude/
 
 # Build artifacts
 XGrammar/solution
 XGrammar/*.zip
-Official_Cases/
