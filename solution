@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$(dirname "$0")"
-export TVM_FFI_BUILD_DOCS=1
-exec python3 solution.py "$@"
