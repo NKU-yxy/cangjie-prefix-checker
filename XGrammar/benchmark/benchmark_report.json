@@ -1,0 +1,80 @@
+{
+  "timestamp": "2026-05-22T17:23:39.304204",
+  "entries": [
+    {
+      "name": "valid/factorial.cj",
+      "source_len": 198,
+      "token_count": 48,
+      "char_check_ms": 4.232,
+      "token_check_ms": 1.258,
+      "speedup": 3.4,
+      "char_passed": true,
+      "token_passed": true,
+      "note": ""
+    },
+    {
+      "name": "valid/geometry.cj",
+      "source_len": 380,
+      "token_count": 103,
+      "char_check_ms": 7.436,
+      "token_check_ms": 2.83,
+      "speedup": 2.6,
+      "char_passed": true,
+      "token_passed": true,
+      "note": ""
+    },
+    {
+      "name": "invalid/dangling_operator.cj",
+      "source_len": 55,
+      "token_count": 18,
+      "char_check_ms": 0.409,
+      "token_check_ms": 0.419,
+      "speedup": 1.0,
+      "char_passed": false,
+      "token_passed": false,
+      "note": ""
+    },
+    {
+      "name": "invalid/missing_id.cj",
+      "source_len": 9,
+      "token_count": 3,
+      "char_check_ms": 0.008,
+      "token_check_ms": 0.077,
+      "speedup": 0.1,
+      "char_passed": false,
+      "token_passed": false,
+      "note": ""
+    },
+    {
+      "name": "benchmark/large_benchmark.cj",
+      "source_len": 7427,
+      "token_count": 1772,
+      "char_check_ms": 810.237,
+      "token_check_ms": 37.356,
+      "speedup": 21.7,
+      "char_passed": true,
+      "token_passed": false,
+      "note": ""
+    }
+  ],
+  "test_results": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "failures": []
+  },
+  "summary": {
+    "total_files": 5,
+    "total_chars": 8069,
+    "total_tokens": 1944,
+    "total_char_ms": 822.32,
+    "total_token_ms": 41.94,
+    "overall_speedup": 19.6,
+    "avg_us_per_token": 21.6,
+    "est_500_token_ms": 10.79,
+    "goal_500_token_lt_50ms": true,
+    "tests_passed": 15,
+    "tests_total": 15,
+    "tests_all_pass": true
+  }
+}
