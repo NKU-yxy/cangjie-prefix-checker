@@ -1,4 +1,47 @@
-.venv/
+# Python bytecode
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
 .DS_Store
-local_results/
+Thumbs.db
+
+# Python build / dist
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Coverage / pytest
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Jupyter
+.ipynb_checkpoints/
+**/.claude/
+
+# Build artifacts
+XGrammar/solution
+XGrammar/*.zip
+Official_Cases/
