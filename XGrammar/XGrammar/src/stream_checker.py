@@ -147,11 +147,14 @@ class CangjieStreamChecker:
         return StreamStatus(ok=False, error_type="syntax", error_message="Partial token cannot continue here")
 
     def _trial_accept(self, token_type: TokenType) -> bool:
+        matcher = GrammarMatcher(self._compiled_grammar)
+        for token_id in self._accepted_token_ids:
+            if not matcher.accept_token(token_id):
+                return False
         try:
             token_id = get_token_id(token_type)
         except Exception:
             return False
-        matcher = self._matcher.fork()
         return matcher.accept_token(token_id)
 
     def _check_semantic_prefix(self, lex_result: IncrementalLexResult) -> StreamStatus:
