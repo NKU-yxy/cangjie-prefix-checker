@@ -45,3 +45,5 @@ htmlcov/
 XGrammar/solution
 XGrammar/*.zip
 Official_Cases/
+
+local_results/
