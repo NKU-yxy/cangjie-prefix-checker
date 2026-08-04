@@ -45,11 +45,7 @@ then
 fi
 
 run_quiet python3 tools/generate_cl100k_table.py generated/cl100k_base.bin
-# The official runner starts a fresh solution process for each case.  Compile
-# the dependency-free semantic worker modules during build so the first case
-# does not pay Python source compilation and bytecode-cache write costs.
-run_quiet python3 -m compileall -q src
-
+run_quiet python3 tools/generate_context_table.py context.json generated/context.bin
 native_xgrammar_dir="$(python3 -c 'from importlib.util import find_spec; print(next(iter(find_spec("xgrammar").submodule_search_locations)))')"
 native_tvm_ffi_dir="$(python3 -c 'from importlib.util import find_spec; print(next(iter(find_spec("tvm_ffi").submodule_search_locations)))')"
 native_xgrammar_shared="$(python3 -c 'from importlib.util import find_spec; from pathlib import Path; root=Path(next(iter(find_spec("xgrammar").submodule_search_locations))); print(next(path for path in root.glob("libxgrammar_bindings.*") if path.suffix in {".so", ".dylib"}))')"
@@ -68,6 +64,7 @@ run_quiet "${native_cxx}" \
   -std=c++17 -O3 -DNDEBUG -Wall -Wextra -pedantic -pthread \
   -I"${native_xgrammar_dir}/include" \
   cpp/solution.cpp \
+  cpp/native_semantic.cpp \
   "${native_xgrammar_shared}" \
   -L"${native_tvm_ffi_dir}/lib" -ltvm_ffi -ldl \
   "${native_platform_flags[@]}" \

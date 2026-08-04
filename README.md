@@ -4,8 +4,9 @@
 
 学校：南开大学
 
-## 开发交接
+## 当前实现
 
-当前 Python/C++ 两版状态、性能数据、已知瓶颈和纯 C++ 语义引擎实施方案见
-[`TEAMMATE_HANDOFF.md`](TEAMMATE_HANDOFF.md)。接手开发前请先阅读该文档，并从
-`agent/cpp-semantic-engine` 的 AC 基线新建开发分支。
+默认 `solution` 在 `build.sh` 后为纯 C++ 运行时，不启动 Python
+worker。实现、测试、性能与回滚信息见
+[`PURE_CPP_REPORT_20260805.md`](PURE_CPP_REPORT_20260805.md)。历史 Python/C++ 混合版交接信息仍保留在
+[`TEAMMATE_HANDOFF.md`](TEAMMATE_HANDOFF.md)。
