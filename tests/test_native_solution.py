@@ -64,6 +64,26 @@ class NativeSolutionTests(unittest.TestCase):
         self.assertTrue(all(answer == "0" for answer in answers[:first_error]))
         self.assertEqual(answers[first_error:], ["1"])
 
+    def test_utf8_codepoint_split_across_cl100k_tokens(self):
+        source = 'main(): Unit { println("编译🚀") }'
+        token_bytes = [
+            self.encoding.decode_single_token_bytes(token_id)
+            for token_id in self.encoding.encode(source)
+        ]
+        self.assertTrue(
+            any(
+                payload and payload[-1] >= 0x80
+                and index + 1 < len(token_bytes)
+                and token_bytes[index + 1]
+                and token_bytes[index + 1][0] >= 0x80
+                for index, payload in enumerate(token_bytes)
+            ),
+            token_bytes,
+        )
+        answers = self.run_source(source)
+        self.assertTrue(answers)
+        self.assertTrue(all(answer == "0" for answer in answers), answers)
+
 
 if __name__ == "__main__":
     unittest.main()

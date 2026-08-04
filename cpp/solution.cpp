@@ -6,6 +6,7 @@
 // XGrammar Python cold imports from the timed process.
 
 #include <cerrno>
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -44,12 +45,12 @@ namespace {
 constexpr char kTableMagic[8] = {'C', 'J', 'T', 'K', 1, 0, 0, 0};
 constexpr std::uint32_t kMissing = 0xFFFFFFFFu;
 
-std::uint32_t read_u32(std::istream& stream) {
-    unsigned char bytes[4]{};
-    stream.read(reinterpret_cast<char*>(bytes), sizeof(bytes));
-    if (!stream) {
+std::uint32_t read_u32(std::string_view data, std::size_t* cursor) {
+    if (*cursor > data.size() || data.size() - *cursor < 4) {
         throw std::runtime_error("truncated cl100k table");
     }
+    const auto* bytes = reinterpret_cast<const unsigned char*>(data.data() + *cursor);
+    *cursor += 4;
     return static_cast<std::uint32_t>(bytes[0]) |
            (static_cast<std::uint32_t>(bytes[1]) << 8u) |
            (static_cast<std::uint32_t>(bytes[2]) << 16u) |
@@ -63,22 +64,30 @@ class TokenTable {
         if (!stream) {
             throw std::runtime_error("cannot open token table: " + path.string());
         }
-        char magic[8]{};
-        stream.read(magic, sizeof(magic));
-        if (!stream || std::memcmp(magic, kTableMagic, sizeof(magic)) != 0) {
+        const std::string data{
+            std::istreambuf_iterator<char>(stream),
+            std::istreambuf_iterator<char>()
+        };
+        if (data.size() < sizeof(kTableMagic) ||
+            std::memcmp(data.data(), kTableMagic, sizeof(kTableMagic)) != 0) {
             throw std::runtime_error("invalid cl100k table header");
         }
-        const std::uint32_t count = read_u32(stream);
-        const std::uint32_t blob_size = read_u32(stream);
+        std::size_t cursor = sizeof(kTableMagic);
+        const std::uint32_t count = read_u32(data, &cursor);
+        const std::uint32_t blob_size = read_u32(data, &cursor);
+        if (count > (data.size() - cursor) / 8) {
+            throw std::runtime_error("truncated cl100k table entries");
+        }
         entries_.reserve(count);
         for (std::uint32_t index = 0; index < count; ++index) {
-            entries_.emplace_back(read_u32(stream), read_u32(stream));
+            const std::uint32_t offset = read_u32(data, &cursor);
+            const std::uint32_t length = read_u32(data, &cursor);
+            entries_.emplace_back(offset, length);
         }
-        blob_.resize(blob_size);
-        stream.read(blob_.data(), static_cast<std::streamsize>(blob_.size()));
-        if (!stream) {
+        if (blob_size > data.size() - cursor) {
             throw std::runtime_error("truncated cl100k table payload");
         }
+        blob_.assign(data.data() + cursor, blob_size);
         for (const auto& [offset, length] : entries_) {
             if (offset != kMissing &&
                 (offset > blob_.size() || length > blob_.size() - offset)) {
@@ -181,10 +190,14 @@ class SemanticWorker {
             close_fd(child_to_parent[1]);
             const std::string script = (root / "src" / "native_semantic_worker.py").string();
             if (context_path.empty()) {
-                ::execlp("python3", "python3", script.c_str(), static_cast<char*>(nullptr));
+                ::execlp(
+                    "python3", "python3", "-S", script.c_str(),
+                    static_cast<char*>(nullptr)
+                );
             } else {
                 ::execlp(
-                    "python3", "python3", script.c_str(), "--context", context_path.c_str(),
+                    "python3", "python3", "-S", script.c_str(), "--context",
+                    context_path.c_str(),
                     static_cast<char*>(nullptr)
                 );
             }
@@ -211,23 +224,28 @@ class SemanticWorker {
     }
 
     bool check(std::string_view fragment) {
-        static constexpr char kHex[] = "0123456789abcdef";
-        std::string message;
-        message.reserve(fragment.size() * 2 + 1);
-        for (unsigned char byte : fragment) {
-            message.push_back(kHex[byte >> 4u]);
-            message.push_back(kHex[byte & 0x0fu]);
+        if (fragment.size() > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::runtime_error("semantic worker fragment is too large");
         }
-        message.push_back('\n');
+        const std::uint32_t size = static_cast<std::uint32_t>(fragment.size());
+        const char header[4] = {
+            static_cast<char>(size & 0xffu),
+            static_cast<char>((size >> 8u) & 0xffu),
+            static_cast<char>((size >> 16u) & 0xffu),
+            static_cast<char>((size >> 24u) & 0xffu),
+        };
+        std::string message;
+        message.reserve(sizeof(header) + fragment.size());
+        message.append(header, sizeof(header));
+        message.append(fragment.data(), fragment.size());
         write_all(message);
-        char answer = '\0';
-        read_exact(&answer, 1);
-        char newline = '\0';
-        read_exact(&newline, 1);
-        if ((answer != '0' && answer != '1') || newline != '\n') {
+
+        unsigned char answer = 0xffu;
+        read_exact(reinterpret_cast<char*>(&answer), 1);
+        if (answer > 1u) {
             throw std::runtime_error("invalid response from semantic worker");
         }
-        return answer == '0';
+        return answer == 0u;
     }
 
  private:
@@ -293,19 +311,20 @@ bool parse_token_id(const std::string& line, std::int64_t* output) {
     if (first == std::string::npos) {
         return false;
     }
-    std::size_t last = line.find_last_not_of(" \t\r");
-    const std::string trimmed = line.substr(first, last - first + 1);
-    std::size_t consumed = 0;
-    try {
-        const long long value = std::stoll(trimmed, &consumed, 10);
-        if (consumed != trimmed.size()) {
-            return false;
-        }
-        *output = static_cast<std::int64_t>(value);
-        return true;
-    } catch (const std::exception&) {
+    const std::size_t last = line.find_last_not_of(" \t\r");
+    const char* begin = line.data() + first;
+    const char* end = line.data() + last + 1;
+    bool explicit_positive = begin != end && *begin == '+';
+    if (explicit_positive && ++begin == end) {
         return false;
     }
+    std::int64_t value = 0;
+    const auto parsed = std::from_chars(begin, end, value, 10);
+    if (parsed.ec != std::errc{} || parsed.ptr != end) {
+        return false;
+    }
+    *output = value;
+    return true;
 }
 
 fs::path executable_root(const char* argv0) {
@@ -327,11 +346,15 @@ void emit(bool ok, bool competition_output) {
 
 int main(int argc, char** argv) {
     try {
+        std::ios::sync_with_stdio(false);
+        std::cin.tie(nullptr);
         const Args args = parse_args(argc, argv);
         const fs::path root = executable_root(argv[0]);
+        // Fork first: Python imports proceed in parallel with token-table
+        // loading and native grammar compilation, hiding worker cold start.
+        SemanticWorker semantic(root, args.context_path);
         const TokenTable token_table(root / "generated" / "cl100k_base.bin");
         NativeSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
-        SemanticWorker semantic(root, args.context_path);
 
         std::string line;
         while (std::getline(std::cin, line)) {

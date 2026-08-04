@@ -45,6 +45,10 @@ then
 fi
 
 run_quiet python3 tools/generate_cl100k_table.py generated/cl100k_base.bin
+# The official runner starts a fresh solution process for each case.  Compile
+# the dependency-free semantic worker modules during build so the first case
+# does not pay Python source compilation and bytecode-cache write costs.
+run_quiet python3 -m compileall -q src
 
 native_xgrammar_dir="$(python3 -c 'from importlib.util import find_spec; print(next(iter(find_spec("xgrammar").submodule_search_locations)))')"
 native_tvm_ffi_dir="$(python3 -c 'from importlib.util import find_spec; print(next(iter(find_spec("tvm_ffi").submodule_search_locations)))')"

@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """Lightweight semantic worker for the C++ competition entry.
 
-The parent process owns cl100k decoding and syntax transitions.  Each input
-line is one decoded fragment encoded as hexadecimal UTF-8 bytes; each output
-line follows the public harness convention (0=continuable, 1=error).
+The parent process owns cl100k decoding and syntax transitions.  Requests use
+a little-endian uint32 byte length followed by raw token bytes; responses are
+one byte (0=continuable, 1=error).  An incremental UTF-8 decoder also supports
+token boundaries that split a multi-byte source character.
 """
 
 from __future__ import annotations
 
-import argparse
-from pathlib import Path
+import codecs
+import os
 import re
 import sys
 
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from src.context_loader import find_context_path, load_context  # noqa: E402
 from src.incremental_lexer import IncrementalLexer  # noqa: E402
@@ -29,6 +30,10 @@ DECL_START = frozenset({
     TokenType.KW_CLASS, TokenType.KW_STRUCT, TokenType.KW_ENUM,
     TokenType.KW_INTERFACE, TokenType.KW_EXTEND,
 })
+GENERIC_DECL_START = frozenset({
+    TokenType.KW_FUNC, TokenType.KW_CLASS, TokenType.KW_STRUCT,
+    TokenType.KW_INTERFACE,
+})
 VALID_VAR_TAIL = frozenset({
     TokenType.COLON, TokenType.OP_ASSIGN, TokenType.SEMICOLON,
     TokenType.OP_PLUS_EQ, TokenType.OP_MINUS_EQ, TokenType.OP_MUL_EQ,
@@ -37,9 +42,6 @@ VALID_VAR_TAIL = frozenset({
     TokenType.OP_XOR_EQ, TokenType.OP_OR_EQ, TokenType.OP_ANDAND_EQ,
     TokenType.OP_OROR_EQ, TokenType.OP_INC, TokenType.OP_DEC,
 })
-DECLARED_GENERIC_HEAD_RE = re.compile(
-    r"\b(?:func|class|struct|interface)\s+([A-Za-z_]\w*)"
-)
 MALFORMED_GENERIC_CALL_RE = re.compile(
     r"\b([A-Za-z_]\w*)\s*<[^>{};\n]*\("
 )
@@ -63,11 +65,29 @@ def _invalid_declaration_context(previous: list[Token], token_type: TokenType) -
     }
 
 
+def _read_exact(stream, size: int, *, clean_eof: bool = False) -> bytes | None:
+    """Read one framed request without relying on pipe read boundaries."""
+    chunks: list[bytes] = []
+    remaining = size
+    while remaining:
+        chunk = stream.read(remaining)
+        if not chunk:
+            if clean_eof and remaining == size:
+                return None
+            raise EOFError("truncated semantic worker request")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--context", default=None)
-    args, _unknown = parser.parse_known_args()
-    context_path = find_context_path(args.context, runtime_dir=str(ROOT))
+    context_arg = None
+    try:
+        context_index = sys.argv.index("--context")
+        context_arg = sys.argv[context_index + 1]
+    except (ValueError, IndexError):
+        pass
+    context_path = find_context_path(context_arg, runtime_dir=ROOT)
     normalized_context = load_context(context_path)
     checker = PrefixSemanticChecker(normalized_context)
     known_generic_heads = {
@@ -77,27 +97,37 @@ def main() -> int:
         if isinstance(item, dict) and item.get("name")
     }
     lexer = IncrementalLexer()
+    utf8_decoder = codecs.getincrementaldecoder("utf-8")()
     previous_tokens: list[Token] = []
-    source_parts: list[str] = []
+    source = ""
     failed = False
-    for line in sys.stdin:
-        if failed:
-            print(1, flush=True)
-            continue
+    input_stream = sys.stdin.buffer
+    while True:
         try:
-            fragment = bytes.fromhex(line.strip()).decode("utf-8")
-        except (UnicodeDecodeError, ValueError):
-            print(1, flush=True)
-            failed = True
+            header = _read_exact(input_stream, 4, clean_eof=True)
+            if header is None:
+                break
+            payload_size = int.from_bytes(header, "little")
+            payload = _read_exact(input_stream, payload_size)
+            assert payload is not None
+            fragment = utf8_decoder.decode(payload, final=False)
+        except (EOFError, UnicodeDecodeError):
+            return 1
+        if failed:
+            os.write(1, b"\x01")
             continue
-        source_parts.append(fragment)
-        source = "".join(source_parts)
-        known_generic_heads.update(DECLARED_GENERIC_HEAD_RE.findall(source))
+        source += fragment
         lex_result = lexer.feed(fragment)
         for token in lex_result.tokens:
             if _invalid_declaration_context(previous_tokens, token.type):
                 failed = True
                 break
+            if (
+                token.type in (TokenType.IDENTIFIER, TokenType.RAW_IDENTIFIER)
+                and previous_tokens
+                and previous_tokens[-1].type in GENERIC_DECL_START
+            ):
+                known_generic_heads.add(token.text.strip("`"))
             previous_tokens.append(token)
             if len(previous_tokens) > 2:
                 del previous_tokens[0]
@@ -107,18 +137,18 @@ def main() -> int:
                 for candidate in lex_result.partial_candidates
             )
         if failed:
-            print(1, flush=True)
+            os.write(1, b"\x01")
             continue
-        if any(
+        if "(" in fragment and any(
             match.group(1) in known_generic_heads
             for match in MALFORMED_GENERIC_CALL_RE.finditer(source)
         ):
-            print(1, flush=True)
+            os.write(1, b"\x01")
             failed = True
             continue
         result = checker.validate(source)
         failed = not result.ok
-        print(1 if failed else 0, flush=True)
+        os.write(1, b"\x01" if failed else b"\x00")
     return 0
 
 
