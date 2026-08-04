@@ -284,13 +284,15 @@ PASSED
 python3 benchmark/production_benchmark.py --solution ./solution --mode fast
 ```
 
-再运行官方公开位置和官方 typechecker 额外程序的差分：
+再运行官方公开位置和官方 typechecker 额外程序的 C++/oracle 差分：
 
 ```text
-python3 benchmark/differential_check.py --mode fast
+python3 benchmark/differential_check.py --mode fast --solution ./solution
 
 当前本机结果：公开错误位置 `50/50`，官方额外语义程序 `45/45`；冷进程
-`total_p50≈231ms`、`p95≈249ms`。具体数值会随机器和 ARM Docker 环境变化。
+在官方 ARM Docker 中 `first-response p50≈20ms`、`total p50≈69ms`、
+`p95≈88ms`。macOS 本机约为 `p50≈91ms`、`p95≈110ms`；此前 Python
+提交版本机约为 `p50≈231ms`、`p95≈249ms`。
 ```
 
 ## 12. 重新生成提交 zip
@@ -321,6 +323,8 @@ unzip -l ../XGrammar_submit.zip | sed -n '1,40p'
 build.sh
 solution.py
 requirements.txt
+cpp/
+tools/
 src/
 grammar/
 third_party/

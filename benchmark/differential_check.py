@@ -11,6 +11,7 @@ import argparse
 import ast
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -44,6 +45,56 @@ def _official_programs(test_root: Path):
                 yield path.name, function.name, source
 
 
+def _project_programs(main_path: Path):
+    tree = ast.parse(main_path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == "test_cases"
+            for target in node.targets
+        ):
+            continue
+        try:
+            cases = ast.literal_eval(node.value)
+        except (TypeError, ValueError):
+            return
+        for name, source, expected in cases:
+            yield str(name), str(source), bool(expected)
+        return
+
+
+def _external_first_error(
+    solution: Path,
+    token_ids: list[int],
+    *,
+    mode: str,
+    context_path: Path,
+) -> tuple[int | None, str]:
+    command = [str(solution), "--semantic-mode", mode, "--context", str(context_path)]
+    proc = subprocess.run(
+        command,
+        cwd=ROOT,
+        input="".join(f"{token_id}\n" for token_id in token_ids),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=10,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return 0, f"exit={proc.returncode}: {proc.stderr.strip()[:300]}"
+    lines = [line.strip() for line in proc.stdout.splitlines()]
+    for index, answer in enumerate(lines):
+        if answer == "1":
+            return index, ""
+        if answer != "0":
+            return index, f"invalid answer {answer!r}"
+    if len(lines) != len(token_ids):
+        return len(lines), f"expected {len(token_ids)} responses, got {len(lines)}"
+    return None, ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -55,6 +106,12 @@ def main() -> int:
         "--mode",
         choices=("fast", "checkpoint", "legacy"),
         default="fast",
+    )
+    parser.add_argument(
+        "--solution",
+        type=Path,
+        default=None,
+        help="Run an external protocol executable instead of the Python checker.",
     )
     args = parser.parse_args()
 
@@ -81,15 +138,24 @@ def main() -> int:
         source = (official / "wrong" / f"{item['name']}.cj").read_text(
             encoding="utf-8"
         )
-        checker = CangjieStreamChecker(
-            semantic_mode=args.mode,
-            context_path=str(context_path),
-        )
-        first_error = None
-        for index, token_id in enumerate(encoding.encode(source)):
-            if not checker.feed_text(encoding.decode([token_id])).ok:
-                first_error = index
-                break
+        token_ids = encoding.encode(source)
+        if args.solution:
+            first_error, protocol_error = _external_first_error(
+                args.solution.resolve(), token_ids, mode=args.mode,
+                context_path=context_path,
+            )
+            if protocol_error:
+                failures.append(f"{item['name']}: {protocol_error}")
+        else:
+            checker = CangjieStreamChecker(
+                semantic_mode=args.mode,
+                context_path=str(context_path),
+            )
+            first_error = None
+            for index, token_id in enumerate(token_ids):
+                if not checker.feed_text(encoding.decode([token_id])).ok:
+                    first_error = index
+                    break
         expected = int(item["first_error_token_index"])
         if first_error != expected:
             failures.append(
@@ -111,16 +177,26 @@ def main() -> int:
             # semantic corpus.  The token grammar tests those separately.
             continue
         corpus_total += 1
-        checker = CangjieStreamChecker(
-            semantic_mode=args.mode,
-            context_path=str(context_path),
-        )
-        actual = True
-        for token_id in encoding.encode(source):
-            status = checker.feed_text(encoding.decode([token_id]))
-            if not status.ok:
-                actual = False
-                break
+        token_ids = encoding.encode(source)
+        if args.solution:
+            first_error, protocol_error = _external_first_error(
+                args.solution.resolve(), token_ids, mode=args.mode,
+                context_path=context_path,
+            )
+            actual = first_error is None
+            if protocol_error:
+                failures.append(f"{filename}:{test_name}: {protocol_error}")
+        else:
+            checker = CangjieStreamChecker(
+                semantic_mode=args.mode,
+                context_path=str(context_path),
+            )
+            actual = True
+            for token_id in token_ids:
+                status = checker.feed_text(encoding.decode([token_id]))
+                if not status.ok:
+                    actual = False
+                    break
         if actual == expected:
             corpus_matched += 1
         else:
@@ -128,14 +204,35 @@ def main() -> int:
                 f"{filename}:{test_name}: expected valid={expected}, got {actual}"
             )
 
+    project_total = 0
+    project_matched = 0
+    if args.solution:
+        for test_name, source, expected in _project_programs(ROOT / "main.py"):
+            project_total += 1
+            first_error, protocol_error = _external_first_error(
+                args.solution.resolve(), encoding.encode(source), mode=args.mode,
+                context_path=context_path,
+            )
+            actual = first_error is None
+            if not protocol_error and actual == expected:
+                project_matched += 1
+            else:
+                detail = f"; {protocol_error}" if protocol_error else ""
+                failures.append(
+                    f"main.py:{test_name}: expected valid={expected}, got {actual}{detail}"
+                )
+
     summary = {
         "mode": args.mode,
+        "solution": str(args.solution) if args.solution else "python-in-process",
         "public_exact": len(registry) - sum(
             1 for item in failures if item.startswith("err_")
         ),
         "public_total": len(registry),
         "oracle_corpus_matched": corpus_matched,
         "oracle_corpus_total": corpus_total,
+        "project_corpus_matched": project_matched,
+        "project_corpus_total": project_total,
         "failures": len(failures),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))

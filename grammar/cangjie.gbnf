@@ -3,8 +3,7 @@
 # For XGrammar-based syntax checking
 # Based on Cangjie Language Specification v0.53.x
 #
-# NOTE: Comments are stripped before grammar checking.
-# Newlines (\n, \r) must be used as string literals, NOT inside
+# NOTE: Newlines (\n, \r) must be used as string literals, NOT inside
 # character classes (GBNF limitation).
 # ============================================================
 
@@ -15,11 +14,19 @@
 # Single whitespace character (space, tab, or newline/cr as strings)
 ws_char ::= [ \t] | "\n" | "\r"
 
+# Comments are whitespace. Block comments are recursive because Cangjie
+# permits nesting; keeping them in the PDA avoids a separate native
+# preprocessor and preserves arbitrary BPE fragment boundaries.
+line_comment ::= "//" [^\n\r]*
+block_comment_char ::= [^*/] | "/" [^*] | "*" [^/]
+block_comment ::= "/*" (block_comment | block_comment_char)* "*/"
+ws_item ::= ws_char | line_comment | block_comment
+
 # Optional whitespace
-ws ::= ws_char*
+ws ::= ws_item*
 
 # Required whitespace (at least one)
-ws_req ::= ws_char+
+ws_req ::= ws_item+
 
 # -----------------------------------------------------------
 # 1. Lexical Elements
@@ -90,8 +97,10 @@ primitive_type ::= "Int8" | "Int16" | "Int32" | "Int64" | "IntNative"
 # Type reference (can be primitive or user-defined)
 type_name ::= any_identifier ("." any_identifier)*
 
-# Array type: Array<T> or T[]
-array_type ::= "Array" ws "<" ws type ws ">" | type ws "[" ws "]"
+# Nominal/generic and array types: Box<T>, Array<T>, or T[]
+type_arguments ::= "<" ws type (ws "," ws type)* ws ">"
+nominal_type ::= type_name (ws type_arguments)?
+array_type ::= nominal_type ws "[" ws "]"
 
 # Function type: (T1, T2) -> TRet
 func_type_param_list ::= type (ws "," ws type)*
@@ -104,7 +113,7 @@ nullable_type ::= type ws "?"
 tuple_type ::= "(" ws type (ws "," ws type)+ ws ")"
 
 # Any type expression
-type ::= primitive_type | func_type | array_type | nullable_type | tuple_type | type_name
+type ::= primitive_type | func_type | array_type | nullable_type | tuple_type | nominal_type
 
 # -----------------------------------------------------------
 # 3. Expressions
@@ -112,6 +121,7 @@ type ::= primitive_type | func_type | array_type | nullable_type | tuple_type | 
 
 # Primary expressions
 primary ::= literal
+         | generic_construct
          | any_identifier
          | "(" ws expression ws ")"
          | "this"
@@ -119,6 +129,9 @@ primary ::= literal
          | array_literal
          | tuple_literal
          | lambda_expression
+         | block
+
+generic_construct ::= type_name ws type_arguments ws "(" ws argument_list? ws ")"
 
 # Array literal: [expr1, expr2, ...]
 array_literal ::= "[" ws (expression (ws "," ws expression)*)? ws ","? ws "]"
@@ -128,8 +141,9 @@ tuple_expr_item ::= ws expression ws ","? ws
 tuple_literal ::= "(" ws expression ws "," ws expression (ws "," ws expression)* ws ")"
 
 # Lambda: { (params) => body }
-lambda_param_list ::= any_identifier (ws "," ws any_identifier)*
-lambda_expression ::= "{" ws lambda_param_list? ws "=>" ws expression ws "}"
+lambda_param ::= any_identifier (ws ":" ws type)?
+lambda_param_list ::= lambda_param (ws "," ws lambda_param)*
+lambda_expression ::= "{" ws lambda_param_list? ws "=>" ws (expression | block) ws "}"
 
 # Struct/object init: { field1: val1, field2: val2, ... }
 struct_init_field ::= any_identifier ws ":" ws expression
@@ -144,7 +158,8 @@ postfix_op ::= "." ws any_identifier
              | ws "{" ws struct_init_fields ws "}"
 
 # Argument list
-argument_list ::= expression (ws "," ws expression)*
+argument ::= any_identifier ws ":" ws expression | expression
+argument_list ::= argument (ws "," ws argument)*
 
 # Unary expressions
 unary_expr ::= ("-" | "!" | "++" | "--") ws unary_expr | postfix_expr
@@ -153,7 +168,7 @@ unary_expr ::= ("-" | "!" | "++" | "--") ws unary_expr | postfix_expr
 multiplicative_expr ::= unary_expr (ws ("*" | "/" | "%" | "**") ws unary_expr)*
 additive_expr ::= multiplicative_expr (ws ("+" | "-") ws multiplicative_expr)*
 shift_expr ::= additive_expr (ws ("<<" | ">>") ws additive_expr)*
-range_expr ::= shift_expr (ws (".." | "..=") ws shift_expr)?
+range_expr ::= shift_expr (ws (".." | "..=") ws shift_expr (ws ":" ws shift_expr)?)?
 comparison_expr ::= range_expr (ws ("<=" | ">=" | "<" | ">") ws range_expr)*
 type_check_expr ::= comparison_expr (ws ("is" | "as") ws type)?
 equality_expr ::= type_check_expr (ws ("==" | "!=") ws type_check_expr)*
@@ -180,13 +195,15 @@ expression ::= assignment_expr
 expr_stmt ::= expression ws ";"?
 
 # Variable declaration
-var_decl ::= ("var" | "let") ws_req any_identifier (ws ":" ws type)? (ws "=" ws expression)? ws ";"?
+var_decl ::= ("var" | "let") ws_req any_identifier
+             ((ws ":" ws type (ws "=" ws expression)?) | (ws "=" ws expression))
+             ws ";"?
 
 # Assignment statement (non-declaration)
 assign_stmt ::= expression ws assignment_op ws expression ws ";"?
 
 # Block statement (recursive to avoid nested-brace ambiguity with *)
-block ::= "{" ws statements ws "}"
+block ::= "{" ws "}" | "{" ws statements ws "}"
 statements ::= statement (ws statements)?
 
 # If statement
@@ -251,26 +268,31 @@ func_param ::= any_identifier ws ":" ws type (ws "=" ws expression)?
 func_param_list ::= func_param (ws "," ws func_param)*
 
 # Function declaration
-func_decl ::= "func" ws_req any_identifier ws "(" ws func_param_list? ws ")" ws (":" ws type)? ws block
+func_decl ::= ("public" | "private")? ws ("static" ws_req)? "func" ws_req any_identifier ws type_arguments? ws "(" ws func_param_list? ws ")" ws (":" ws type)? ws block
 
 # Field declaration
-field_decl ::= any_identifier ws ":" ws type (ws "=" ws expression)? ws ";"?
+field_decl ::= ("public" | "private")? ws ("static" ws_req)? (("var" | "let") ws_req)? any_identifier ws ":" ws type (ws "=" ws expression)? ws ";"?
+
+# Constructor definition
+constructor_decl ::= ("public" | "private")? ws "init" ws "(" ws func_param_list? ws ")" ws block
 
 # Class member
-class_member ::= field_decl | func_decl
+class_member ::= constructor_decl | func_decl | field_decl
 
 # Class members (recursive)
 class_members ::= class_member (ws class_members)?
 
 # Class declaration
-class_parents ::= ws ":" ws type (ws "," ws type)*
-class_decl ::= "class" ws_req any_identifier class_parents? ws "{" ws class_members ws "}"
+class_parents ::= ws "<:" ws type (ws "&" ws type)*
+class_decl ::= ("public" ws_req)? "class" ws_req any_identifier ws type_arguments? class_parents? ws
+               ("{" ws "}" | "{" ws class_members ws "}")
 
 # Fields (recursive)
 fields ::= field_decl (ws fields)?
 
 # Struct declaration
-struct_decl ::= "struct" ws_req any_identifier class_parents? ws "{" ws fields ws "}"
+struct_decl ::= ("public" ws_req)? "struct" ws_req any_identifier ws type_arguments? class_parents? ws
+                ("{" ws "}" | "{" ws fields ws "}")
 
 # Enum case
 enum_case ::= any_identifier (ws "=" ws expression)?
@@ -279,23 +301,24 @@ enum_case ::= any_identifier (ws "=" ws expression)?
 enum_decl ::= "enum" ws_req any_identifier (ws ":" ws type)? ws "{" ws enum_case (ws "," ws enum_case)* ws ","? ws "}"
 
 # Interface method (signature without body)
-interface_method ::= "func" ws_req any_identifier ws "(" ws func_param_list? ws ")" ws (":" ws type)? ws ";"?
+interface_method ::= "func" ws_req any_identifier ws type_arguments? ws "(" ws func_param_list? ws ")" ws ":" ws type ws ";"?
 
 # Interface members (recursive)
 interface_methods ::= interface_method (ws interface_methods)?
 
 # Interface declaration
-interface_decl ::= "interface" ws_req any_identifier class_parents? ws "{" ws interface_methods ws "}"
+interface_decl ::= ("public" ws_req)? "interface" ws_req any_identifier ws type_arguments? class_parents? ws
+                   ("{" ws "}" | "{" ws interface_methods ws "}")
 
 # Extension declaration
-extend_decl ::= "extend" ws_req type class_parents? ws "{" ws class_members ws "}"
+extend_decl ::= ("public" ws_req)? "extend" ws_req type class_parents? ws "{" ws class_members ws "}"
 
 # Operator overload
 operator_decl ::= "operator" ws_req "(" ws operator_token ws ")" ws "(" ws func_param_list? ws ")" ws (":" ws type)? ws block
 operator_token ::= "+" | "-" | "*" | "/" | "%" | "**" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "[]" | "()"
 
 # Main entry point (can omit "func" keyword)
-main_decl ::= "main" ws "(" ws func_param_list? ws ")" ws block
+main_decl ::= "main" ws "(" ws func_param_list? ws ")" ws (":" ws type)? ws block
 
 # All declarations
 declaration ::= func_decl

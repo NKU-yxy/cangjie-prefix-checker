@@ -2,3 +2,5 @@
 __pycache__/
 .DS_Store
 local_results/
+generated/
+solution_cpp
