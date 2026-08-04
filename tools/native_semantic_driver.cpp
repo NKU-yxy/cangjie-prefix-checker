@@ -1,4 +1,5 @@
 #include <cctype>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -37,7 +38,12 @@ int main(int argc, char** argv) {
         while (std::getline(std::cin, line)) {
             const cangjie::CheckStatus status = checker.Check(decode_hex(line));
             std::cout << (status.ok ? 0 : 1) << '\n';
-            if (!status.ok) break;
+            if (!status.ok) {
+                if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
+                    std::cerr << status.message << '\n';
+                }
+                break;
+            }
         }
         return 0;
     } catch (const std::exception& error) {

@@ -26,8 +26,43 @@ bool IsIdentContinue(unsigned char ch) {
     return std::isalnum(ch) || ch == '_';
 }
 
+bool IsIdentifierText(std::string_view text) {
+    if (text.empty() || !IsIdentStart(static_cast<unsigned char>(text.front()))) return false;
+    return std::all_of(text.begin() + 1, text.end(), [](unsigned char ch) {
+        return IsIdentContinue(ch);
+    });
+}
+
+bool IsDecimalIntegerText(std::string_view text) {
+    return !text.empty() && std::all_of(text.begin(), text.end(), [](unsigned char ch) {
+        return std::isdigit(ch);
+    });
+}
+
+bool IsDecimalNumberText(std::string_view text) {
+    if (text.empty()) return false;
+    bool saw_digit = false;
+    bool saw_dot = false;
+    for (unsigned char ch : text) {
+        if (std::isdigit(ch)) {
+            saw_digit = true;
+        } else if (ch == '.' && !saw_dot) {
+            saw_dot = true;
+        } else {
+            return false;
+        }
+    }
+    return saw_digit && text.front() != '.';
+}
+
 bool StartsWith(std::string_view text, std::string_view prefix) {
     return text.size() >= prefix.size() && text.substr(0, prefix.size()) == prefix;
+}
+
+bool StartsWithKeyword(std::string_view text, std::string_view keyword) {
+    return StartsWith(text, keyword) &&
+        (text.size() == keyword.size() ||
+         !IsIdentContinue(static_cast<unsigned char>(text[keyword.size()])));
 }
 
 std::string Trim(std::string_view input) {
@@ -786,17 +821,46 @@ std::vector<std::string> ParseSupers(std::string_view header) {
     return output;
 }
 
+bool HasMultilineFunctionHeader(std::string_view source) {
+    std::size_t search_from = 0;
+    while (search_from < source.size()) {
+        const std::size_t func = source.find("func ", search_from);
+        const std::size_t main = source.find("main", search_from);
+        std::size_t start = std::min(func, main);
+        if (start == std::string_view::npos) start = std::max(func, main);
+        if (start == std::string_view::npos) return false;
+        const std::size_t brace = source.find('{', start);
+        const std::size_t newline = source.find_first_of("\n\r", start);
+        if (newline != std::string_view::npos &&
+            (brace == std::string_view::npos || newline < brace)) {
+            return true;
+        }
+        search_from = start + 1;
+    }
+    return false;
+}
+
 void CollectFunctions(std::string_view source, Model* model) {
-    static const std::regex function_pattern(
+    static const std::regex single_line_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{}\n]+?)\s*\{)"
     );
+    static const std::regex multiline_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*:\s*([^{}]+?)\s*\{)"
+    );
     const std::string owned(source);
-    for (std::sregex_iterator it(owned.begin(), owned.end(), function_pattern), end; it != end; ++it) {
-        FunctionSig sig = ParseFunctionSignature(
-            (*it)[1].str(), (*it)[2].str(), (*it)[3].str(), (*it)[4].str()
-        );
-        model->functions[sig.name].push_back(std::move(sig));
-    }
+    auto collect = [&](const std::regex& pattern, bool multiline_only) {
+        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end; it != end; ++it) {
+            if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
+                continue;
+            }
+            FunctionSig sig = ParseFunctionSignature(
+                (*it)[1].str(), (*it)[2].str(), (*it)[3].str(), (*it)[4].str()
+            );
+            model->functions[sig.name].push_back(std::move(sig));
+        }
+    };
+    collect(single_line_pattern, false);
+    if (HasMultilineFunctionHeader(source)) collect(multiline_pattern, true);
 }
 
 void CollectImports(std::string_view source, Model* model) {
@@ -812,10 +876,13 @@ void CollectImports(std::string_view source, Model* model) {
 
 void CollectNominals(std::string_view source, Model* model) {
     static const std::regex nominal_pattern(
-        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?([^{}]*)\{)"
+        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
     );
-    static const std::regex method_pattern(
-        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{};\n]+))"
+    static const std::regex single_line_method_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{};\n]*[^\s{};\n]))"
+    );
+    static const std::regex multiline_method_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*:\s*([^{};\n]*[^\s{};\n]))"
     );
     static const std::regex field_pattern(
         R"(\b(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^={}\n]+))"
@@ -824,6 +891,7 @@ void CollectNominals(std::string_view source, Model* model) {
         R"(\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()\n]+>)?))"
     );
     static const std::regex init_pattern(R"(\binit\s*\(([^{};\n]*)\))");
+    static const std::regex let_or_var_prefix(R"(\b(?:let|var)\s*$)");
     const std::string owned(source);
     for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end; it != end; ++it) {
         const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
@@ -836,20 +904,30 @@ void CollectNominals(std::string_view source, Model* model) {
         info.type_params = ParseTypeParameters((*it)[3].str());
         info.supers = ParseSupers((*it)[4].str());
 
-        for (std::sregex_iterator method(body.begin(), body.end(), method_pattern), method_end;
-             method != method_end; ++method) {
-            FunctionSig sig = ParseFunctionSignature(
-                (*method)[1].str(), (*method)[2].str(), (*method)[3].str(), (*method)[4].str()
-            );
-            const std::size_t method_pos = static_cast<std::size_t>((*method).position());
-            const std::size_t prefix_start = body.rfind('\n', method_pos);
-            const std::string prefix = body.substr(
-                prefix_start == std::string::npos ? 0 : prefix_start + 1,
-                method_pos - (prefix_start == std::string::npos ? 0 : prefix_start + 1)
-            );
-            sig.is_static = prefix.find("static") != std::string::npos;
-            auto& methods = sig.is_static ? info.static_methods : info.methods;
-            methods[sig.name].push_back(std::move(sig));
+        auto collect_methods = [&](const std::regex& pattern, bool multiline_only) {
+            for (std::sregex_iterator method(body.begin(), body.end(), pattern), method_end;
+                 method != method_end; ++method) {
+                if (multiline_only &&
+                    (*method)[0].str().find_first_of("\n\r") == std::string::npos) {
+                    continue;
+                }
+                FunctionSig sig = ParseFunctionSignature(
+                    (*method)[1].str(), (*method)[2].str(), (*method)[3].str(), (*method)[4].str()
+                );
+                const std::size_t method_pos = static_cast<std::size_t>((*method).position());
+                const std::size_t prefix_start = body.rfind('\n', method_pos);
+                const std::string prefix = body.substr(
+                    prefix_start == std::string::npos ? 0 : prefix_start + 1,
+                    method_pos - (prefix_start == std::string::npos ? 0 : prefix_start + 1)
+                );
+                sig.is_static = prefix.find("static") != std::string::npos;
+                auto& methods = sig.is_static ? info.static_methods : info.methods;
+                methods[sig.name].push_back(std::move(sig));
+            }
+        };
+        collect_methods(single_line_method_pattern, false);
+        if (HasMultilineFunctionHeader(body)) {
+            collect_methods(multiline_method_pattern, true);
         }
         for (std::sregex_iterator field(body.begin(), body.end(), field_pattern), field_end;
              field != field_end; ++field) {
@@ -880,7 +958,7 @@ void CollectNominals(std::string_view source, Model* model) {
                     line_start == std::string::npos ? 0 : line_start + 1,
                     position - (line_start == std::string::npos ? 0 : line_start + 1)
                 );
-                if (!std::regex_search(prefix, std::regex(R"(\b(?:let|var)\s*$)"))) {
+                if (!std::regex_search(prefix, let_or_var_prefix)) {
                     info.fields.emplace((*field)[1].str(), CompactType((*field)[2].str()));
                 }
             }
@@ -931,27 +1009,41 @@ struct FunctionContext {
 };
 
 FunctionContext CurrentFunctionContext(std::string_view source) {
-    static const std::regex function_pattern(
+    static const std::regex single_line_pattern(
         R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
+    );
+    static const std::regex multiline_pattern(
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
     );
     const std::string owned(source);
     FunctionContext best;
     std::size_t best_open = std::string::npos;
     std::optional<std::size_t> best_close;
-    for (std::sregex_iterator it(owned.begin(), owned.end(), function_pattern), end; it != end; ++it) {
-        const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
-        if (open < best_open && best_open != std::string::npos) continue;
-        best_open = open;
-        best_close = MatchingDelimiter(owned, open, '{', '}');
-        best.in_function = true;
-        best.is_main = StartsWith(Trim((*it)[0].str()), "main");
-        best.result = CompactType((*it)[2].matched ? (*it)[2].str() : "Unit");
-        const FunctionSig params = ParseFunctionSignature("", {}, (*it)[1].str(), best.result);
-        for (std::size_t index = 0; index < params.param_names.size(); ++index) {
-            best.variables[params.param_names[index]] = params.param_types[index];
-            best.immutable.insert(params.param_names[index]);
+    auto inspect = [&](const std::regex& pattern, bool multiline_only) {
+        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end; it != end; ++it) {
+            if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
+                continue;
+            }
+            const std::size_t open = static_cast<std::size_t>(
+                (*it).position() + (*it).length() - 1
+            );
+            if (best_open != std::string::npos && open < best_open) continue;
+            best_open = open;
+            best_close = MatchingDelimiter(owned, open, '{', '}');
+            best.in_function = true;
+            best.is_main = StartsWith(Trim((*it)[0].str()), "main");
+            best.result = CompactType((*it)[2].matched ? (*it)[2].str() : "Unit");
+            best.variables.clear();
+            best.immutable.clear();
+            const FunctionSig params = ParseFunctionSignature("", {}, (*it)[1].str(), best.result);
+            for (std::size_t index = 0; index < params.param_names.size(); ++index) {
+                best.variables[params.param_names[index]] = params.param_types[index];
+                best.immutable.insert(params.param_names[index]);
+            }
         }
-    }
+    };
+    inspect(single_line_pattern, false);
+    if (HasMultilineFunctionHeader(source)) inspect(multiline_pattern, true);
     if (best_open == std::string::npos) {
         best.body = owned;
         return best;
@@ -979,6 +1071,75 @@ void CollectLocalVariables(FunctionContext* context) {
          it != end; ++it) {
         context->variables[(*it)[2].str()] = CompactType((*it)[3].str());
         if ((*it)[1].str() == "let") context->immutable.insert((*it)[2].str());
+    }
+}
+
+void CollectActiveLambdaVariables(FunctionContext* context) {
+    struct BraceFrame {
+        std::size_t open = 0;
+        bool lambda = false;
+        std::string parameters;
+    };
+    std::vector<BraceFrame> stack;
+    bool in_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    for (std::size_t index = 0; index < context->body.size(); ++index) {
+        const char ch = context->body[index];
+        const char next = index + 1 < context->body.size() ? context->body[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') line_comment = false;
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+        } else if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+        } else if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            stack.push_back({index, false, {}});
+        } else if (ch == '=' && next == '>' && !stack.empty()) {
+            BraceFrame& frame = stack.back();
+            frame.lambda = true;
+            frame.parameters = Trim(std::string_view(context->body).substr(
+                frame.open + 1, index - frame.open - 1
+            ));
+            ++index;
+        } else if (ch == '}' && !stack.empty()) {
+            stack.pop_back();
+        }
+    }
+    for (const BraceFrame& frame : stack) {
+        if (!frame.lambda) continue;
+        for (const std::string& raw_parameter : SplitTopLevel(frame.parameters, ',')) {
+            const std::size_t colon = FindTopLevel(raw_parameter, ":");
+            std::string name = Trim(std::string_view(raw_parameter).substr(0, colon));
+            if (!IsIdentifierText(name)) continue;
+            const std::string type = colon == std::string::npos
+                ? "?" : CompactType(std::string_view(raw_parameter).substr(colon + 1));
+            context->variables[name] = type.empty() ? "?" : type;
+            context->immutable.insert(name);
+        }
     }
 }
 
@@ -1070,32 +1231,81 @@ bool KnownDeclaredType(
     return true;
 }
 
+std::unordered_set<std::string> EnclosingNominalTypeParameters(
+    std::string_view source,
+    std::size_t position
+) {
+    static const std::regex nominal_pattern(
+        R"(\b(?:class|interface)\s+[A-Za-z_][A-Za-z0-9_]*\s*(<[^:>{}()]*>)?[^{}]*\{)"
+    );
+    const std::string owned(source);
+    std::size_t nearest_open = std::string::npos;
+    std::vector<std::string> nearest;
+    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end; it != end; ++it) {
+        const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
+        if (open >= position) continue;
+        const auto close = MatchingDelimiter(owned, open, '{', '}');
+        if (close && *close < position) continue;
+        if (nearest_open == std::string::npos || open > nearest_open) {
+            nearest_open = open;
+            nearest = ParseTypeParameters((*it)[1].str());
+        }
+    }
+    return std::unordered_set<std::string>(nearest.begin(), nearest.end());
+}
+
 CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
-    static const std::regex function_pattern(
+    static const std::regex single_line_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
     );
+    static const std::regex multiline_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
+    );
     static const std::regex nominal_pattern(
-        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?([^{}]*)\{)"
+        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
     );
     static const std::unordered_set<std::string> primitives = {
         "Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
         "Bool", "Rune", "String", "Unit"
     };
     const std::string owned(source);
-    for (std::sregex_iterator it(owned.begin(), owned.end(), function_pattern), end; it != end; ++it) {
-        const auto params = ParseTypeParameters((*it)[2].str());
-        const std::unordered_set<std::string> allowed(params.begin(), params.end());
-        for (const std::string& parameter : params) {
-            if (primitives.count(parameter)) return {false, "type parameter conflicts with primitive"};
+    auto check_functions = [&](const std::regex& pattern, bool multiline_only) -> CheckStatus {
+        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end; it != end; ++it) {
+            if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
+                continue;
+            }
+            const auto params = ParseTypeParameters((*it)[2].str());
+            std::unordered_set<std::string> allowed = EnclosingNominalTypeParameters(
+                owned, static_cast<std::size_t>((*it).position())
+            );
+            allowed.insert(params.begin(), params.end());
+            for (const std::string& parameter : params) {
+                if (primitives.count(parameter)) {
+                    return {false, "type parameter conflicts with primitive"};
+                }
+            }
+            FunctionSig sig = ParseFunctionSignature(
+                (*it)[1].str(), (*it)[2].str(), (*it)[3].str(),
+                (*it)[4].matched ? (*it)[4].str() : "Unit"
+            );
+            for (const std::string& type : sig.param_types) {
+                if (!KnownDeclaredType(type, model, allowed)) {
+                    return {false, "unknown parameter type"};
+                }
+            }
+            if (!KnownDeclaredType(sig.result, model, allowed)) {
+                return {false, "unknown return type"};
+            }
         }
-        FunctionSig sig = ParseFunctionSignature(
-            (*it)[1].str(), (*it)[2].str(), (*it)[3].str(),
-            (*it)[4].matched ? (*it)[4].str() : "Unit"
-        );
-        for (const std::string& type : sig.param_types) {
-            if (!KnownDeclaredType(type, model, allowed)) return {false, "unknown parameter type"};
+        return {};
+    };
+    if (CheckStatus status = check_functions(single_line_pattern, false); !status.ok) {
+        return status;
+    }
+    if (HasMultilineFunctionHeader(source)) {
+        if (CheckStatus status = check_functions(multiline_pattern, true); !status.ok) {
+            return status;
         }
-        if (!KnownDeclaredType(sig.result, model, allowed)) return {false, "unknown return type"};
     }
     for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end; it != end; ++it) {
         const auto params = ParseTypeParameters((*it)[3].str());
@@ -1110,18 +1320,179 @@ CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
     return {};
 }
 
-std::string ActiveLine(std::string_view source) {
-    std::size_t end = source.size();
-    while (end > 0 && std::isspace(static_cast<unsigned char>(source[end - 1]))) --end;
-    while (end > 0 && (source[end - 1] == '\n' || source[end - 1] == '\r' || source[end - 1] == ';')) --end;
-    while (end > 0 && std::isspace(static_cast<unsigned char>(source[end - 1]))) --end;
-    const std::size_t newline = source.rfind('\n', end == 0 ? 0 : end - 1);
-    const std::size_t semicolon = source.rfind(';', end == 0 ? 0 : end - 1);
-    std::size_t start = 0;
-    if (newline != std::string::npos) start = newline + 1;
-    if (semicolon != std::string::npos && semicolon + 1 > start) start = semicolon + 1;
-    return Trim(source.substr(start, end - start));
+bool ContinuesAfterNewline(std::string_view statement) {
+    const std::string trimmed = Trim(statement);
+    if (trimmed.empty()) return false;
+    static const std::vector<std::string> suffixes = {
+        "=", "=>", "+", "-", "*", "/", "%", "==", "!=", "<", ">",
+        "<=", ">=", "&&", "||", "..", "..=", ",", ":", ".", "<:"
+    };
+    return std::any_of(suffixes.begin(), suffixes.end(), [&](const std::string& suffix) {
+        return trimmed.size() >= suffix.size() &&
+            trimmed.compare(trimmed.size() - suffix.size(), suffix.size(), suffix) == 0;
+    });
 }
+
+class ActiveStatementCache {
+ public:
+    void Reset() {
+        body_start_ = std::string_view::npos;
+        cursor_ = 0;
+        statement_start_ = 0;
+        last_start_ = std::string_view::npos;
+        last_end_ = 0;
+        paren_ = 0;
+        bracket_ = 0;
+        brace_ = 0;
+        in_string_ = false;
+        escaped_ = false;
+        line_comment_ = false;
+        block_comment_depth_ = 0;
+    }
+
+    std::string Update(
+        std::string_view source,
+        std::size_t body_start,
+        std::size_t body_end
+    ) {
+        body_end = std::min(body_end, source.size());
+        if (body_start_ != body_start || cursor_ > body_end) Initialize(body_start);
+        while (cursor_ < body_end) {
+            const std::size_t index = cursor_;
+            const char ch = source[index];
+            const bool has_next = index + 1 < body_end;
+            const char next = has_next ? source[index + 1] : '\0';
+            if (line_comment_) {
+                ++cursor_;
+                if (ch == '\n' || ch == '\r') {
+                    line_comment_ = false;
+                    CommitAtNewline(source, index);
+                }
+                continue;
+            }
+            if (block_comment_depth_ > 0) {
+                if ((ch == '/' || ch == '*') && !has_next) break;
+                if (ch == '/' && next == '*') {
+                    ++block_comment_depth_;
+                    cursor_ += 2;
+                } else if (ch == '*' && next == '/') {
+                    --block_comment_depth_;
+                    cursor_ += 2;
+                } else {
+                    ++cursor_;
+                }
+                continue;
+            }
+            if (in_string_) {
+                ++cursor_;
+                if (escaped_) escaped_ = false;
+                else if (ch == '\\') escaped_ = true;
+                else if (ch == '"') in_string_ = false;
+                continue;
+            }
+            if (ch == '/' && !has_next) break;
+            if (ch == '/' && next == '/') {
+                line_comment_ = true;
+                cursor_ += 2;
+            } else if (ch == '/' && next == '*') {
+                block_comment_depth_ = 1;
+                cursor_ += 2;
+            } else if (ch == '"') {
+                in_string_ = true;
+                ++cursor_;
+            } else if (ch == '(') {
+                ++paren_;
+                ++cursor_;
+            } else if (ch == ')' && paren_ > 0) {
+                --paren_;
+                ++cursor_;
+            } else if (ch == '[') {
+                ++bracket_;
+                ++cursor_;
+            } else if (ch == ']' && bracket_ > 0) {
+                --bracket_;
+                ++cursor_;
+            } else if (ch == '{') {
+                ++brace_;
+                ++cursor_;
+            } else if (ch == '}' && brace_ > 0) {
+                --brace_;
+                ++cursor_;
+            } else if (ch == ';' && AtTopLevel()) {
+                Commit(source, index);
+                statement_start_ = index + 1;
+                ++cursor_;
+            } else if ((ch == '\n' || ch == '\r') && AtTopLevel()) {
+                CommitAtNewline(source, index);
+                ++cursor_;
+            } else {
+                ++cursor_;
+            }
+        }
+
+        std::size_t visible_end = body_end;
+        while (visible_end > statement_start_ &&
+               std::isspace(static_cast<unsigned char>(source[visible_end - 1]))) {
+            --visible_end;
+        }
+        if (visible_end > statement_start_ && source[visible_end - 1] == ';') {
+            --visible_end;
+            while (visible_end > statement_start_ &&
+                   std::isspace(static_cast<unsigned char>(source[visible_end - 1]))) {
+                --visible_end;
+            }
+        }
+        const std::string active = Trim(source.substr(
+            statement_start_, visible_end - statement_start_
+        ));
+        if (!active.empty()) return active;
+        if (last_start_ != std::string_view::npos) {
+            return Trim(source.substr(last_start_, last_end_ - last_start_));
+        }
+        return {};
+    }
+
+ private:
+    void Initialize(std::size_t body_start) {
+        Reset();
+        body_start_ = body_start;
+        cursor_ = body_start;
+        statement_start_ = body_start;
+    }
+
+    bool AtTopLevel() const {
+        return paren_ == 0 && bracket_ == 0 && brace_ == 0;
+    }
+
+    void Commit(std::string_view source, std::size_t end) {
+        if (!Trim(source.substr(statement_start_, end - statement_start_)).empty()) {
+            last_start_ = statement_start_;
+            last_end_ = end;
+        }
+    }
+
+    void CommitAtNewline(std::string_view source, std::size_t index) {
+        if (!ContinuesAfterNewline(source.substr(
+                statement_start_, index - statement_start_
+            ))) {
+            Commit(source, index);
+            statement_start_ = index + 1;
+        }
+    }
+
+    std::size_t body_start_ = std::string_view::npos;
+    std::size_t cursor_ = 0;
+    std::size_t statement_start_ = 0;
+    std::size_t last_start_ = std::string_view::npos;
+    std::size_t last_end_ = 0;
+    int paren_ = 0;
+    int bracket_ = 0;
+    int brace_ = 0;
+    bool in_string_ = false;
+    bool escaped_ = false;
+    bool line_comment_ = false;
+    int block_comment_depth_ = 0;
+};
 
 bool IsStatementPrefix(std::string_view line) {
     static const std::vector<std::string> keywords = {
@@ -1487,8 +1858,7 @@ ExprResult ExpressionTyper::CheckSignatures(
             std::string argument = raw_argument;
             const std::size_t colon = FindTopLevel(argument, ":");
             if (colon != std::string::npos &&
-                std::regex_match(Trim(std::string_view(argument).substr(0, colon)),
-                                 std::regex(R"([A-Za-z_][A-Za-z0-9_]*)"))) {
+                IsIdentifierText(Trim(std::string_view(argument).substr(0, colon)))) {
                 const std::string named = Trim(std::string_view(argument).substr(0, colon));
                 const auto found = std::find(sig.param_names.begin(), sig.param_names.end(), named);
                 if (found == sig.param_names.end()) {
@@ -1501,7 +1871,7 @@ ExprResult ExpressionTyper::CheckSignatures(
             } else {
                 const std::string possible_name = Trim(raw_argument);
                 if (!HasCompleteTrailingIdentifier(full_source_) &&
-                    std::regex_match(possible_name, std::regex(R"([A-Za-z_][A-Za-z0-9_]*)")) &&
+                    IsIdentifierText(possible_name) &&
                     std::any_of(
                         sig.param_names.begin(), sig.param_names.end(),
                         [&](const std::string& item) { return StartsWith(item, possible_name); }
@@ -1524,8 +1894,7 @@ ExprResult ExpressionTyper::CheckSignatures(
                 break;
             }
             if (!HasCompleteTrailingIdentifier(full_source_) &&
-                std::regex_match(trimmed_argument,
-                                 std::regex(R"([A-Za-z_][A-Za-z0-9_]*)")) &&
+                IsIdentifierText(trimmed_argument) &&
                 HasSymbolPrefix(trimmed_argument) &&
                 argument_number + 1 == arguments.size()) {
                 // A resolved name can still acquire a call/member/index suffix.
@@ -1538,7 +1907,7 @@ ExprResult ExpressionTyper::CheckSignatures(
                     if (!closed && !HasCompleteTrailingIdentifier(full_source_) &&
                         argument_number + 1 == arguments.size()) continue;
                     if (IsInteger(actual.type) && IsInteger(want) &&
-                        std::regex_match(Trim(argument), std::regex(R"([0-9]+)"))) {
+                        IsDecimalIntegerText(Trim(argument))) {
                         continue;
                     }
                     rejected = true;
@@ -1670,8 +2039,8 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
     }
     expression = StripOuterParens(expression);
     if (expression.empty()) return {};
-    if ((StartsWith(expression, "if") || StartsWith(expression, "while") ||
-         StartsWith(expression, "for")) && expression.find('{') == std::string::npos) {
+    if ((StartsWithKeyword(expression, "if") || StartsWithKeyword(expression, "while") ||
+         StartsWithKeyword(expression, "for")) && expression.find('{') == std::string::npos) {
         return {};
     }
     const std::size_t unmatched_angle = expression.find('<');
@@ -1850,7 +2219,7 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         if (left.error) return left;
         if (right.error) return right;
         const bool partial_right_identifier = !HasCompleteTrailingIdentifier(full_source_) &&
-            std::regex_match(right_text, std::regex(R"([A-Za-z_][A-Za-z0-9_]*)")) &&
+            IsIdentifierText(right_text) &&
             right_text != "true" && right_text != "false";
         if (op == "&&" || op == "||") {
             if (left.known && left.type != "Bool") {
@@ -1969,11 +2338,12 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         if (base.known && TypeHead(base.type) != "Array" && TypeHead(base.type) != "ArrayList" && base.type != "String") {
             return {"?", false, true, "cannot index non-array"};
         }
+        const std::string subscript_text = Trim(
+            std::string_view(expression).substr(open_index + 1)
+        );
         const bool partial_subscript = !HasCompleteTrailingIdentifier(full_source_) &&
-            std::regex_match(Trim(std::string_view(expression).substr(open_index + 1)),
-                             std::regex(R"([A-Za-z_][A-Za-z0-9_]*)")) &&
-            Trim(std::string_view(expression).substr(open_index + 1)) != "true" &&
-            Trim(std::string_view(expression).substr(open_index + 1)) != "false";
+            IsIdentifierText(subscript_text) &&
+            subscript_text != "true" && subscript_text != "false";
         if (subscript.known && subscript.type != "Int64" && !partial_subscript) {
             return {"?", false, true, "array index must be Int64"};
         }
@@ -2003,9 +2373,26 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             return {ApplySubstitution(field->second, substitutions), true, false, {}};
         }
         const auto& methods = type_receiver ? nominal->second.static_methods : nominal->second.methods;
-        if (methods.count(member->second)) {
+        if (const auto method = methods.find(member->second); method != methods.end()) {
             if (!HasCompleteTrailingIdentifier(full_source_)) return {};
-            return {"method", true, false, {}};
+            if (method->second.size() != 1) {
+                return {"?", false, true, "ambiguous overloaded member reference"};
+            }
+            const FunctionSig& signature = method->second.front();
+            std::unordered_map<std::string, std::string> substitutions;
+            const auto receiver_args = TypeArgs(receiver_type);
+            for (std::size_t index = 0;
+                 index < receiver_args.size() && index < nominal->second.type_params.size(); ++index) {
+                substitutions[nominal->second.type_params[index]] = receiver_args[index];
+            }
+            std::string function_type = "(";
+            for (std::size_t index = 0; index < signature.param_types.size(); ++index) {
+                if (index) function_type += ",";
+                function_type += ApplySubstitution(signature.param_types[index], substitutions);
+            }
+            function_type += ")->";
+            function_type += ApplySubstitution(signature.result, substitutions);
+            return {function_type, true, false, {}};
         }
         const bool complete = HasCompleteTrailingIdentifier(full_source_);
         if (!complete) {
@@ -2031,6 +2418,10 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             if (nominal->second.is_interface) return {"?", false, true, "interface used as value"};
             if (!HasCompleteTrailingIdentifier(full_source_)) return {};
             return {"type:" + expression, true, false, {}};
+        }
+        if (!HasCompleteTrailingIdentifier(full_source_) &&
+            (StartsWith("true", expression) || StartsWith("false", expression))) {
+            return {};
         }
         if (!HasCompleteTrailingIdentifier(full_source_) && HasSymbolPrefix(expression)) return {};
         if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
@@ -2063,18 +2454,6 @@ void CollectInferredLocalVariables(
     }
 }
 
-std::optional<std::pair<std::string, std::string>> ParseVariableDeclaration(
-    std::string_view line
-) {
-    static const std::regex pattern(
-        R"(^\s*(?:let|var)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*([^=]+?)\s*=\s*(.*)$)"
-    );
-    std::smatch match;
-    const std::string owned(line);
-    if (!std::regex_match(owned, match, pattern)) return std::nullopt;
-    return std::make_pair(CompactType(match[1].str()), Trim(match[2].str()));
-}
-
 struct AnyVariableDeclaration {
     std::string name;
     std::string annotated_type;
@@ -2082,15 +2461,71 @@ struct AnyVariableDeclaration {
 };
 
 std::optional<AnyVariableDeclaration> ParseAnyVariableDeclaration(std::string_view line) {
-    static const std::regex pattern(
-        R"(^\s*(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*([^=]+?))?\s*=\s*(.*)$)"
-    );
-    std::smatch match;
-    const std::string owned(line);
-    if (!std::regex_match(owned, match, pattern)) return std::nullopt;
+    const std::string owned = Trim(line);
+    std::size_t cursor = 0;
+    if (StartsWith(owned, "let") && owned.size() > 3 &&
+        std::isspace(static_cast<unsigned char>(owned[3]))) {
+        cursor = 3;
+    } else if (StartsWith(owned, "var") && owned.size() > 3 &&
+               std::isspace(static_cast<unsigned char>(owned[3]))) {
+        cursor = 3;
+    } else {
+        return std::nullopt;
+    }
+    while (cursor < owned.size() &&
+           std::isspace(static_cast<unsigned char>(owned[cursor]))) ++cursor;
+    const std::size_t name_start = cursor;
+    if (cursor >= owned.size() || !IsIdentStart(static_cast<unsigned char>(owned[cursor]))) {
+        return std::nullopt;
+    }
+    while (cursor < owned.size() &&
+           IsIdentContinue(static_cast<unsigned char>(owned[cursor]))) ++cursor;
+    const std::string name = owned.substr(name_start, cursor - name_start);
+    while (cursor < owned.size() &&
+           std::isspace(static_cast<unsigned char>(owned[cursor]))) ++cursor;
+
+    std::string annotated_type;
+    std::size_t assignment = std::string::npos;
+    if (cursor < owned.size() && owned[cursor] == '=') {
+        assignment = cursor;
+    } else if (cursor < owned.size() && owned[cursor] == ':') {
+        const std::size_t type_start = ++cursor;
+        int paren = 0;
+        int bracket = 0;
+        int angle = 0;
+        for (; cursor < owned.size(); ++cursor) {
+            const char ch = owned[cursor];
+            if (ch == '(') ++paren;
+            else if (ch == ')' && paren > 0) --paren;
+            else if (ch == '[') ++bracket;
+            else if (ch == ']' && bracket > 0) --bracket;
+            else if (ch == '<') ++angle;
+            else if (ch == '>' && angle > 0) --angle;
+            else if (ch == '=' && paren == 0 && bracket == 0 && angle == 0) {
+                assignment = cursor;
+                break;
+            }
+        }
+        if (assignment == std::string::npos) return std::nullopt;
+        annotated_type = CompactType(std::string_view(owned).substr(
+            type_start, assignment - type_start
+        ));
+    } else {
+        return std::nullopt;
+    }
     return AnyVariableDeclaration{
-        match[1].str(), match[2].matched ? CompactType(match[2].str()) : "", match[3].str()
+        name,
+        std::move(annotated_type),
+        Trim(std::string_view(owned).substr(assignment + 1)),
     };
+}
+
+std::optional<std::pair<std::string, std::string>> ParseVariableDeclaration(
+    std::string_view line
+) {
+    const auto declaration = ParseAnyVariableDeclaration(line);
+    if (!declaration || declaration->annotated_type.empty()) return std::nullopt;
+    return std::make_pair(declaration->annotated_type, declaration->expression);
 }
 
 std::optional<std::pair<std::string, std::string>> ParseReassignment(std::string_view line) {
@@ -2194,6 +2629,84 @@ CheckStatus CheckGenericPrefix(std::string_view source, const Model& model) {
     return {};
 }
 
+FunctionSig SubstituteSignature(
+    const FunctionSig& input,
+    const std::unordered_map<std::string, std::string>& substitutions
+) {
+    FunctionSig output = input;
+    for (std::string& type : output.param_types) {
+        type = ApplySubstitution(type, substitutions);
+    }
+    output.result = ApplySubstitution(output.result, substitutions);
+    return output;
+}
+
+bool SameInterfaceSignature(const FunctionSig& implementation, const FunctionSig& requirement) {
+    if (implementation.type_params.size() != requirement.type_params.size() ||
+        implementation.param_types.size() != requirement.param_types.size()) {
+        return false;
+    }
+    std::unordered_map<std::string, std::string> method_parameters;
+    for (std::size_t index = 0; index < requirement.type_params.size(); ++index) {
+        method_parameters[requirement.type_params[index]] = implementation.type_params[index];
+    }
+    const FunctionSig normalized_requirement = SubstituteSignature(requirement, method_parameters);
+    for (std::size_t index = 0; index < implementation.param_types.size(); ++index) {
+        if (CompactType(implementation.param_types[index]) !=
+            CompactType(normalized_requirement.param_types[index])) {
+            return false;
+        }
+    }
+    return CompactType(implementation.result) == CompactType(normalized_requirement.result);
+}
+
+bool SignatureTypesAreKnown(
+    const FunctionSig& signature,
+    const NominalInfo& owner,
+    const Model& model
+) {
+    std::unordered_set<std::string> allowed(
+        owner.type_params.begin(), owner.type_params.end()
+    );
+    allowed.insert(signature.type_params.begin(), signature.type_params.end());
+    if (!KnownDeclaredType(signature.result, model, allowed)) return false;
+    return std::all_of(
+        signature.param_types.begin(), signature.param_types.end(),
+        [&](const std::string& type) {
+            return KnownDeclaredType(type, model, allowed);
+        }
+    );
+}
+
+void CollectInterfaceRequirements(
+    std::string interface_type,
+    const Model& model,
+    std::unordered_map<std::string, std::vector<FunctionSig>>* requirements,
+    std::unordered_set<std::string>* visited
+) {
+    interface_type = CompactType(interface_type);
+    if (!visited->insert(interface_type).second) return;
+    const auto interface = model.nominals.find(TypeHead(interface_type));
+    if (interface == model.nominals.end() || !interface->second.is_interface) return;
+    std::unordered_map<std::string, std::string> substitutions;
+    const auto arguments = TypeArgs(interface_type);
+    for (std::size_t index = 0;
+         index < arguments.size() && index < interface->second.type_params.size(); ++index) {
+        substitutions[interface->second.type_params[index]] = arguments[index];
+    }
+    for (const auto& [method_name, signatures] : interface->second.methods) {
+        auto& target = (*requirements)[method_name];
+        for (const FunctionSig& signature : signatures) {
+            target.push_back(SubstituteSignature(signature, substitutions));
+        }
+    }
+    for (const std::string& super : interface->second.supers) {
+        CollectInterfaceRequirements(
+            ApplySubstitution(super, substitutions), model, requirements, visited
+        );
+    }
+}
+
 CheckStatus CheckInterfaces(std::string_view source, const Model& model) {
     static const std::regex class_pattern(
         R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)"
@@ -2203,32 +2716,45 @@ CheckStatus CheckInterfaces(std::string_view source, const Model& model) {
         const std::string name = (*it)[1].str();
         const auto cls = model.nominals.find(name);
         if (cls == model.nominals.end()) continue;
+        std::unordered_map<std::string, std::vector<FunctionSig>> requirements;
+        std::unordered_set<std::string> visited_interfaces;
         for (const std::string& super_type : cls->second.supers) {
-            const auto interface = model.nominals.find(TypeHead(super_type));
-            if (interface == model.nominals.end() || !interface->second.is_interface) continue;
-            for (const auto& [method_name, required_sigs] : interface->second.methods) {
-                const auto implementation = cls->second.methods.find(method_name);
-                if (implementation != cls->second.methods.end() && !implementation->second.empty() &&
-                    !required_sigs.empty()) {
-                    const FunctionSig& got = implementation->second.front();
-                    const FunctionSig& want = required_sigs.front();
-                    if (KnownType(got.result, model) &&
-                        (got.param_types.size() != want.param_types.size() ||
-                         got.result != want.result)) {
-                        return {false, "interface method signature mismatch"};
+            CollectInterfaceRequirements(
+                super_type, model, &requirements, &visited_interfaces
+            );
+        }
+        for (const auto& [method_name, required_signatures] : requirements) {
+            const auto implementation = cls->second.methods.find(method_name);
+            if (implementation == cls->second.methods.end()) continue;
+            for (const FunctionSig& requirement : required_signatures) {
+                bool has_complete_candidate = false;
+                bool matched = false;
+                for (const FunctionSig& candidate : implementation->second) {
+                    if (!SignatureTypesAreKnown(candidate, cls->second, model)) continue;
+                    has_complete_candidate = true;
+                    if (SameInterfaceSignature(candidate, requirement)) {
+                        matched = true;
+                        break;
                     }
+                }
+                if (has_complete_candidate && !matched) {
+                    if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
+                        std::cerr << "interface mismatch " << name << "." << method_name
+                                  << ", required=" << requirement.result << ", candidates=";
+                        for (const FunctionSig& candidate : implementation->second) {
+                            std::cerr << candidate.result << " ";
+                        }
+                        std::cerr << '\n';
+                    }
+                    return {false, "interface method signature mismatch"};
                 }
             }
         }
         const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
         if (!MatchingDelimiter(owned, open, '{', '}')) continue;
-        for (const std::string& super_type : cls->second.supers) {
-            const auto interface = model.nominals.find(TypeHead(super_type));
-            if (interface == model.nominals.end() || !interface->second.is_interface) continue;
-            for (const auto& [method_name, _] : interface->second.methods) {
-                if (!cls->second.methods.count(method_name)) {
-                    return {false, "interface method not implemented"};
-                }
+        for (const auto& [method_name, _] : requirements) {
+            if (!cls->second.methods.count(method_name)) {
+                return {false, "interface method not implemented"};
             }
         }
     }
@@ -2373,6 +2899,7 @@ FunctionContext BuildFunctionContext(std::string_view source, const Model& model
         }
     }
     CollectInferredLocalVariables(&context, model, source);
+    CollectActiveLambdaVariables(&context);
     static const std::regex for_binding(
         R"(\bfor\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+in\s+([^(){}\n]+)\)\s*\{)"
     );
@@ -2399,7 +2926,8 @@ CheckStatus AnalyzeSource(
     const Model& model,
     bool model_dirty,
     bool commit_dirty,
-    const FunctionContext& cached_context
+    const FunctionContext& cached_context,
+    std::string active_statement
 ) {
     if (Trim(source).empty()) return {};
 
@@ -2432,7 +2960,7 @@ CheckStatus AnalyzeSource(
     const bool trailing_open_paren = !source.empty() && source.back() == '(';
     const bool defer_expression_error = trailing_numeric_prefix || unclosed_string ||
         trailing_open_paren || (!context.is_main && !committed);
-    const std::string line = ActiveLine(context.body);
+    const std::string line = std::move(active_statement);
     const std::string trimmed_source = Trim(source);
     const bool condition_closed_now = !trimmed_source.empty() && trimmed_source.back() == ')';
     if (condition_closed_now) {
@@ -2460,9 +2988,7 @@ CheckStatus AnalyzeSource(
             if (!iterable_text.empty()) {
                 ExprResult iterable = typer.Infer(iterable_text);
                 if (iterable.error && !defer_expression_error) return {false, iterable.message};
-                const bool numeric_literal = std::regex_match(
-                    iterable_text, std::regex(R"([0-9]+(?:\.[0-9]*)?)")
-                );
+                const bool numeric_literal = IsDecimalNumberText(iterable_text);
                 const bool may_be_range = close == std::string::npos &&
                     (numeric_literal || (!iterable_text.empty() && iterable_text.back() == '.') ||
                      (!context.is_main && (IsInteger(iterable.type) || iterable.type == "Rune")));
@@ -2482,7 +3008,7 @@ CheckStatus AnalyzeSource(
         if (actual.error && !defer_expression_error) return {false, actual.message};
         static const std::regex incomplete_float(R"([0-9]+\.[0-9]*)");
         const bool defer_atom = !committed && (
-            std::regex_match(declaration->second, std::regex(R"([A-Za-z_][A-Za-z0-9_]*)")) ||
+            IsIdentifierText(declaration->second) ||
             (!declaration->second.empty() && declaration->second.front() == '"') ||
             trailing_numeric_prefix || unclosed_string ||
             trailing_open_paren ||
@@ -2567,6 +3093,7 @@ class IncrementalSemanticEngine::Impl {
     std::size_t model_source_bytes_ = 0;
     std::size_t context_source_bytes_ = 0;
     std::string last_partial_;
+    ActiveStatementCache statement_cache_;
 };
 
 IncrementalSemanticEngine::IncrementalSemanticEngine(std::string context_path)
@@ -2632,8 +3159,20 @@ CheckStatus IncrementalSemanticEngine::Probe(
     }
     impl_->source_bytes_ = source.size();
     impl_->last_partial_ = partial.text;
+    std::string active_statement;
+    if (impl_->active_context_.in_function &&
+        impl_->active_context_.body_start <= source.size()) {
+        const std::size_t body_end = impl_->active_context_.body_end == std::string::npos
+            ? source.size() : std::min(impl_->active_context_.body_end, source.size());
+        active_statement = impl_->statement_cache_.Update(
+            source, impl_->active_context_.body_start, body_end
+        );
+    } else {
+        impl_->statement_cache_.Reset();
+    }
     return AnalyzeSource(
-        source, impl_->active_model_, model_dirty, commit_dirty, impl_->active_context_
+        source, impl_->active_model_, model_dirty, commit_dirty,
+        impl_->active_context_, std::move(active_statement)
     );
 }
 
@@ -2646,6 +3185,7 @@ void IncrementalSemanticEngine::Rollback(const Checkpoint& checkpoint) {
         impl_->accepted_.resize(checkpoint.accepted_tokens);
     }
     impl_->source_bytes_ = checkpoint.source_bytes;
+    impl_->statement_cache_.Reset();
 }
 
 NativeSemanticChecker::NativeSemanticChecker(std::string context_path)

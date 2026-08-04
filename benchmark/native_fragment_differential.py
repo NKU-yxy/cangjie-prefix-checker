@@ -24,6 +24,15 @@ def project_cases() -> list[tuple[str, str, bool]]:
     raise RuntimeError("main.py test_cases not found")
 
 
+def hidden_regression_cases() -> list[tuple[str, str, bool]]:
+    from hidden_semantic_fuzz import generate_cases
+
+    return [
+        (case.name, case.source, case.expected_valid)
+        for case in generate_cases(seed=20260805, cases_per_family=1)
+    ]
+
+
 def chunks_for(source: str, seed: int) -> list[list[bytes]]:
     payload = source.encode("utf-8")
     rng = random.Random(seed)
@@ -75,6 +84,7 @@ def main() -> int:
             )
         failures: list[str] = []
         semantic_cases = [case for case in project_cases() if not case[0].startswith("Invalid:")]
+        semantic_cases.extend(hidden_regression_cases())
         for index, (name, source, expected) in enumerate(semantic_cases):
             results = [run(driver, context, chunks) for chunks in chunks_for(source, args.seed + index)]
             if any(result != expected for result in results) or len(set(results)) != 1:
