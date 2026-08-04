@@ -17,8 +17,9 @@ XGrammar/
 │   ├── incremental_lexer.py # 增量词法分析器：处理 token 边界不对齐
 │   ├── lexer.py             # 仓颉词法分析器（正则驱动，90+ TokenType）
 │   ├── token_vocab.py       # TokenType → XGrammar 词汇表 ID 映射
-│   ├── prefix_semantic_checker.py # 轻量级正则语义检查（每次调用都跑）
-│   ├── batch_semantic_validator.py # 用第三方 typechecker 做深度语义验证
+│   ├── incremental_semantic_engine.py # token-once 作用域/类型/调用/约束状态
+│   ├── prefix_semantic_checker.py # 追加式缓存的语义 probe
+│   ├── batch_semantic_validator.py # 仅 checkpoint/legacy 回退时使用
 │   ├── semantic_checker.py  # 逐 token 增量语义检查器（token-by-token）
 │   ├── syntax_checker.py    # 离线语法+语义检查器（check_token_by_token）
 │   └── context_loader.py    # 加载 context.json，解析预导入符号
@@ -66,9 +67,15 @@ stdin: "1234\n"  （tiktoken token ID）
           ├─[3] _check_partial()  检查不完整 token 是否合法
           │       └─ _trial_accept()  克隆 matcher 试探候选 token
           │
-          ├─[4] PrefixSemanticChecker.validate()    [prefix_semantic_checker.py]
+          ├─[4] IncrementalSemanticEngine           [incremental_semantic_engine.py]
           │       │
-          │       ├─ _build_context()      正则提取符号表
+          │       ├─ accept(TokenEvent)    稳定词法 token 只消费一次
+          │       ├─ probe(PartialLexeme)  不提交地检查不完整词法单元
+          │       ├─ checkpoint()/rollback()
+          │       └─ PrefixSemanticChecker（声明/函数/类缓存后做保守 probe）
+          │
+          │       PrefixSemanticChecker 包含：
+          │       ├─ _build_context()      只在结构变化时刷新声明缓存
           │       ├─ _check_duplicate_param()
           │       ├─ _check_break_continue()
           │       ├─ _check_condition_prefix()
@@ -79,9 +86,9 @@ stdin: "1234\n"  （tiktoken token ID）
           │       ├─ _check_return_prefix()
           │       └─ ... 等 ~10 项正则检查
           │
-          └─[5] _check_semantic_prefix()  仅在 source 稳定边界触发
+          └─[5] _check_semantic_prefix()  fast 默认路径直接跳过
                 │
-                └─ BatchSemanticValidator.validate_prefix()  [batch_semantic_validator.py]
+                └─ checkpoint/legacy 模式才惰性创建 BatchSemanticValidator
                       │
                       ├─ _candidates()     生成候选补全（补括号、加分号）
                       ├─ typechecker.parser.parse()   [third_party/]
@@ -113,8 +120,8 @@ stdout: "0"  （0=无错，1=有错；竞赛模式反之）
 | 增量词法 | `IncrementalLexer.feed()` |
 | 语法检查（O(1)） | `GrammarMatcher.accept_token()` + `_accept_complete_token()` |
 | 部分 token 试探 | `_check_partial()` + `_trial_accept()` |
-| 前缀语义（快速） | `PrefixSemanticChecker.validate()` |
-| 深度语义（慢速） | `BatchSemanticValidator.validate_prefix()` |
+| 增量语义 | `IncrementalSemanticEngine.accept()/probe()` |
+| 深度语义回退 | `LazyBatchSemanticValidator.validate_prefix()` |
 
 语法检查使用 XGrammar 编译 GBNF 语法为 bitmask 自动机，每次 `accept_token` 是 O(1) 位运算。
 
@@ -146,7 +153,9 @@ LLM 的 tiktoken 编码边界和仓颉词法 token 边界不对齐（例如 `Int
 
 ### 3.6 src/prefix_semantic_checker.py — 前缀语义检查（快速）
 
-**每次 `feed_text()` 都调用，速度快，纯正则 + 字符串操作。**
+由 `IncrementalSemanticEngine.probe()` 调用。函数、接口、类和当前函数元数据按
+追加源码增量缓存，只有 `{` / `}` 等结构变化时才重建相应声明索引；不再每次
+重扫全部声明。
 
 通过正则从源代码文本中提取符号表，然后检查：
 
@@ -163,7 +172,8 @@ LLM 的 tiktoken 编码边界和仓颉词法 token 边界不对齐（例如 `Int
 
 ### 3.7 src/batch_semantic_validator.py — 深度语义验证（慢速）
 
-**仅在 source 处于"稳定边界"时触发（如遇到完整的语句），调用第三方 typechecker。**
+默认 `fast` 生产路径不会初始化或调用此模块。它保留为 `checkpoint`（仅稳定
+语句边界）和 `legacy`（差分 oracle）模式的惰性回退。
 
 - 对前缀生成多种"补全候选项"（补括号、补分号、补 `0` 等）
 - 每个候选项用 Lark 解析器 + typechecker 做完整的解析和类型检查
@@ -197,20 +207,16 @@ LLM 的 tiktoken 编码边界和仓颉词法 token 边界不对齐（例如 `Int
 | `grammar/cangjie_token.gbnf` | token 级 GBNF 语法，包含完整仓颉子集语法规则 |
 | `third_party/cangjie_typechecker/` | 官方仓颉 typechecker（Lark + 类型推断），被 `batch_semantic_validator` 调用 |
 
-## 四、两种语义检查的互补关系
+## 四、三种运行模式
 
 ```
-                    PrefixSemanticChecker          BatchSemanticValidator
-触发频率             每次 feed_text() 都调用        仅在 source 稳定边界触发
-速度                 极快（正则/字符串）            慢（Lark 解析 + typecheck）
-覆盖范围             单调不可恢复的错误              完整的类型检查
-依赖                 无（纯 stdlib）                third_party/ typechecker
-典型场景             "break 在循环外"               复杂泛型推断
-                    "参数名重复"                  类型别名展开
-                    "= 两边类型不匹配"              接口方法匹配
+fast（默认）        token-once 状态 + 缓存 probe；生产路径 Lark 调用为 0
+checkpoint          fast + 换行/分号/右花括号处的惰性官方 typechecker 回退
+legacy              用于逐前缀差分的原深检模式
 ```
 
-两者**互补**：PrefixSemanticChecker 处理容易用正则检测的浅层语义错误，BatchSemanticValidator 处理需要完整类型系统的深层错误。
+可用 `--semantic-mode` 或 `CANGJIE_SEMANTIC_MODE` 切换。提交默认使用 `fast`；
+遇到新语义规则时先用 `legacy` 做 oracle，再把规则迁入在线引擎。
 
 ## 五、关键依赖
 

@@ -163,6 +163,23 @@ class BatchSemanticValidator:
             )
 
 
+class LazyBatchSemanticValidator:
+    """Create the Lark/typechecker stack only when a fallback is required."""
+
+    def __init__(self, *, context_path: str | None = None) -> None:
+        self._context_path = context_path
+        self._validator: BatchSemanticValidator | None = None
+
+    @property
+    def initialized(self) -> bool:
+        return self._validator is not None
+
+    def validate_prefix(self, source: str) -> SemanticValidationResult:
+        if self._validator is None:
+            self._validator = BatchSemanticValidator(context_path=self._context_path)
+        return self._validator.validate_prefix(source)
+
+
 def _line_col_to_offset(source: str, line: int | None, column: int | None) -> int | None:
     if line is None or column is None or line < 1 or column < 1:
         return None

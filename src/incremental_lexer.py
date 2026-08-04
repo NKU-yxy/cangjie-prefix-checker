@@ -156,7 +156,7 @@ class IncrementalLexer:
             return 0 if source else len(source)
 
         unstable_start = len(source)
-        unclosed_start = self._unclosed_construct_start(source)
+        unclosed_start = self._unclosed_construct_start(source, token_entries)
         if unclosed_start is not None:
             unstable_start = min(unstable_start, unclosed_start)
 
@@ -188,13 +188,16 @@ class IncrementalLexer:
             return start
         return None
 
-    def _unclosed_construct_start(self, source: str) -> int | None:
+    def _unclosed_construct_start(
+        self,
+        source: str,
+        token_entries: Sequence[Tuple[Token, int, int]],
+    ) -> int | None:
         starts: List[int] = []
         block_start = self._unclosed_block_comment_start(source)
         if block_start is not None:
             starts.append(block_start)
 
-        token_entries = self._tokenize_with_offsets(source)
         for token, start, end in token_entries:
             if token.type == TokenType.BACKTICK:
                 starts.append(start)

@@ -347,8 +347,8 @@ class CangjieLexer:
             return KEYWORDS[text]
         return TokenType.IDENTIFIER
 
-    def _match(self, pattern: str) -> Optional[re.Match]:
-        return re.compile(pattern).match(self.source, self._pos)
+    def _match(self, pattern: re.Pattern) -> Optional[re.Match]:
+        return pattern.match(self.source, self._pos)
 
     def tokenize(self) -> List[Token]:
         """Tokenize the entire source and return list of tokens."""
@@ -389,7 +389,7 @@ class CangjieLexer:
         """Generator that yields tokens one at a time."""
         while self._pos < len(self.source):
             matched = False
-            for pattern, token_type in self.TOKEN_SPECS:
+            for pattern, token_type in _COMPILED_TOKEN_SPECS:
                 m = self._match(pattern)
                 if m:
                     text = m.group(0)
@@ -577,3 +577,13 @@ class CangjieLexer:
                 pos += 1
 
         return ''.join(text_parts)
+
+
+# Tokenization used to compile every pattern for every attempted token.  The
+# regular-expression module caches patterns, but the millions of cache lookups
+# still dominated the incremental hot path.  Compile the fixed lexer table
+# once at import time instead.
+_COMPILED_TOKEN_SPECS = tuple(
+    (re.compile(pattern), token_type)
+    for pattern, token_type in CangjieLexer.TOKEN_SPECS
+)

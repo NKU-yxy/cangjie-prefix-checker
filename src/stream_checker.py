@@ -11,10 +11,15 @@ os.environ["TVM_FFI_BUILD_DOCS"] = "1"
 
 from xgrammar import GrammarCompiler, GrammarMatcher
 
-from .batch_semantic_validator import BatchSemanticValidator
+from .batch_semantic_validator import LazyBatchSemanticValidator
+from .context_loader import load_context
 from .incremental_lexer import IncrementalLexer, IncrementalLexResult
+from .incremental_semantic_engine import (
+    IncrementalSemanticEngine,
+    PartialLexeme,
+    TokenEvent,
+)
 from .lexer import Token, TokenType
-from .prefix_semantic_checker import PrefixSemanticChecker
 from .token_vocab import TOKENIZER_INFO, get_token_id
 
 
@@ -33,6 +38,22 @@ _VALID_AFTER_KW_IDENT = frozenset({
     TokenType.OP_OROR_EQ, TokenType.OP_INC, TokenType.OP_DEC,
 })
 
+# Deep validation reparses and typechecks a completed source candidate.  It is
+# only useful when the latest fragment commits a semantic unit.  In
+# particular, validating after every whitespace-delimited tiktoken fragment
+# makes the overall checker quadratic in the source length.
+# Commas are handled by the online call/constraint frames.  Re-running the
+# whole fallback typechecker for every parameter and argument comma was both
+# redundant and particularly expensive in lambda-heavy programs.
+_SEMANTIC_COMMIT_SUFFIXES = ("\n", "\r", ";", "}")
+
+_HASHMAP_DECL_RE = re.compile(
+    r"\b(?:let|var)\s+([A-Za-z_]\w*)\s*:\s*HashMap\b"
+)
+_HASHMAP_FOR_RE = re.compile(
+    r"\bfor\s*\(\s*([A-Za-z_]\w*)\s+in\s+([A-Za-z_]\w*)\s*\)\s*\{"
+)
+
 
 @dataclass
 class StreamStatus:
@@ -50,8 +71,8 @@ class CangjieStreamChecker:
         *,
         preload_context: Optional[dict] = None,
         context_path: Optional[str] = None,
+        semantic_mode: Optional[str] = None,
     ) -> None:
-        _ = preload_context
         self.lexer = IncrementalLexer()
         self._grammar_path = grammar_path or self._default_grammar_path()
         with open(self._grammar_path, "r", encoding="utf-8") as f:
@@ -59,12 +80,20 @@ class CangjieStreamChecker:
         self._compiler = GrammarCompiler(TOKENIZER_INFO, cache_enabled=False)
         self._compiled_grammar = self._compiler.compile_grammar(grammar_str)
         self._matcher = GrammarMatcher(self._compiled_grammar)
-        self._semantic = BatchSemanticValidator(context_path=context_path)
-        self._prefix_semantic = PrefixSemanticChecker()
+        normalized_context = preload_context if preload_context is not None else load_context(context_path)
+        self._semantic_mode = semantic_mode or os.environ.get(
+            "CANGJIE_SEMANTIC_MODE", "fast"
+        )
+        if self._semantic_mode not in {"legacy", "checkpoint", "fast"}:
+            raise ValueError(f"unsupported semantic mode: {self._semantic_mode}")
+        self._semantic = LazyBatchSemanticValidator(context_path=context_path)
+        self._semantic_engine = IncrementalSemanticEngine(normalized_context)
         self._source_prefix = ""
         self._last_semantic_source = ""
-        self._accepted_token_ids: list[int] = []
-        self._accepted_tokens: list[Token] = []
+        # Only the two immediately preceding tokens are needed by
+        # _token_invalid_in_kw_context().  Keeping the complete history caused
+        # a full-list copy for every accepted token.
+        self._previous_tokens: list[Token] = []
         self._failed = False
         self._last_error = StreamStatus(ok=True)
 
@@ -101,7 +130,13 @@ class CangjieStreamChecker:
             self._last_error = status
             return status
 
-        prefix_status = self._prefix_semantic.validate(self._source_prefix)
+        prefix_status = self._semantic_engine.probe(
+            PartialLexeme(
+                lex_result.partial_text,
+                frozenset(lex_result.partial_candidates),
+            ),
+            self._source_prefix,
+        )
         if not prefix_status.ok:
             status = StreamStatus(ok=False, error_type="semantic", error_message=prefix_status.message)
             self._failed = True
@@ -126,8 +161,17 @@ class CangjieStreamChecker:
         if self._token_invalid_in_kw_context(token):
             return StreamStatus(ok=False, error_type="syntax", error_message=f"Invalid declaration token {token.text!r}")
 
-        self._accepted_token_ids.append(token_id)
-        self._accepted_tokens.append(token)
+        semantic_status = self._semantic_engine.accept(TokenEvent(token))
+        if not semantic_status.ok:
+            return StreamStatus(
+                ok=False,
+                error_type="semantic",
+                error_message=semantic_status.message,
+            )
+
+        self._previous_tokens.append(token)
+        if len(self._previous_tokens) > 2:
+            del self._previous_tokens[0]
         return StreamStatus(ok=True)
 
     def _check_partial(self, lex_result: IncrementalLexResult) -> StreamStatus:
@@ -155,12 +199,17 @@ class CangjieStreamChecker:
         return matcher.accept_token(token_id)
 
     def _check_semantic_prefix(self, lex_result: IncrementalLexResult) -> StreamStatus:
+        if self._semantic_mode == "fast":
+            return StreamStatus(ok=True)
         if lex_result.remaining:
             return StreamStatus(ok=True)
         stable_source = self._source_prefix
-        if stable_source == self._last_semantic_source:
+        if self._semantic_mode == "checkpoint":
+            if not stable_source.endswith(_SEMANTIC_COMMIT_SUFFIXES):
+                return StreamStatus(ok=True)
+        elif stable_source.rstrip().endswith(")") and not stable_source.endswith(("\n", "\r", ";")):
             return StreamStatus(ok=True)
-        if stable_source.rstrip().endswith(")") and not stable_source.endswith(("\n", "\r", ";")):
+        if stable_source == self._last_semantic_source:
             return StreamStatus(ok=True)
         self._last_semantic_source = stable_source
 
@@ -174,15 +223,13 @@ class CangjieStreamChecker:
         return StreamStatus(ok=False, error_type="semantic", error_message=message)
 
     def _token_invalid_in_kw_context(self, token: Token) -> bool:
-        entries = self._accepted_tokens + [token]
-        idx = len(entries) - 1
-        if idx >= 1:
-            prev = entries[idx - 1]
+        if self._previous_tokens:
+            prev = self._previous_tokens[-1]
             if prev.type in _KW_DECL_START and token.type != TokenType.IDENTIFIER:
                 return True
-        if idx >= 2:
-            prev2 = entries[idx - 2]
-            prev1 = entries[idx - 1]
+        if len(self._previous_tokens) >= 2:
+            prev2 = self._previous_tokens[-2]
+            prev1 = self._previous_tokens[-1]
             if prev2.type in _KW_DECL_START and prev1.type == TokenType.IDENTIFIER:
                 valid_after = self._valid_after_kw_ident(prev2.type)
                 if valid_after is not None and token.type not in valid_after:
@@ -205,9 +252,9 @@ def _transient_hashmap_for_diagnostic(source: str, message: str) -> bool:
         return False
     hashmap_vars = {
         m.group(1)
-        for m in re.finditer(r"\b(?:let|var)\s+([A-Za-z_]\w*)\s*:\s*HashMap\b", source)
+        for m in _HASHMAP_DECL_RE.finditer(source)
     }
-    for m in re.finditer(r"\bfor\s*\(\s*([A-Za-z_]\w*)\s+in\s+([A-Za-z_]\w*)\s*\)\s*\{", source):
+    for m in _HASHMAP_FOR_RE.finditer(source):
         bound, iterable = m.group(1), m.group(2)
         if iterable in hashmap_vars and not re.search(rf"(?:\(\s*{re.escape(bound)}\s*\)|\b{re.escape(bound)})\s*\.", source[m.end():]):
             return True

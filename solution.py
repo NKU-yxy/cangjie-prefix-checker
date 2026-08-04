@@ -30,6 +30,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--context", default=None, help="Optional context.json path")
     parser.add_argument("--grammar", default=None, help="Optional token-level GBNF path")
+    parser.add_argument(
+        "--semantic-mode",
+        choices=("checkpoint", "fast", "legacy"),
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--cangjie-file", default=None, help=argparse.SUPPRESS)
     parser.add_argument(
         "--competition-output",
@@ -67,7 +73,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         encoding = tiktoken.get_encoding("cl100k_base")
         context_path = find_context_path(args.context, runtime_dir=_runtime_dir())
-        checker = CangjieStreamChecker(grammar_path=args.grammar, context_path=context_path)
+        checker = CangjieStreamChecker(
+            grammar_path=args.grammar,
+            context_path=context_path,
+            semantic_mode=args.semantic_mode,
+        )
     except Exception as exc:
         print(f"initialization error: {exc}", file=sys.stderr)
         return 1

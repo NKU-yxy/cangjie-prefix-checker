@@ -275,24 +275,22 @@ PASSED
 
 说明该样例判断正确。`time` 会额外显示本地运行时间。
 
-## 11. 跑性能 benchmark
+## 11. 跑真实生产 benchmark 与差分测试
 
-项目自带 benchmark：
+旧的 `benchmark/benchmark.py` 是预热后的离线测试，不能代表提交耗时。真实
+基准会为每个样例启动全新 `solution` 进程，并校验精确首次报错 token：
 
 ```bash
-docker run --rm --entrypoint bash \
-  -v "$PWD":/workspace \
-  -w /workspace \
-  docker.educg.net/compiler_system_challenge/cjchecker:20260522 \
-  -lc 'set -euo pipefail; ./build.sh >/tmp/xgrammar_build.log 2>&1; python3 benchmark/benchmark.py --quick'
+python3 benchmark/production_benchmark.py --solution ./solution --mode fast
 ```
 
-当前关键结果：
+再运行官方公开位置和官方 typechecker 额外程序的差分：
 
 ```text
-500-token estimate: 6.94 ms
-Goal <50ms: OK
-Regression tests: 15/15 pass
+python3 benchmark/differential_check.py --mode fast
+
+当前本机结果：公开错误位置 `50/50`，官方额外语义程序 `45/45`；冷进程
+`total_p50≈231ms`、`p95≈249ms`。具体数值会随机器和 ARM Docker 环境变化。
 ```
 
 ## 12. 重新生成提交 zip
