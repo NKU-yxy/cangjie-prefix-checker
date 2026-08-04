@@ -2,6 +2,8 @@
 Cangjie Lexer — tokenizes Cangjie source code into lexical tokens.
 """
 
+from __future__ import annotations
+
 import re
 from enum import Enum, auto
 from dataclasses import dataclass
