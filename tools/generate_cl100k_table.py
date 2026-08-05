@@ -6,6 +6,10 @@ every fresh process costs much more than the actual checking work.  build.sh
 runs this generator once; the native entry reads the resulting ~1 MiB table.
 """
 
+# Team-authored build tool. It uses the public tiktoken API to generate a local
+# cl100k_base lookup table. tiktoken is distributed under the MIT License; no
+# tiktoken implementation source is copied here. See THIRD_PARTY_NOTICES.md.
+
 from __future__ import annotations
 
 import argparse

@@ -1,3 +1,8 @@
+# Vendored from the competition reference implementation:
+# https://gitcode.com/bhzhan/cangjie-fragment-checker
+# Not claimed as team-original code; provenance and adaptations are documented
+# in ../README.md and the repository-level THIRD_PARTY_NOTICES.md.
+
 """Typing context object shared by expression and declaration checking.
 
 ``TypeContext`` is a persistent parent-linked environment. Each context stores

@@ -1,3 +1,8 @@
+# Vendored from the competition reference implementation:
+# https://gitcode.com/bhzhan/cangjie-fragment-checker
+# Not claimed as team-original code; provenance and adaptations are documented
+# in ../README.md and the repository-level THIRD_PARTY_NOTICES.md.
+
 """Stable diagnostic code identifiers shared across typechecker modules."""
 
 E_SYNTAX_INTERNAL_TYPE_ARGS_SHAPE = "E_SYNTAX_INTERNAL_TYPE_ARGS_SHAPE"

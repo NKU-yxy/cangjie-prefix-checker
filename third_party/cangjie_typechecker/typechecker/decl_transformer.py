@@ -1,3 +1,8 @@
+# Vendored from the competition reference implementation:
+# https://gitcode.com/bhzhan/cangjie-fragment-checker
+# Not claimed as team-original code; provenance and adaptations are documented
+# in ../README.md and the repository-level THIRD_PARTY_NOTICES.md.
+
 """Lark ``Transformer`` helpers for declaration/header lowering (params/class/method/ctors)."""
 
 from __future__ import annotations
@@ -561,7 +566,6 @@ def lower_program(prog: Tree) -> ProgramDecls:
         classes,
         interfaces,
     )
-
 
 
 

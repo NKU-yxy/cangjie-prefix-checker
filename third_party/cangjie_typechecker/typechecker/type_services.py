@@ -1,3 +1,8 @@
+# Vendored from the competition reference implementation:
+# https://gitcode.com/bhzhan/cangjie-fragment-checker
+# Locally adapted for offline validation; not claimed as team-original code.
+# See ../README.md and the repository-level THIRD_PARTY_NOTICES.md.
+
 """Core type services: built-ins and subtyping judgments."""
 
 from __future__ import annotations
@@ -190,4 +195,3 @@ class Service:
             if all(self.is_subtype(cand, other) for other in minimal):
                 return cand
         return None
-

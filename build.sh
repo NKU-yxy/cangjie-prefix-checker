@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# This team-authored build script installs and links external dependencies.
+# Third-party source code is not vendored into the production submission.
+# See THIRD_PARTY_NOTICES.md.
+
 set -euo pipefail
 
 cd "$(dirname "$0")"

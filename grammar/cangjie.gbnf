@@ -1,7 +1,10 @@
 # ============================================================
 # Cangjie Programming Language - GBNF Grammar
 # For XGrammar-based syntax checking
-# Based on Cangjie Language Specification v0.53.x
+# Initially derived from the Cangjie v0.53.x grammar; subsequently adapted and
+# reconciled with the competition-defined subset and Cangjie Specification v1.0.
+# Where they differ, the competition specification and official checker behavior
+# define the scope implemented by this project.
 #
 # NOTE: Newlines (\n, \r) must be used as string literals, NOT inside
 # character classes (GBNF limitation).

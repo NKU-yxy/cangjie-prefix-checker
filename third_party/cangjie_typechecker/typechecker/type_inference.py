@@ -1,3 +1,8 @@
+# Vendored from the competition reference implementation:
+# https://gitcode.com/bhzhan/cangjie-fragment-checker
+# Locally adapted for offline validation; not claimed as team-original code.
+# See ../README.md and the repository-level THIRD_PARTY_NOTICES.md.
+
 """Generic call inference (separate synth/check paths)."""
 
 from __future__ import annotations
