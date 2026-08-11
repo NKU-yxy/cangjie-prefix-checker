@@ -69,7 +69,7 @@ if [[ "$(uname -s)" == "Linux" ]]; then
 fi
 
 run_quiet "${native_cxx}" \
-  -std=c++17 -O3 -DNDEBUG -Wall -Wextra -pedantic -pthread \
+  -std=c++17 -O3 -flto -DNDEBUG -Wall -Wextra -pedantic -pthread \
   "${native_profile_flags[@]}" \
   -I"${native_xgrammar_dir}/include" \
   cpp/solution.cpp \
