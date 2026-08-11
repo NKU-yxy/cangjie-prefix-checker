@@ -1237,7 +1237,8 @@ bool KnownDeclaredType(
     return true;
 }
 
-std::unordered_set<std::string> EnclosingNominalTypeParameters(
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+std::unordered_set<std::string> EnclosingNominalTypeParametersRegex(
     std::string_view source,
     std::size_t position
 ) {
@@ -1259,6 +1260,54 @@ std::unordered_set<std::string> EnclosingNominalTypeParameters(
     }
     return std::unordered_set<std::string>(nearest.begin(), nearest.end());
 }
+#endif
+
+struct NominalDeclaration {
+    std::size_t open = 0;
+    std::optional<std::size_t> close;
+    std::vector<std::string> type_parameters;
+    std::string super_header;
+};
+
+std::vector<NominalDeclaration> CollectNominalDeclarations(
+    std::string_view source
+) {
+    static const std::regex nominal_pattern(
+        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
+    );
+    const std::string owned(source);
+    std::vector<NominalDeclaration> declarations;
+    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end;
+         it != end; ++it) {
+        NominalDeclaration declaration;
+        declaration.open = static_cast<std::size_t>(
+            (*it).position() + (*it).length() - 1
+        );
+        declaration.close = MatchingDelimiter(owned, declaration.open, '{', '}');
+        declaration.type_parameters = ParseTypeParameters((*it)[3].str());
+        declaration.super_header = (*it)[4].str();
+        declarations.push_back(std::move(declaration));
+    }
+    return declarations;
+}
+
+std::unordered_set<std::string> EnclosingNominalTypeParameters(
+    const std::vector<NominalDeclaration>& declarations,
+    std::size_t position
+) {
+    std::size_t nearest_open = std::string::npos;
+    const std::vector<std::string>* nearest = nullptr;
+    for (const NominalDeclaration& declaration : declarations) {
+        if (declaration.open >= position) continue;
+        if (declaration.close && *declaration.close < position) continue;
+        if (nearest_open == std::string::npos || declaration.open > nearest_open) {
+            nearest_open = declaration.open;
+            nearest = &declaration.type_parameters;
+        }
+    }
+    if (!nearest) return {};
+    return std::unordered_set<std::string>(nearest->begin(), nearest->end());
+}
 
 CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
     static const std::regex single_line_pattern(
@@ -1267,23 +1316,30 @@ CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
     static const std::regex multiline_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
     );
-    static const std::regex nominal_pattern(
-        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
-    );
     static const std::unordered_set<std::string> primitives = {
         "Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
         "Bool", "Rune", "String", "Unit"
     };
     const std::string owned(source);
+    const std::vector<NominalDeclaration> nominal_declarations =
+        CollectNominalDeclarations(source);
     auto check_functions = [&](const std::regex& pattern, bool multiline_only) -> CheckStatus {
         for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end; it != end; ++it) {
             if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
                 continue;
             }
             const auto params = ParseTypeParameters((*it)[2].str());
+            const std::size_t function_position = static_cast<std::size_t>((*it).position());
             std::unordered_set<std::string> allowed = EnclosingNominalTypeParameters(
-                owned, static_cast<std::size_t>((*it).position())
+                nominal_declarations, function_position
             );
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+            if (allowed != EnclosingNominalTypeParametersRegex(owned, function_position)) {
+                throw std::logic_error(
+                    "nominal declaration index diverged from regex shadow"
+                );
+            }
+#endif
             allowed.insert(params.begin(), params.end());
             for (const std::string& parameter : params) {
                 if (primitives.count(parameter)) {
@@ -1313,13 +1369,14 @@ CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
             return status;
         }
     }
-    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end; it != end; ++it) {
-        const auto params = ParseTypeParameters((*it)[3].str());
-        for (const std::string& parameter : params) {
+    for (const NominalDeclaration& declaration : nominal_declarations) {
+        for (const std::string& parameter : declaration.type_parameters) {
             if (primitives.count(parameter)) return {false, "type parameter conflicts with primitive"};
         }
-        const std::unordered_set<std::string> allowed(params.begin(), params.end());
-        for (const std::string& super : ParseSupers((*it)[4].str())) {
+        const std::unordered_set<std::string> allowed(
+            declaration.type_parameters.begin(), declaration.type_parameters.end()
+        );
+        for (const std::string& super : ParseSupers(declaration.super_header)) {
             if (!KnownDeclaredType(super, model, allowed)) return {false, "unknown supertype"};
         }
     }
