@@ -22,16 +22,11 @@ struct TokenEvent {
     TokenKind kind = TokenKind::Symbol;
     std::string text;
     bool complete = true;
-    std::size_t byte_start = 0;
-    std::size_t byte_end = 0;
 };
 
 struct PartialLexeme {
     std::string text;
     std::vector<TokenKind> candidates;
-    bool in_string = false;
-    bool in_line_comment = false;
-    int block_comment_depth = 0;
 };
 
 struct CheckStatus {
@@ -55,7 +50,6 @@ class IncrementalLexer {
 
  private:
     std::string pending_;
-    std::size_t pending_offset_ = 0;
 };
 
 class IncrementalSemanticEngine {

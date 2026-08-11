@@ -635,13 +635,7 @@ IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
     Result result;
     std::size_t pos = 0;
     auto emit = [&](TokenKind kind, std::size_t start, std::size_t end) {
-        result.stable.push_back(TokenEvent{
-            kind,
-            pending_.substr(start, end - start),
-            true,
-            pending_offset_ + start,
-            pending_offset_ + end,
-        });
+        result.stable.push_back(TokenEvent{kind, pending_.substr(start, end - start), true});
     };
     static const std::unordered_set<std::string> operator_prefixes = {
         ".", "..", "...", "=", "!", "<", ">", "&", "&&", "|", "||",
@@ -650,24 +644,21 @@ IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
     while (pos < pending_.size()) {
         const std::size_t start = pos;
         const unsigned char ch = pending_[pos];
-        if (ch == ' ' || ch == '\t') {
+        if (ch == ' ' || ch == '\t' || ch == '\r') {
             while (pos < pending_.size() &&
-                   (pending_[pos] == ' ' || pending_[pos] == '\t')) {
+                   (pending_[pos] == ' ' || pending_[pos] == '\t' || pending_[pos] == '\r')) {
                 ++pos;
             }
             continue;
         }
-        if (ch == '\n' || ch == '\r') {
+        if (ch == '\n') {
             emit(TokenKind::Newline, pos, pos + 1);
             ++pos;
             continue;
         }
         if (pos + 1 < pending_.size() && pending_.substr(pos, 2) == "//") {
             const std::size_t end = pending_.find('\n', pos + 2);
-            if (end == std::string::npos) {
-                result.partial.in_line_comment = true;
-                break;
-            }
+            if (end == std::string::npos) break;
             pos = end;
             continue;
         }
@@ -686,7 +677,6 @@ IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
                 }
             }
             if (depth > 0) {
-                result.partial.block_comment_depth = depth;
                 pos = start;
                 break;
             }
@@ -695,18 +685,13 @@ IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
         if (ch == '"') {
             ++pos;
             bool escaped = false;
-            bool closed = false;
             while (pos < pending_.size()) {
                 const char current = pending_[pos++];
                 if (escaped) escaped = false;
                 else if (current == '\\') escaped = true;
-                else if (current == '"') {
-                    closed = true;
-                    break;
-                }
+                else if (current == '"') break;
             }
-            if (!closed) {
-                result.partial.in_string = true;
+            if (pos == pending_.size() && pending_[pos - 1] != '"') {
                 pos = start;
                 break;
             }
@@ -771,10 +756,7 @@ IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
         emit(TokenKind::Symbol, pos, pos + 1);
         ++pos;
     }
-    if (pos > 0) {
-        pending_.erase(0, pos);
-        pending_offset_ += pos;
-    }
+    if (pos > 0) pending_.erase(0, pos);
     result.partial.text = pending_;
     if (!pending_.empty()) {
         const unsigned char ch = pending_.front();
@@ -1580,71 +1562,6 @@ bool HasUnclosedString(std::string_view source) {
     }
     return in_string;
 }
-
-#ifdef CANGJIE_ENABLE_INCREMENTAL_SHADOW
-struct ScannedLexicalFacts {
-    int brace_depth = 0;
-    std::size_t outer_open = std::string_view::npos;
-    std::size_t last_outer_close = std::string_view::npos;
-    bool in_string = false;
-    bool in_line_comment = false;
-    int block_comment_depth = 0;
-};
-
-ScannedLexicalFacts ScanLexicalFacts(std::string_view source) {
-    ScannedLexicalFacts facts;
-    bool escaped = false;
-    bool in_backtick = false;
-    for (std::size_t index = 0; index < source.size(); ++index) {
-        const char ch = source[index];
-        const char next = index + 1 < source.size() ? source[index + 1] : '\0';
-        if (facts.in_line_comment) {
-            if (ch == '\n') facts.in_line_comment = false;
-            continue;
-        }
-        if (facts.block_comment_depth > 0) {
-            if (ch == '/' && next == '*') {
-                ++facts.block_comment_depth;
-                ++index;
-            } else if (ch == '*' && next == '/') {
-                --facts.block_comment_depth;
-                ++index;
-            }
-            continue;
-        }
-        if (facts.in_string) {
-            if (escaped) escaped = false;
-            else if (ch == '\\') escaped = true;
-            else if (ch == '"') facts.in_string = false;
-            continue;
-        }
-        if (in_backtick) {
-            if (ch == '`') in_backtick = false;
-            continue;
-        }
-        if (ch == '/' && next == '/') {
-            facts.in_line_comment = true;
-            ++index;
-        } else if (ch == '/' && next == '*') {
-            facts.block_comment_depth = 1;
-            ++index;
-        } else if (ch == '"') {
-            facts.in_string = true;
-        } else if (ch == '`') {
-            in_backtick = true;
-        } else if (ch == '{') {
-            if (facts.brace_depth++ == 0) facts.outer_open = index;
-        } else if (ch == '}' && facts.brace_depth > 0) {
-            --facts.brace_depth;
-            if (facts.brace_depth == 0) {
-                facts.outer_open = std::string_view::npos;
-                facts.last_outer_close = index;
-            }
-        }
-    }
-    return facts;
-}
-#endif
 
 bool EndsAtSemanticCommit(std::string_view source) {
     if (source.empty()) return false;
@@ -3073,7 +2990,6 @@ CheckStatus AnalyzeSource(
     bool model_dirty,
     bool commit_dirty,
     const FunctionContext& cached_context,
-    bool unclosed_string,
     std::string active_statement
 #ifdef CANGJIE_ENABLE_PROFILE
     , ProfileCounters* profile
@@ -3133,6 +3049,10 @@ CheckStatus AnalyzeSource(
     const bool trailing_numeric_prefix = !source.empty() &&
         std::isdigit(static_cast<unsigned char>(source.back()));
     const bool committed = EndsAtSemanticCommit(source);
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (profile) profile->unclosed_string_scan_bytes += source.size();
+#endif
+    const bool unclosed_string = HasUnclosedString(source);
     const bool trailing_open_paren = !source.empty() && source.back() == '(';
     const bool defer_expression_error = trailing_numeric_prefix || unclosed_string ||
         trailing_open_paren || (!context.is_main && !committed);
@@ -3260,60 +3180,6 @@ class IncrementalSemanticEngine::Impl {
         active_model_ = preload_;
     }
 
-    void Observe(const TokenEvent& event, bool mark_dirty = true) {
-        if (event.kind == TokenKind::Newline) {
-            if (mark_dirty) {
-                saw_commit_event_ = true;
-                saw_context_event_ = true;
-            }
-            last_structure_commit_ = event.byte_end;
-            return;
-        }
-        if (event.kind != TokenKind::Symbol) return;
-        if (event.text == "{") {
-            if (brace_depth_++ == 0) outer_open_ = event.byte_start;
-            if (mark_dirty) {
-                saw_model_event_ = true;
-                saw_context_event_ = true;
-            }
-            last_structure_commit_ = event.byte_end;
-        } else if (event.text == "}") {
-            if (brace_depth_ > 0) {
-                --brace_depth_;
-                if (brace_depth_ == 0) {
-                    outer_open_ = std::string_view::npos;
-                    last_outer_close_ = event.byte_start;
-                }
-            }
-            if (mark_dirty) {
-                saw_model_event_ = true;
-                saw_commit_event_ = true;
-                saw_context_event_ = true;
-            }
-            last_structure_commit_ = event.byte_end;
-        } else if (event.text == ";") {
-            if (mark_dirty) {
-                saw_commit_event_ = true;
-                saw_context_event_ = true;
-            }
-            last_structure_commit_ = event.byte_end;
-        } else if (event.text == ")") {
-            if (mark_dirty) saw_commit_event_ = true;
-            last_structure_commit_ = event.byte_end;
-        }
-    }
-
-    void RebuildLexicalFacts() {
-        brace_depth_ = 0;
-        outer_open_ = std::string_view::npos;
-        last_outer_close_ = std::string_view::npos;
-        last_structure_commit_ = 0;
-        saw_model_event_ = false;
-        saw_commit_event_ = false;
-        saw_context_event_ = false;
-        for (const TokenEvent& event : accepted_) Observe(event, false);
-    }
-
 #ifdef CANGJIE_ENABLE_PROFILE
     ~Impl() { profile_.Print(); }
 #endif
@@ -3328,13 +3194,6 @@ class IncrementalSemanticEngine::Impl {
     std::size_t context_source_bytes_ = 0;
     std::string last_partial_;
     ActiveStatementCache statement_cache_;
-    int brace_depth_ = 0;
-    std::size_t outer_open_ = std::string_view::npos;
-    std::size_t last_outer_close_ = std::string_view::npos;
-    std::size_t last_structure_commit_ = 0;
-    bool saw_model_event_ = false;
-    bool saw_commit_event_ = false;
-    bool saw_context_event_ = false;
 #ifdef CANGJIE_ENABLE_PROFILE
     ProfileCounters profile_;
 #endif
@@ -3347,7 +3206,6 @@ IncrementalSemanticEngine::~IncrementalSemanticEngine() = default;
 
 CheckStatus IncrementalSemanticEngine::Accept(const TokenEvent& event) {
     impl_->accepted_.push_back(event);
-    impl_->Observe(event);
 #ifdef CANGJIE_ENABLE_PROFILE
     if (impl_->profile_.enabled) ++impl_->profile_.accepted_events;
 #endif
@@ -3362,17 +3220,6 @@ CheckStatus IncrementalSemanticEngine::Probe(
     ProfileCounters* profile = impl_->profile_.enabled ? &impl_->profile_ : nullptr;
     if (profile) ++profile->probe_calls;
 #endif
-#ifdef CANGJIE_ENABLE_INCREMENTAL_SHADOW
-    const ScannedLexicalFacts scanned = ScanLexicalFacts(source);
-    if (scanned.brace_depth != impl_->brace_depth_ ||
-        scanned.outer_open != impl_->outer_open_ ||
-        scanned.last_outer_close != impl_->last_outer_close_ ||
-        scanned.in_string != partial.in_string ||
-        scanned.in_line_comment != partial.in_line_comment ||
-        scanned.block_comment_depth != partial.block_comment_depth) {
-        throw std::logic_error("incremental lexical facts diverged from shadow scan");
-    }
-#endif
     const std::string_view delta = source.substr(
         std::min(impl_->source_bytes_, source.size())
     );
@@ -3386,24 +3233,33 @@ CheckStatus IncrementalSemanticEngine::Probe(
         impl_->last_partial_ = partial.text;
         return {};
     }
+    int brace_depth = 0;
+    std::size_t outer_open = std::string_view::npos;
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (profile) profile->brace_scan_bytes += source.size();
+#endif
+    for (std::size_t index = 0; index < source.size(); ++index) {
+        if (source[index] == '{') {
+            if (brace_depth++ == 0) outer_open = index;
+        } else if (source[index] == '}' && brace_depth > 0) {
+            --brace_depth;
+            if (brace_depth == 0) outer_open = std::string_view::npos;
+        }
+    }
     bool open_nominal_header = false;
-    if (impl_->outer_open_ != std::string_view::npos && impl_->brace_depth_ == 1) {
-        const std::size_t header_start = impl_->last_outer_close_ == std::string_view::npos
-            ? 0 : impl_->last_outer_close_ + 1;
-        const std::string_view header = source.substr(
-            header_start, impl_->outer_open_ - header_start
-        );
+    if (outer_open != std::string_view::npos && brace_depth == 1) {
+        const std::size_t prior_close = source.rfind('}', outer_open);
+        const std::string header(source.substr(
+            prior_close == std::string_view::npos ? 0 : prior_close + 1,
+            outer_open - (prior_close == std::string_view::npos ? 0 : prior_close + 1)
+        ));
         open_nominal_header = header.find("class ") != std::string::npos ||
             header.find("interface ") != std::string::npos;
     }
     const bool model_dirty = impl_->model_source_bytes_ == 0 ||
-        impl_->saw_model_event_ || open_nominal_header;
-    const bool commit_dirty = model_dirty || impl_->saw_commit_event_;
-    const bool context_dirty = impl_->context_source_bytes_ == 0 ||
-        impl_->saw_context_event_;
-    impl_->saw_model_event_ = false;
-    impl_->saw_commit_event_ = false;
-    impl_->saw_context_event_ = false;
+        delta.find_first_of("{}") != std::string_view::npos || open_nominal_header;
+    const bool commit_dirty = model_dirty ||
+        delta.find_first_of(")\n\r;}") != std::string_view::npos;
     if (model_dirty) {
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) {
@@ -3417,6 +3273,8 @@ CheckStatus IncrementalSemanticEngine::Probe(
         CollectNominals(source, &impl_->active_model_);
         impl_->model_source_bytes_ = source.size();
     }
+    const bool context_dirty = impl_->context_source_bytes_ == 0 ||
+        delta.find_first_of("{}\n\r;") != std::string_view::npos;
     if (context_dirty) {
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) {
@@ -3445,7 +3303,7 @@ CheckStatus IncrementalSemanticEngine::Probe(
 #endif
     return AnalyzeSource(
         source, impl_->active_model_, model_dirty, commit_dirty,
-        impl_->active_context_, partial.in_string, std::move(active_statement)
+        impl_->active_context_, std::move(active_statement)
 #ifdef CANGJIE_ENABLE_PROFILE
         , profile
 #endif
@@ -3460,7 +3318,6 @@ void IncrementalSemanticEngine::Rollback(const Checkpoint& checkpoint) {
     if (checkpoint.accepted_tokens < impl_->accepted_.size()) {
         impl_->accepted_.resize(checkpoint.accepted_tokens);
     }
-    impl_->RebuildLexicalFacts();
     impl_->source_bytes_ = checkpoint.source_bytes;
     impl_->statement_cache_.Reset();
 }
