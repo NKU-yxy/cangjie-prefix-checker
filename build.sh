@@ -58,6 +58,10 @@ native_profile_flags=()
 if [[ "${CANGJIE_PROFILE_BUILD:-0}" == "1" ]]; then
   native_profile_flags+=("-DCANGJIE_ENABLE_PROFILE=1")
 fi
+native_shadow_flags=()
+if [[ "${CANGJIE_REGEX_SHADOW_BUILD:-0}" == "1" ]]; then
+  native_shadow_flags+=("-DCANGJIE_ENABLE_REGEX_SHADOW=1")
+fi
 native_platform_flags=(
   "-Wl,-rpath,${native_xgrammar_dir}"
   "-Wl,-rpath,${native_tvm_ffi_dir}/lib"
@@ -71,6 +75,7 @@ fi
 run_quiet "${native_cxx}" \
   -std=c++17 -O3 -DNDEBUG -Wall -Wextra -pedantic -pthread \
   "${native_profile_flags[@]}" \
+  "${native_shadow_flags[@]}" \
   -I"${native_xgrammar_dir}/include" \
   cpp/solution.cpp \
   cpp/native_semantic.cpp \

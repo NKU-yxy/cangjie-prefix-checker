@@ -2881,7 +2881,8 @@ CheckStatus CheckConstructors(std::string_view source, const Model& model) {
     return {};
 }
 
-CheckStatus CheckMalformedGenericConstruct(std::string_view source) {
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+CheckStatus CheckMalformedGenericConstructRegex(std::string_view source) {
     static const std::regex malformed(
         R"(\b(?:let|var)\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*:[^=;{}\n]+)?\s*=\s*[A-Z][A-Za-z0-9_]*<[^>;{}\n]*\([^;{}\n]*\)\s*;)"
     );
@@ -2892,6 +2893,139 @@ CheckStatus CheckMalformedGenericConstruct(std::string_view source) {
     if (std::regex_search(owned, malformed)) return {false, "malformed generic construction"};
     if (std::regex_search(owned, malformed_binding)) return {false, "malformed variable declaration"};
     return {};
+}
+#endif
+
+bool IsRegexIdentifierStart(char ch) {
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
+}
+
+bool IsRegexIdentifierContinue(char ch) {
+    return IsRegexIdentifierStart(ch) || (ch >= '0' && ch <= '9');
+}
+
+std::size_t SkipRegexWhitespace(std::string_view source, std::size_t cursor) {
+    while (cursor < source.size() &&
+           std::isspace(static_cast<unsigned char>(source[cursor]))) {
+        ++cursor;
+    }
+    return cursor;
+}
+
+std::size_t ParseRegexIdentifier(std::string_view source, std::size_t cursor) {
+    if (cursor >= source.size() || !IsRegexIdentifierStart(source[cursor])) {
+        return std::string_view::npos;
+    }
+    do {
+        ++cursor;
+    } while (cursor < source.size() && IsRegexIdentifierContinue(source[cursor]));
+    return cursor;
+}
+
+bool MalformedGenericAt(std::string_view source, std::size_t cursor) {
+    const std::size_t whitespace = cursor;
+    cursor = SkipRegexWhitespace(source, cursor);
+    if (cursor == whitespace) return false;
+    cursor = ParseRegexIdentifier(source, cursor);
+    if (cursor == std::string_view::npos) return false;
+
+    cursor = SkipRegexWhitespace(source, cursor);
+    if (cursor < source.size() && source[cursor] == ':') {
+        const std::size_t type_start = ++cursor;
+        while (cursor < source.size() && source[cursor] != '=' &&
+               source[cursor] != ';' && source[cursor] != '{' &&
+               source[cursor] != '}' && source[cursor] != '\n') {
+            ++cursor;
+        }
+        if (cursor == type_start) return false;
+    }
+    cursor = SkipRegexWhitespace(source, cursor);
+    if (cursor >= source.size() || source[cursor++] != '=') return false;
+    cursor = SkipRegexWhitespace(source, cursor);
+    if (cursor >= source.size() || source[cursor] < 'A' || source[cursor] > 'Z') {
+        return false;
+    }
+    do {
+        ++cursor;
+    } while (cursor < source.size() && IsRegexIdentifierContinue(source[cursor]));
+    if (cursor >= source.size() || source[cursor++] != '<') return false;
+
+    while (cursor < source.size() && source[cursor] != '(') {
+        const char ch = source[cursor++];
+        if (ch == '>' || ch == ';' || ch == '{' || ch == '}' || ch == '\n') {
+            return false;
+        }
+    }
+    if (cursor >= source.size()) return false;
+    ++cursor;
+    while (cursor < source.size() && source[cursor] != ';') {
+        const char ch = source[cursor++];
+        if (ch == '{' || ch == '}' || ch == '\n') return false;
+    }
+    if (cursor >= source.size()) return false;
+    std::size_t before_semicolon = cursor;
+    while (before_semicolon > 0 &&
+           std::isspace(static_cast<unsigned char>(source[before_semicolon - 1]))) {
+        --before_semicolon;
+    }
+    return before_semicolon > 0 && source[before_semicolon - 1] == ')';
+}
+
+bool MalformedBindingAt(std::string_view source, std::size_t cursor) {
+    const std::size_t first_whitespace = cursor;
+    cursor = SkipRegexWhitespace(source, cursor);
+    if (cursor == first_whitespace) return false;
+    cursor = ParseRegexIdentifier(source, cursor);
+    if (cursor == std::string_view::npos) return false;
+    const std::size_t operator_whitespace = cursor;
+    cursor = SkipRegexWhitespace(source, cursor);
+    if (cursor == operator_whitespace || cursor >= source.size() ||
+        std::string_view("+-*/%").find(source[cursor]) == std::string_view::npos) {
+        return false;
+    }
+    ++cursor;
+    const std::size_t name_whitespace = cursor;
+    cursor = SkipRegexWhitespace(source, cursor);
+    if (cursor == name_whitespace) return false;
+    cursor = ParseRegexIdentifier(source, cursor);
+    if (cursor == std::string_view::npos) return false;
+    cursor = SkipRegexWhitespace(source, cursor);
+    return cursor < source.size() && source[cursor] == '=';
+}
+
+CheckStatus CheckMalformedGenericConstructLinear(std::string_view source) {
+    for (std::size_t cursor = 0; cursor < source.size(); ++cursor) {
+        if (cursor > 0 && IsRegexIdentifierContinue(source[cursor - 1])) continue;
+        std::size_t after_keyword = std::string_view::npos;
+        if (source.substr(cursor, 3) == "let") {
+            after_keyword = cursor + 3;
+        } else if (source.substr(cursor, 3) == "var") {
+            after_keyword = cursor + 3;
+        }
+        if (after_keyword == std::string_view::npos ||
+            after_keyword >= source.size() ||
+            !std::isspace(static_cast<unsigned char>(source[after_keyword]))) {
+            continue;
+        }
+        if (MalformedGenericAt(source, after_keyword)) {
+            return {false, "malformed generic construction"};
+        }
+        if (MalformedBindingAt(source, after_keyword)) {
+            return {false, "malformed variable declaration"};
+        }
+    }
+    return {};
+}
+
+CheckStatus CheckMalformedGenericConstruct(std::string_view source) {
+    const CheckStatus result = CheckMalformedGenericConstructLinear(source);
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+    const CheckStatus reference = CheckMalformedGenericConstructRegex(source);
+    if (result.ok != reference.ok || result.message != reference.message) {
+        throw std::logic_error("linear malformed-generic check diverged from regex shadow");
+    }
+#endif
+    return result;
 }
 
 FunctionContext BuildFunctionContext(std::string_view source, const Model& model) {
