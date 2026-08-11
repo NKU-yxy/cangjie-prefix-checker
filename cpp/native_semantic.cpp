@@ -3151,6 +3151,10 @@ struct ProfileCounters {
     std::uint64_t generic_prefix_ns = 0;
     std::uint64_t brace_scan_ns = 0;
     std::uint64_t model_rebuild_ns = 0;
+    std::uint64_t model_reset_ns = 0;
+    std::uint64_t collect_imports_ns = 0;
+    std::uint64_t collect_functions_ns = 0;
+    std::uint64_t collect_nominals_ns = 0;
     std::uint64_t context_rebuild_ns = 0;
 
     void Print() const {
@@ -3187,6 +3191,10 @@ struct ProfileCounters {
             << ",\"generic_prefix_ns\":" << generic_prefix_ns
             << ",\"brace_scan_ns\":" << brace_scan_ns
             << ",\"model_rebuild_ns\":" << model_rebuild_ns
+            << ",\"model_reset_ns\":" << model_reset_ns
+            << ",\"collect_imports_ns\":" << collect_imports_ns
+            << ",\"collect_functions_ns\":" << collect_functions_ns
+            << ",\"collect_nominals_ns\":" << collect_nominals_ns
             << ",\"context_rebuild_ns\":" << context_rebuild_ns
             << "}\n";
     }
@@ -3563,10 +3571,30 @@ CheckStatus IncrementalSemanticEngine::Probe(
             profile->model_rebuild_source_bytes += source.size();
         }
 #endif
-        impl_->active_model_ = impl_->preload_;
-        CollectImports(source, &impl_->active_model_);
-        CollectFunctions(source, &impl_->active_model_);
-        CollectNominals(source, &impl_->active_model_);
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(profile ? &profile->model_reset_ns : nullptr);
+#endif
+            impl_->active_model_ = impl_->preload_;
+        }
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(profile ? &profile->collect_imports_ns : nullptr);
+#endif
+            CollectImports(source, &impl_->active_model_);
+        }
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(profile ? &profile->collect_functions_ns : nullptr);
+#endif
+            CollectFunctions(source, &impl_->active_model_);
+        }
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(profile ? &profile->collect_nominals_ns : nullptr);
+#endif
+            CollectNominals(source, &impl_->active_model_);
+        }
         impl_->model_source_bytes_ = source.size();
     }
     const bool context_dirty = impl_->context_source_bytes_ == 0 ||
