@@ -33,6 +33,37 @@ def hidden_regression_cases() -> list[tuple[str, str, bool]]:
     ]
 
 
+def lexical_fact_cases() -> list[tuple[str, str, bool]]:
+    return [
+        (
+            "lexical braces in string",
+            'main(): Unit { let text: String = "{ ignored }"; }',
+            True,
+        ),
+        (
+            "lexical braces in line comment",
+            "main(): Unit { // } { ignored\nlet value: Int64 = 1; }",
+            True,
+        ),
+        (
+            "lexical braces in crlf comment",
+            "main(): Unit { // } { ignored\r\nlet value: Int64 = 1; }",
+            True,
+        ),
+        (
+            "lexical braces in nested block comment",
+            "main(): Unit { /* outer { /* nested } */ still { } */ "
+            "let value: Int64 = 1; }",
+            True,
+        ),
+        (
+            "lexical escaped quote before brace",
+            'main(): Unit { let text: String = "quote: \\" and brace: {"; }',
+            True,
+        ),
+    ]
+
+
 def chunks_for(source: str, seed: int) -> list[list[bytes]]:
     payload = source.encode("utf-8")
     rng = random.Random(seed)
@@ -85,6 +116,7 @@ def main() -> int:
         failures: list[str] = []
         semantic_cases = [case for case in project_cases() if not case[0].startswith("Invalid:")]
         semantic_cases.extend(hidden_regression_cases())
+        semantic_cases.extend(lexical_fact_cases())
         for index, (name, source, expected) in enumerate(semantic_cases):
             results = [run(driver, context, chunks) for chunks in chunks_for(source, args.seed + index)]
             if any(result != expected for result in results) or len(set(results)) != 1:
