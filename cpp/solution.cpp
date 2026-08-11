@@ -14,6 +14,7 @@
  */
 
 #include <charconv>
+#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -27,6 +28,8 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <unistd.h>
 
 #include <xgrammar/xgrammar.h>
 
@@ -223,7 +226,20 @@ fs::path executable_root(const char* argv0) {
 
 void emit(bool ok, bool competition_output) {
     const int value = competition_output ? (ok ? 1 : 0) : (ok ? 0 : 1);
-    std::cout << value << '\n' << std::flush;
+    const char output[2] = {static_cast<char>('0' + value), '\n'};
+    std::size_t written = 0;
+    while (written < sizeof(output)) {
+        const ssize_t count = ::write(
+            STDOUT_FILENO, output + written, sizeof(output) - written
+        );
+        if (count > 0) {
+            written += static_cast<std::size_t>(count);
+        } else if (count < 0 && errno == EINTR) {
+            continue;
+        } else {
+            throw std::runtime_error("cannot write protocol response");
+        }
+    }
 }
 
 }  // namespace
