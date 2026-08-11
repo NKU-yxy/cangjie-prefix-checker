@@ -14,6 +14,11 @@ ARM64 Docker 镜像中的公开 50 例测试结果。
 - `official_50_baseline_20260811_arm64.json`：完整元数据和 450 次实测原始值；
 - `run_official_baseline.py`：可重复运行的计时与正确性校验脚本。
 
+2026-08-12 正确率优先优化的最终封板见
+[`20260812_final_optimization_report.md`](20260812_final_optimization_report.md)。相对原始
+提交的同轮累计 A/B/A 原始结果使用 `20260812_cumulative_*` 前缀；各独立候选的
+ACCEPTED、PROVISIONAL、NO PROVEN GAIN 或 REJECTED 结论见同目录的 `*_verdict.md`。
+
 ## 复现命令
 
 必须在同一个一次性容器中先构建、再测试。`build.sh` 会在容器内安装并动态
