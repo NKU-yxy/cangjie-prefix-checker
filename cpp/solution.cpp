@@ -51,21 +51,16 @@ namespace {
 constexpr char kTableMagic[8] = {'C', 'J', 'T', 'K', 1, 0, 0, 0};
 constexpr std::uint32_t kMissing = 0xFFFFFFFFu;
 
-std::uint32_t read_u32_unchecked(const char* data) {
-    const auto* bytes = reinterpret_cast<const unsigned char*>(data);
-    return static_cast<std::uint32_t>(bytes[0]) |
-           (static_cast<std::uint32_t>(bytes[1]) << 8u) |
-           (static_cast<std::uint32_t>(bytes[2]) << 16u) |
-           (static_cast<std::uint32_t>(bytes[3]) << 24u);
-}
-
 std::uint32_t read_u32(std::string_view data, std::size_t* cursor) {
     if (*cursor > data.size() || data.size() - *cursor < 4) {
         throw std::runtime_error("truncated cl100k table");
     }
-    const std::uint32_t value = read_u32_unchecked(data.data() + *cursor);
+    const auto* bytes = reinterpret_cast<const unsigned char*>(data.data() + *cursor);
     *cursor += 4;
-    return value;
+    return static_cast<std::uint32_t>(bytes[0]) |
+           (static_cast<std::uint32_t>(bytes[1]) << 8u) |
+           (static_cast<std::uint32_t>(bytes[2]) << 16u) |
+           (static_cast<std::uint32_t>(bytes[3]) << 24u);
 }
 
 class TokenTable {
@@ -75,57 +70,53 @@ class TokenTable {
         if (!stream) {
             throw std::runtime_error("cannot open token table: " + path.string());
         }
-        data_ = std::string{
+        const std::string data{
             std::istreambuf_iterator<char>(stream),
             std::istreambuf_iterator<char>()
         };
-        if (data_.size() < sizeof(kTableMagic) ||
-            std::memcmp(data_.data(), kTableMagic, sizeof(kTableMagic)) != 0) {
+        if (data.size() < sizeof(kTableMagic) ||
+            std::memcmp(data.data(), kTableMagic, sizeof(kTableMagic)) != 0) {
             throw std::runtime_error("invalid cl100k table header");
         }
         std::size_t cursor = sizeof(kTableMagic);
-        entry_count_ = read_u32(data_, &cursor);
-        blob_size_ = read_u32(data_, &cursor);
-        entries_offset_ = cursor;
-        if (entry_count_ > (data_.size() - cursor) / 8) {
+        const std::uint32_t count = read_u32(data, &cursor);
+        const std::uint32_t blob_size = read_u32(data, &cursor);
+        if (count > (data.size() - cursor) / 8) {
             throw std::runtime_error("truncated cl100k table entries");
         }
-        blob_offset_ = cursor + static_cast<std::size_t>(entry_count_) * 8;
-        if (blob_size_ > data_.size() - blob_offset_) {
+        entries_.reserve(count);
+        for (std::uint32_t index = 0; index < count; ++index) {
+            const std::uint32_t offset = read_u32(data, &cursor);
+            const std::uint32_t length = read_u32(data, &cursor);
+            entries_.emplace_back(offset, length);
+        }
+        if (blob_size > data.size() - cursor) {
             throw std::runtime_error("truncated cl100k table payload");
         }
-        for (std::uint32_t index = 0; index < entry_count_; ++index) {
-            std::size_t entry_cursor = entries_offset_ + static_cast<std::size_t>(index) * 8;
-            const std::uint32_t offset = read_u32(data_, &entry_cursor);
-            const std::uint32_t length = read_u32(data_, &entry_cursor);
+        blob_.assign(data.data() + cursor, blob_size);
+        for (const auto& [offset, length] : entries_) {
             if (offset != kMissing &&
-                (offset > blob_size_ || length > blob_size_ - offset)) {
+                (offset > blob_.size() || length > blob_.size() - offset)) {
                 throw std::runtime_error("invalid cl100k table entry");
             }
         }
     }
 
     bool decode(std::int64_t token_id, std::string_view* decoded) const {
-        if (token_id < 0 || static_cast<std::uint64_t>(token_id) >= entry_count_) {
+        if (token_id < 0 || static_cast<std::uint64_t>(token_id) >= entries_.size()) {
             return false;
         }
-        const char* entry = data_.data() + entries_offset_ +
-            static_cast<std::size_t>(token_id) * 8;
-        const std::uint32_t offset = read_u32_unchecked(entry);
-        const std::uint32_t length = read_u32_unchecked(entry + 4);
+        const auto [offset, length] = entries_[static_cast<std::size_t>(token_id)];
         if (offset == kMissing) {
             return false;
         }
-        *decoded = std::string_view(data_.data() + blob_offset_ + offset, length);
+        *decoded = std::string_view(blob_.data() + offset, length);
         return true;
     }
 
  private:
-    std::string data_;
-    std::size_t entries_offset_ = 0;
-    std::size_t blob_offset_ = 0;
-    std::uint32_t entry_count_ = 0;
-    std::uint32_t blob_size_ = 0;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> entries_;
+    std::string blob_;
 };
 
 std::string read_text_file(const fs::path& path) {
