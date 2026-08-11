@@ -881,6 +881,10 @@ void CollectImports(std::string_view source, Model* model) {
 }
 
 void CollectNominals(std::string_view source, Model* model) {
+    if (source.find("class") == std::string_view::npos &&
+        source.find("interface") == std::string_view::npos) {
+        return;
+    }
     static const std::regex nominal_pattern(
         R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
     );
