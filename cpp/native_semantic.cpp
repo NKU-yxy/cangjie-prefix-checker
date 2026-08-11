@@ -2974,14 +2974,6 @@ struct ProfileCounters {
     }
 };
 
-std::size_t EstimateContextPayloadBytes(const FunctionContext& context) {
-    std::size_t result = context.result.size() + context.body.size() + context.class_name.size();
-    for (const auto& [name, type] : context.variables) {
-        result += name.size() + type.size();
-    }
-    for (const std::string& name : context.immutable) result += name.size();
-    return result;
-}
 #endif
 
 CheckStatus AnalyzeSource(
@@ -2990,6 +2982,7 @@ CheckStatus AnalyzeSource(
     bool model_dirty,
     bool commit_dirty,
     const FunctionContext& cached_context,
+    std::string_view active_body,
     std::string active_statement
 #ifdef CANGJIE_ENABLE_PROFILE
     , ProfileCounters* profile
@@ -3034,16 +3027,8 @@ CheckStatus AnalyzeSource(
 #endif
     if (CheckStatus generic = CheckGenericPrefix(source, model); !generic.ok) return generic;
 
-#ifdef CANGJIE_ENABLE_PROFILE
-    if (profile) profile->context_copy_payload_bytes += EstimateContextPayloadBytes(cached_context);
-#endif
-    FunctionContext context = cached_context;
+    const FunctionContext& context = cached_context;
     if (!context.in_function) return {};
-    if (context.body_start <= source.size()) {
-        const std::size_t end = context.body_end == std::string::npos
-            ? source.size() : std::min(context.body_end, source.size());
-        context.body = std::string(source.substr(context.body_start, end - context.body_start));
-    }
 
     ExpressionTyper typer(model, context, source);
     const bool trailing_numeric_prefix = !source.empty() &&
@@ -3063,7 +3048,7 @@ CheckStatus AnalyzeSource(
         for (const std::string keyword : {"if", "while"}) {
             if (line.find(keyword + " (") == std::string::npos &&
                 line.find(keyword + "(") == std::string::npos) continue;
-            const auto condition = LastCondition(context.body, keyword);
+            const auto condition = LastCondition(active_body, keyword);
             if (!condition || condition->empty()) continue;
             ExprResult result = typer.Infer(*condition);
             if (result.error && !defer_expression_error) return {false, result.message};
@@ -3072,14 +3057,14 @@ CheckStatus AnalyzeSource(
     }
 
     const std::size_t for_position = line.find("for (") != std::string::npos
-        ? context.body.rfind("for (") : std::string::npos;
+        ? active_body.rfind("for (") : std::string::npos;
     if (for_position != std::string::npos) {
-        const std::size_t in_position = context.body.find(" in ", for_position);
+        const std::size_t in_position = active_body.find(" in ", for_position);
         if (in_position != std::string::npos) {
-            const std::size_t close = context.body.find(')', in_position + 4);
-            const std::size_t end = close == std::string::npos ? context.body.size() : close;
+            const std::size_t close = active_body.find(')', in_position + 4);
+            const std::size_t end = close == std::string::npos ? active_body.size() : close;
             std::string iterable_text = Trim(
-                std::string_view(context.body).substr(in_position + 4, end - in_position - 4)
+                active_body.substr(in_position + 4, end - in_position - 4)
             );
             if (!iterable_text.empty()) {
                 ExprResult iterable = typer.Infer(iterable_text);
@@ -3096,7 +3081,7 @@ CheckStatus AnalyzeSource(
         }
     }
 
-    if ((line == "break" || line == "continue") && !InsideLoop(context.body)) {
+    if ((line == "break" || line == "continue") && !InsideLoop(active_body)) {
         return {false, line + " outside loop"};
     }
     if (const auto declaration = ParseVariableDeclaration(line)) {
@@ -3158,8 +3143,8 @@ CheckStatus AnalyzeSource(
         static const std::regex single_map_loop(
             R"(for\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+in\s+([A-Za-z_][A-Za-z0-9_]*)\s*\))"
         );
-        std::smatch loop;
-        if (std::regex_search(context.body, loop, single_map_loop)) {
+        std::match_results<std::string_view::const_iterator> loop;
+        if (std::regex_search(active_body.cbegin(), active_body.cend(), loop, single_map_loop)) {
             const auto variable = context.variables.find(loop[2].str());
             if (variable != context.variables.end() && TypeHead(variable->second) == "HashMap" &&
                 line.find(loop[1].str()) != std::string::npos) {
@@ -3287,11 +3272,16 @@ CheckStatus IncrementalSemanticEngine::Probe(
     }
     impl_->source_bytes_ = source.size();
     impl_->last_partial_ = partial.text;
+    std::string_view active_body;
     std::string active_statement;
     if (impl_->active_context_.in_function &&
         impl_->active_context_.body_start <= source.size()) {
         const std::size_t body_end = impl_->active_context_.body_end == std::string::npos
             ? source.size() : std::min(impl_->active_context_.body_end, source.size());
+        active_body = source.substr(
+            impl_->active_context_.body_start,
+            body_end - impl_->active_context_.body_start
+        );
         active_statement = impl_->statement_cache_.Update(
             source, impl_->active_context_.body_start, body_end
         );
@@ -3303,7 +3293,7 @@ CheckStatus IncrementalSemanticEngine::Probe(
 #endif
     return AnalyzeSource(
         source, impl_->active_model_, model_dirty, commit_dirty,
-        impl_->active_context_, std::move(active_statement)
+        impl_->active_context_, active_body, std::move(active_statement)
 #ifdef CANGJIE_ENABLE_PROFILE
         , profile
 #endif
