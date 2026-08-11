@@ -3256,12 +3256,10 @@ CheckStatus IncrementalSemanticEngine::Probe(
         open_nominal_header = header.find("class ") != std::string::npos ||
             header.find("interface ") != std::string::npos;
     }
-    const bool semantic_commit =
-        delta.find_first_of(")\n\r;}") != std::string_view::npos;
     const bool model_dirty = impl_->model_source_bytes_ == 0 ||
-        delta.find_first_of("{}") != std::string_view::npos ||
-        (open_nominal_header && semantic_commit);
-    const bool commit_dirty = model_dirty || semantic_commit;
+        delta.find_first_of("{}") != std::string_view::npos || open_nominal_header;
+    const bool commit_dirty = model_dirty ||
+        delta.find_first_of(")\n\r;}") != std::string_view::npos;
     if (model_dirty) {
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) {
