@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#ifdef CANGJIE_ENABLE_PROFILE
+#include <cstdlib>
+#endif
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -2921,6 +2924,66 @@ FunctionContext BuildFunctionContext(std::string_view source, const Model& model
     return context;
 }
 
+#ifdef CANGJIE_ENABLE_PROFILE
+struct ProfileCounters {
+    bool enabled = std::getenv("CANGJIE_PROFILE") != nullptr;
+    std::uint64_t accepted_events = 0;
+    std::uint64_t probe_calls = 0;
+    std::uint64_t indentation_fast_paths = 0;
+    std::uint64_t brace_scan_bytes = 0;
+    std::uint64_t model_rebuilds = 0;
+    std::uint64_t model_rebuild_source_bytes = 0;
+    std::uint64_t context_rebuilds = 0;
+    std::uint64_t context_rebuild_source_bytes = 0;
+    std::uint64_t analyze_calls = 0;
+    std::uint64_t context_copy_payload_bytes = 0;
+    std::uint64_t duplicate_parameter_checks = 0;
+    std::uint64_t declared_type_checks = 0;
+    std::uint64_t interface_checks = 0;
+    std::uint64_t constructor_checks = 0;
+    std::uint64_t range_checks = 0;
+    std::uint64_t branch_join_checks = 0;
+    std::uint64_t malformed_generic_checks = 0;
+    std::uint64_t generic_prefix_checks = 0;
+    std::uint64_t unclosed_string_scan_bytes = 0;
+
+    void Print() const {
+        if (!enabled) return;
+        std::cerr
+            << "CANGJIE_PROFILE {"
+            << "\"accepted_events\":" << accepted_events
+            << ",\"probe_calls\":" << probe_calls
+            << ",\"indentation_fast_paths\":" << indentation_fast_paths
+            << ",\"brace_scan_bytes\":" << brace_scan_bytes
+            << ",\"model_rebuilds\":" << model_rebuilds
+            << ",\"model_rebuild_source_bytes\":" << model_rebuild_source_bytes
+            << ",\"context_rebuilds\":" << context_rebuilds
+            << ",\"context_rebuild_source_bytes\":" << context_rebuild_source_bytes
+            << ",\"analyze_calls\":" << analyze_calls
+            << ",\"context_copy_payload_bytes\":" << context_copy_payload_bytes
+            << ",\"duplicate_parameter_checks\":" << duplicate_parameter_checks
+            << ",\"declared_type_checks\":" << declared_type_checks
+            << ",\"interface_checks\":" << interface_checks
+            << ",\"constructor_checks\":" << constructor_checks
+            << ",\"range_checks\":" << range_checks
+            << ",\"branch_join_checks\":" << branch_join_checks
+            << ",\"malformed_generic_checks\":" << malformed_generic_checks
+            << ",\"generic_prefix_checks\":" << generic_prefix_checks
+            << ",\"unclosed_string_scan_bytes\":" << unclosed_string_scan_bytes
+            << "}\n";
+    }
+};
+
+std::size_t EstimateContextPayloadBytes(const FunctionContext& context) {
+    std::size_t result = context.result.size() + context.body.size() + context.class_name.size();
+    for (const auto& [name, type] : context.variables) {
+        result += name.size() + type.size();
+    }
+    for (const std::string& name : context.immutable) result += name.size();
+    return result;
+}
+#endif
+
 CheckStatus AnalyzeSource(
     std::string_view source,
     const Model& model,
@@ -2928,22 +2991,52 @@ CheckStatus AnalyzeSource(
     bool commit_dirty,
     const FunctionContext& cached_context,
     std::string active_statement
+#ifdef CANGJIE_ENABLE_PROFILE
+    , ProfileCounters* profile
+#endif
 ) {
     if (Trim(source).empty()) return {};
 
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (profile) ++profile->duplicate_parameter_checks;
+#endif
     if (CheckStatus duplicate = CheckDuplicateParameter(source); !duplicate.ok) return duplicate;
     if (model_dirty) {
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) ++profile->declared_type_checks;
+#endif
         if (CheckStatus declared = CheckDeclaredTypes(source, model); !declared.ok) return declared;
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) ++profile->interface_checks;
+#endif
         if (CheckStatus interface = CheckInterfaces(source, model); !interface.ok) return interface;
     }
     if (commit_dirty) {
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) ++profile->constructor_checks;
+#endif
         if (CheckStatus constructors = CheckConstructors(source, model); !constructors.ok) return constructors;
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) ++profile->range_checks;
+#endif
         if (CheckStatus ranges = CheckRangeSteps(source, model); !ranges.ok) return ranges;
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) ++profile->branch_join_checks;
+#endif
         if (CheckStatus joins = CheckIfBranchJoins(source, model); !joins.ok) return joins;
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) ++profile->malformed_generic_checks;
+#endif
         if (CheckStatus malformed = CheckMalformedGenericConstruct(source); !malformed.ok) return malformed;
     }
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (profile) ++profile->generic_prefix_checks;
+#endif
     if (CheckStatus generic = CheckGenericPrefix(source, model); !generic.ok) return generic;
 
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (profile) profile->context_copy_payload_bytes += EstimateContextPayloadBytes(cached_context);
+#endif
     FunctionContext context = cached_context;
     if (!context.in_function) return {};
     if (context.body_start <= source.size()) {
@@ -2956,6 +3049,9 @@ CheckStatus AnalyzeSource(
     const bool trailing_numeric_prefix = !source.empty() &&
         std::isdigit(static_cast<unsigned char>(source.back()));
     const bool committed = EndsAtSemanticCommit(source);
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (profile) profile->unclosed_string_scan_bytes += source.size();
+#endif
     const bool unclosed_string = HasUnclosedString(source);
     const bool trailing_open_paren = !source.empty() && source.back() == '(';
     const bool defer_expression_error = trailing_numeric_prefix || unclosed_string ||
@@ -3084,6 +3180,10 @@ class IncrementalSemanticEngine::Impl {
         active_model_ = preload_;
     }
 
+#ifdef CANGJIE_ENABLE_PROFILE
+    ~Impl() { profile_.Print(); }
+#endif
+
     std::string context_path_;
     Model preload_;
     Model active_model_;
@@ -3094,6 +3194,9 @@ class IncrementalSemanticEngine::Impl {
     std::size_t context_source_bytes_ = 0;
     std::string last_partial_;
     ActiveStatementCache statement_cache_;
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileCounters profile_;
+#endif
 };
 
 IncrementalSemanticEngine::IncrementalSemanticEngine(std::string context_path)
@@ -3103,6 +3206,9 @@ IncrementalSemanticEngine::~IncrementalSemanticEngine() = default;
 
 CheckStatus IncrementalSemanticEngine::Accept(const TokenEvent& event) {
     impl_->accepted_.push_back(event);
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (impl_->profile_.enabled) ++impl_->profile_.accepted_events;
+#endif
     return {};
 }
 
@@ -3110,18 +3216,28 @@ CheckStatus IncrementalSemanticEngine::Probe(
     const PartialLexeme& partial,
     std::string_view source
 ) {
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileCounters* profile = impl_->profile_.enabled ? &impl_->profile_ : nullptr;
+    if (profile) ++profile->probe_calls;
+#endif
     const std::string_view delta = source.substr(
         std::min(impl_->source_bytes_, source.size())
     );
     const bool indentation_only = !delta.empty() &&
         delta.find_first_not_of(" \t") == std::string_view::npos && impl_->last_partial_.empty();
     if (indentation_only) {
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) ++profile->indentation_fast_paths;
+#endif
         impl_->source_bytes_ = source.size();
         impl_->last_partial_ = partial.text;
         return {};
     }
     int brace_depth = 0;
     std::size_t outer_open = std::string_view::npos;
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (profile) profile->brace_scan_bytes += source.size();
+#endif
     for (std::size_t index = 0; index < source.size(); ++index) {
         if (source[index] == '{') {
             if (brace_depth++ == 0) outer_open = index;
@@ -3145,6 +3261,12 @@ CheckStatus IncrementalSemanticEngine::Probe(
     const bool commit_dirty = model_dirty ||
         delta.find_first_of(")\n\r;}") != std::string_view::npos;
     if (model_dirty) {
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) {
+            ++profile->model_rebuilds;
+            profile->model_rebuild_source_bytes += source.size();
+        }
+#endif
         impl_->active_model_ = impl_->preload_;
         CollectImports(source, &impl_->active_model_);
         CollectFunctions(source, &impl_->active_model_);
@@ -3154,6 +3276,12 @@ CheckStatus IncrementalSemanticEngine::Probe(
     const bool context_dirty = impl_->context_source_bytes_ == 0 ||
         delta.find_first_of("{}\n\r;") != std::string_view::npos;
     if (context_dirty) {
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile) {
+            ++profile->context_rebuilds;
+            profile->context_rebuild_source_bytes += source.size();
+        }
+#endif
         impl_->active_context_ = BuildFunctionContext(source, impl_->active_model_);
         impl_->context_source_bytes_ = source.size();
     }
@@ -3170,9 +3298,15 @@ CheckStatus IncrementalSemanticEngine::Probe(
     } else {
         impl_->statement_cache_.Reset();
     }
+#ifdef CANGJIE_ENABLE_PROFILE
+    if (profile) ++profile->analyze_calls;
+#endif
     return AnalyzeSource(
         source, impl_->active_model_, model_dirty, commit_dirty,
         impl_->active_context_, std::move(active_statement)
+#ifdef CANGJIE_ENABLE_PROFILE
+        , profile
+#endif
     );
 }
 

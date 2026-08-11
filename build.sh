@@ -54,6 +54,10 @@ native_xgrammar_dir="$(python3 -c 'from importlib.util import find_spec; print(n
 native_tvm_ffi_dir="$(python3 -c 'from importlib.util import find_spec; print(next(iter(find_spec("tvm_ffi").submodule_search_locations)))')"
 native_xgrammar_shared="$(python3 -c 'from importlib.util import find_spec; from pathlib import Path; root=Path(next(iter(find_spec("xgrammar").submodule_search_locations))); print(next(path for path in root.glob("libxgrammar_bindings.*") if path.suffix in {".so", ".dylib"}))')"
 native_cxx="${CXX:-c++}"
+native_profile_flags=()
+if [[ "${CANGJIE_PROFILE_BUILD:-0}" == "1" ]]; then
+  native_profile_flags+=("-DCANGJIE_ENABLE_PROFILE=1")
+fi
 native_platform_flags=(
   "-Wl,-rpath,${native_xgrammar_dir}"
   "-Wl,-rpath,${native_tvm_ffi_dir}/lib"
@@ -66,6 +70,7 @@ fi
 
 run_quiet "${native_cxx}" \
   -std=c++17 -O3 -DNDEBUG -Wall -Wextra -pedantic -pthread \
+  "${native_profile_flags[@]}" \
   -I"${native_xgrammar_dir}/include" \
   cpp/solution.cpp \
   cpp/native_semantic.cpp \
