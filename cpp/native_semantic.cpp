@@ -3188,7 +3188,7 @@ class IncrementalSemanticEngine::Impl {
     Model preload_;
     Model active_model_;
     FunctionContext active_context_;
-    std::vector<TokenEvent> accepted_;
+    std::size_t accepted_count_ = 0;
     std::size_t source_bytes_ = 0;
     std::size_t model_source_bytes_ = 0;
     std::size_t context_source_bytes_ = 0;
@@ -3205,7 +3205,8 @@ IncrementalSemanticEngine::IncrementalSemanticEngine(std::string context_path)
 IncrementalSemanticEngine::~IncrementalSemanticEngine() = default;
 
 CheckStatus IncrementalSemanticEngine::Accept(const TokenEvent& event) {
-    impl_->accepted_.push_back(event);
+    (void)event;
+    ++impl_->accepted_count_;
 #ifdef CANGJIE_ENABLE_PROFILE
     if (impl_->profile_.enabled) ++impl_->profile_.accepted_events;
 #endif
@@ -3311,12 +3312,12 @@ CheckStatus IncrementalSemanticEngine::Probe(
 }
 
 Checkpoint IncrementalSemanticEngine::Save() const {
-    return {impl_->accepted_.size(), impl_->source_bytes_};
+    return {impl_->accepted_count_, impl_->source_bytes_};
 }
 
 void IncrementalSemanticEngine::Rollback(const Checkpoint& checkpoint) {
-    if (checkpoint.accepted_tokens < impl_->accepted_.size()) {
-        impl_->accepted_.resize(checkpoint.accepted_tokens);
+    if (checkpoint.accepted_tokens < impl_->accepted_count_) {
+        impl_->accepted_count_ = checkpoint.accepted_tokens;
     }
     impl_->source_bytes_ = checkpoint.source_bytes;
     impl_->statement_cache_.Reset();
