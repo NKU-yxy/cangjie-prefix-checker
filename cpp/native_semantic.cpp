@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#ifdef CANGJIE_ENABLE_PROFILE
+#include <chrono>
+#endif
 #include <cstdint>
 #ifdef CANGJIE_ENABLE_PROFILE
 #include <cstdlib>
@@ -2946,6 +2949,18 @@ struct ProfileCounters {
     std::uint64_t malformed_generic_checks = 0;
     std::uint64_t generic_prefix_checks = 0;
     std::uint64_t unclosed_string_scan_bytes = 0;
+    std::uint64_t analyze_total_ns = 0;
+    std::uint64_t duplicate_parameter_ns = 0;
+    std::uint64_t declared_type_ns = 0;
+    std::uint64_t interface_ns = 0;
+    std::uint64_t constructor_ns = 0;
+    std::uint64_t range_ns = 0;
+    std::uint64_t branch_join_ns = 0;
+    std::uint64_t malformed_generic_ns = 0;
+    std::uint64_t generic_prefix_ns = 0;
+    std::uint64_t brace_scan_ns = 0;
+    std::uint64_t model_rebuild_ns = 0;
+    std::uint64_t context_rebuild_ns = 0;
 
     void Print() const {
         if (!enabled) return;
@@ -2970,9 +2985,46 @@ struct ProfileCounters {
             << ",\"malformed_generic_checks\":" << malformed_generic_checks
             << ",\"generic_prefix_checks\":" << generic_prefix_checks
             << ",\"unclosed_string_scan_bytes\":" << unclosed_string_scan_bytes
+            << ",\"analyze_total_ns\":" << analyze_total_ns
+            << ",\"duplicate_parameter_ns\":" << duplicate_parameter_ns
+            << ",\"declared_type_ns\":" << declared_type_ns
+            << ",\"interface_ns\":" << interface_ns
+            << ",\"constructor_ns\":" << constructor_ns
+            << ",\"range_ns\":" << range_ns
+            << ",\"branch_join_ns\":" << branch_join_ns
+            << ",\"malformed_generic_ns\":" << malformed_generic_ns
+            << ",\"generic_prefix_ns\":" << generic_prefix_ns
+            << ",\"brace_scan_ns\":" << brace_scan_ns
+            << ",\"model_rebuild_ns\":" << model_rebuild_ns
+            << ",\"context_rebuild_ns\":" << context_rebuild_ns
             << "}\n";
     }
 };
+
+class ProfileScopeTimer {
+ public:
+    explicit ProfileScopeTimer(std::uint64_t* target)
+        : target_(target), started_(std::chrono::steady_clock::now()) {}
+
+    ~ProfileScopeTimer() {
+        if (!target_) return;
+        *target_ += static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - started_
+            ).count()
+        );
+    }
+
+ private:
+    std::uint64_t* target_;
+    std::chrono::steady_clock::time_point started_;
+};
+
+template <typename Callable>
+auto ProfileTimed(std::uint64_t* target, Callable&& callable) {
+    ProfileScopeTimer timer(target);
+    return callable();
+}
 
 std::size_t EstimateContextPayloadBytes(const FunctionContext& context) {
     std::size_t result = context.result.size() + context.body.size() + context.class_name.size();
@@ -2998,41 +3050,90 @@ CheckStatus AnalyzeSource(
     if (Trim(source).empty()) return {};
 
 #ifdef CANGJIE_ENABLE_PROFILE
+    ProfileScopeTimer analyze_timer(profile ? &profile->analyze_total_ns : nullptr);
     if (profile) ++profile->duplicate_parameter_checks;
+    const CheckStatus duplicate = ProfileTimed(
+        profile ? &profile->duplicate_parameter_ns : nullptr,
+        [&] { return CheckDuplicateParameter(source); }
+    );
+#else
+    const CheckStatus duplicate = CheckDuplicateParameter(source);
 #endif
-    if (CheckStatus duplicate = CheckDuplicateParameter(source); !duplicate.ok) return duplicate;
+    if (!duplicate.ok) return duplicate;
     if (model_dirty) {
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) ++profile->declared_type_checks;
+        const CheckStatus declared = ProfileTimed(
+            profile ? &profile->declared_type_ns : nullptr,
+            [&] { return CheckDeclaredTypes(source, model); }
+        );
+#else
+        const CheckStatus declared = CheckDeclaredTypes(source, model);
 #endif
-        if (CheckStatus declared = CheckDeclaredTypes(source, model); !declared.ok) return declared;
+        if (!declared.ok) return declared;
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) ++profile->interface_checks;
+        const CheckStatus interface = ProfileTimed(
+            profile ? &profile->interface_ns : nullptr,
+            [&] { return CheckInterfaces(source, model); }
+        );
+#else
+        const CheckStatus interface = CheckInterfaces(source, model);
 #endif
-        if (CheckStatus interface = CheckInterfaces(source, model); !interface.ok) return interface;
+        if (!interface.ok) return interface;
     }
     if (commit_dirty) {
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) ++profile->constructor_checks;
+        const CheckStatus constructors = ProfileTimed(
+            profile ? &profile->constructor_ns : nullptr,
+            [&] { return CheckConstructors(source, model); }
+        );
+#else
+        const CheckStatus constructors = CheckConstructors(source, model);
 #endif
-        if (CheckStatus constructors = CheckConstructors(source, model); !constructors.ok) return constructors;
+        if (!constructors.ok) return constructors;
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) ++profile->range_checks;
+        const CheckStatus ranges = ProfileTimed(
+            profile ? &profile->range_ns : nullptr,
+            [&] { return CheckRangeSteps(source, model); }
+        );
+#else
+        const CheckStatus ranges = CheckRangeSteps(source, model);
 #endif
-        if (CheckStatus ranges = CheckRangeSteps(source, model); !ranges.ok) return ranges;
+        if (!ranges.ok) return ranges;
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) ++profile->branch_join_checks;
+        const CheckStatus joins = ProfileTimed(
+            profile ? &profile->branch_join_ns : nullptr,
+            [&] { return CheckIfBranchJoins(source, model); }
+        );
+#else
+        const CheckStatus joins = CheckIfBranchJoins(source, model);
 #endif
-        if (CheckStatus joins = CheckIfBranchJoins(source, model); !joins.ok) return joins;
+        if (!joins.ok) return joins;
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) ++profile->malformed_generic_checks;
+        const CheckStatus malformed = ProfileTimed(
+            profile ? &profile->malformed_generic_ns : nullptr,
+            [&] { return CheckMalformedGenericConstruct(source); }
+        );
+#else
+        const CheckStatus malformed = CheckMalformedGenericConstruct(source);
 #endif
-        if (CheckStatus malformed = CheckMalformedGenericConstruct(source); !malformed.ok) return malformed;
+        if (!malformed.ok) return malformed;
     }
 #ifdef CANGJIE_ENABLE_PROFILE
     if (profile) ++profile->generic_prefix_checks;
+    const CheckStatus generic = ProfileTimed(
+        profile ? &profile->generic_prefix_ns : nullptr,
+        [&] { return CheckGenericPrefix(source, model); }
+    );
+#else
+    const CheckStatus generic = CheckGenericPrefix(source, model);
 #endif
-    if (CheckStatus generic = CheckGenericPrefix(source, model); !generic.ok) return generic;
+    if (!generic.ok) return generic;
 
 #ifdef CANGJIE_ENABLE_PROFILE
     if (profile) profile->context_copy_payload_bytes += EstimateContextPayloadBytes(cached_context);
@@ -3235,15 +3336,18 @@ CheckStatus IncrementalSemanticEngine::Probe(
     }
     int brace_depth = 0;
     std::size_t outer_open = std::string_view::npos;
+    {
 #ifdef CANGJIE_ENABLE_PROFILE
-    if (profile) profile->brace_scan_bytes += source.size();
+        if (profile) profile->brace_scan_bytes += source.size();
+        ProfileScopeTimer brace_timer(profile ? &profile->brace_scan_ns : nullptr);
 #endif
-    for (std::size_t index = 0; index < source.size(); ++index) {
-        if (source[index] == '{') {
-            if (brace_depth++ == 0) outer_open = index;
-        } else if (source[index] == '}' && brace_depth > 0) {
-            --brace_depth;
-            if (brace_depth == 0) outer_open = std::string_view::npos;
+        for (std::size_t index = 0; index < source.size(); ++index) {
+            if (source[index] == '{') {
+                if (brace_depth++ == 0) outer_open = index;
+            } else if (source[index] == '}' && brace_depth > 0) {
+                --brace_depth;
+                if (brace_depth == 0) outer_open = std::string_view::npos;
+            }
         }
     }
     bool open_nominal_header = false;
@@ -3262,6 +3366,7 @@ CheckStatus IncrementalSemanticEngine::Probe(
         delta.find_first_of(")\n\r;}") != std::string_view::npos;
     if (model_dirty) {
 #ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer model_timer(profile ? &profile->model_rebuild_ns : nullptr);
         if (profile) {
             ++profile->model_rebuilds;
             profile->model_rebuild_source_bytes += source.size();
@@ -3277,6 +3382,7 @@ CheckStatus IncrementalSemanticEngine::Probe(
         delta.find_first_of("{}\n\r;") != std::string_view::npos;
     if (context_dirty) {
 #ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer context_timer(profile ? &profile->context_rebuild_ns : nullptr);
         if (profile) {
             ++profile->context_rebuilds;
             profile->context_rebuild_source_bytes += source.size();

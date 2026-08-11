@@ -60,6 +60,19 @@ def run_source(
     if len(payloads) != 1:
         raise RuntimeError(f"expected one profile payload, got {len(payloads)}: {proc.stderr[:400]}")
     counters = json.loads(payloads[0])
+    phase_marker = "CANGJIE_PHASE_PROFILE "
+    phase_payloads = [
+        line[len(phase_marker) :]
+        for line in proc.stderr.splitlines()
+        if line.startswith(phase_marker)
+    ]
+    if len(phase_payloads) != 1:
+        raise RuntimeError(
+            f"expected one phase profile payload, got {len(phase_payloads)}: "
+            f"{proc.stderr[:400]}"
+        )
+    for key, value in json.loads(phase_payloads[0]).items():
+        counters[f"phase_{key}"] = int(value)
     counters["source_bytes"] = len(source.encode("utf-8"))
     counters["token_count"] = len(token_ids)
     return counters

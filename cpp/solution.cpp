@@ -14,6 +14,9 @@
  */
 
 #include <charconv>
+#ifdef CANGJIE_ENABLE_PROFILE
+#include <chrono>
+#endif
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -47,6 +50,46 @@ void ios_base_library_init() {}
 namespace fs = std::filesystem;
 
 namespace {
+
+#ifdef CANGJIE_ENABLE_PROFILE
+class PhaseProfiler {
+ public:
+    using Clock = std::chrono::steady_clock;
+
+    PhaseProfiler() : enabled_(std::getenv("CANGJIE_PROFILE") != nullptr) {}
+
+    ~PhaseProfiler() {
+        if (!enabled_) return;
+        std::cerr
+            << "CANGJIE_PHASE_PROFILE {"
+            << "\"semantic_init_ns\":" << semantic_init_ns
+            << ",\"token_table_init_ns\":" << token_table_init_ns
+            << ",\"grammar_init_ns\":" << grammar_init_ns
+            << ",\"syntax_check_ns\":" << syntax_check_ns
+            << ",\"semantic_check_ns\":" << semantic_check_ns
+            << ",\"tokens_checked\":" << tokens_checked
+            << "}\n";
+    }
+
+    static std::uint64_t Elapsed(Clock::time_point start) {
+        return static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count()
+        );
+    }
+
+    bool enabled() const { return enabled_; }
+
+    std::uint64_t semantic_init_ns = 0;
+    std::uint64_t token_table_init_ns = 0;
+    std::uint64_t grammar_init_ns = 0;
+    std::uint64_t syntax_check_ns = 0;
+    std::uint64_t semantic_check_ns = 0;
+    std::uint64_t tokens_checked = 0;
+
+ private:
+    bool enabled_ = false;
+};
+#endif
 
 constexpr char kTableMagic[8] = {'C', 'J', 'T', 'K', 1, 0, 0, 0};
 constexpr std::uint32_t kMissing = 0xFFFFFFFFu;
@@ -230,6 +273,9 @@ void emit(bool ok, bool competition_output) {
 
 int main(int argc, char** argv) {
     try {
+#ifdef CANGJIE_ENABLE_PROFILE
+        PhaseProfiler phase_profile;
+#endif
         std::ios::sync_with_stdio(false);
         std::cin.tie(nullptr);
         const Args args = parse_args(argc, argv);
@@ -238,9 +284,29 @@ int main(int argc, char** argv) {
         if (!args.context_path.empty() && fs::path(args.context_path).extension() == ".bin") {
             native_context = args.context_path;
         }
+#ifdef CANGJIE_ENABLE_PROFILE
+        auto phase_started = PhaseProfiler::Clock::now();
+#endif
         cangjie::NativeSemanticChecker native_semantic(native_context.string());
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (phase_profile.enabled()) {
+            phase_profile.semantic_init_ns += PhaseProfiler::Elapsed(phase_started);
+            phase_started = PhaseProfiler::Clock::now();
+        }
+#endif
         const TokenTable token_table(root / "generated" / "cl100k_base.bin");
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (phase_profile.enabled()) {
+            phase_profile.token_table_init_ns += PhaseProfiler::Elapsed(phase_started);
+            phase_started = PhaseProfiler::Clock::now();
+        }
+#endif
         NativeSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (phase_profile.enabled()) {
+            phase_profile.grammar_init_ns += PhaseProfiler::Elapsed(phase_started);
+        }
+#endif
 
         std::string line;
         while (std::getline(std::cin, line)) {
@@ -250,8 +316,23 @@ int main(int argc, char** argv) {
                 emit(false, args.competition_output);
                 return 0;
             }
+#ifdef CANGJIE_ENABLE_PROFILE
+            phase_started = PhaseProfiler::Clock::now();
+#endif
             const bool syntax_ok = syntax.check(fragment);
+#ifdef CANGJIE_ENABLE_PROFILE
+            if (phase_profile.enabled()) {
+                phase_profile.syntax_check_ns += PhaseProfiler::Elapsed(phase_started);
+                phase_started = PhaseProfiler::Clock::now();
+            }
+#endif
             const cangjie::CheckStatus semantic_status = native_semantic.Check(fragment);
+#ifdef CANGJIE_ENABLE_PROFILE
+            if (phase_profile.enabled()) {
+                phase_profile.semantic_check_ns += PhaseProfiler::Elapsed(phase_started);
+                ++phase_profile.tokens_checked;
+            }
+#endif
             const bool semantic_ok = semantic_status.ok;
             if (!semantic_status.ok && std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
                 std::cerr << "native semantic rejection: " << semantic_status.message << '\n';
