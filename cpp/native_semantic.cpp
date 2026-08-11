@@ -3191,6 +3191,7 @@ class IncrementalSemanticEngine::Impl {
     std::vector<TokenEvent> accepted_;
     std::size_t source_bytes_ = 0;
     std::size_t model_source_bytes_ = 0;
+    std::size_t model_accepted_tokens_ = 0;
     std::size_t context_source_bytes_ = 0;
     std::string last_partial_;
     ActiveStatementCache statement_cache_;
@@ -3257,7 +3258,9 @@ CheckStatus IncrementalSemanticEngine::Probe(
             header.find("interface ") != std::string::npos;
     }
     const bool model_dirty = impl_->model_source_bytes_ == 0 ||
-        delta.find_first_of("{}") != std::string_view::npos || open_nominal_header;
+        delta.find_first_of("{}") != std::string_view::npos ||
+        (open_nominal_header &&
+         impl_->model_accepted_tokens_ != impl_->accepted_.size());
     const bool commit_dirty = model_dirty ||
         delta.find_first_of(")\n\r;}") != std::string_view::npos;
     if (model_dirty) {
@@ -3272,6 +3275,7 @@ CheckStatus IncrementalSemanticEngine::Probe(
         CollectFunctions(source, &impl_->active_model_);
         CollectNominals(source, &impl_->active_model_);
         impl_->model_source_bytes_ = source.size();
+        impl_->model_accepted_tokens_ = impl_->accepted_.size();
     }
     const bool context_dirty = impl_->context_source_bytes_ == 0 ||
         delta.find_first_of("{}\n\r;") != std::string_view::npos;
@@ -3319,6 +3323,7 @@ void IncrementalSemanticEngine::Rollback(const Checkpoint& checkpoint) {
         impl_->accepted_.resize(checkpoint.accepted_tokens);
     }
     impl_->source_bytes_ = checkpoint.source_bytes;
+    impl_->model_source_bytes_ = 0;
     impl_->statement_cache_.Reset();
 }
 
