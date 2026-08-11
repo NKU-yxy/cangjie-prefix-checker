@@ -250,17 +250,13 @@ std::size_t FindTopLevel(std::string_view input, std::string_view needle) {
     return std::string_view::npos;
 }
 
-std::string TypeHead(std::string_view type) {
-    std::string normalized = CompactType(type);
-    if (StartsWith(normalized, "type:")) {
-        normalized.erase(0, 5);
-    }
+std::string TypeHeadCompact(std::string_view normalized) {
+    if (StartsWith(normalized, "type:")) normalized.remove_prefix(5);
     const std::size_t angle = normalized.find('<');
-    return normalized.substr(0, angle);
+    return std::string(normalized.substr(0, angle));
 }
 
-std::vector<std::string> TypeArgs(std::string_view type) {
-    const std::string normalized = CompactType(type);
+std::vector<std::string> TypeArgsCompact(std::string_view normalized) {
     const std::size_t open = normalized.find('<');
     if (open == std::string::npos || normalized.back() != '>') {
         return {};
@@ -271,6 +267,14 @@ std::vector<std::string> TypeArgs(std::string_view type) {
     );
 }
 
+std::string TypeHead(std::string_view type) {
+    return TypeHeadCompact(CompactType(type));
+}
+
+std::vector<std::string> TypeArgs(std::string_view type) {
+    return TypeArgsCompact(CompactType(type));
+}
+
 std::string ApplySubstitution(
     std::string type,
     const std::unordered_map<std::string, std::string>& substitutions
@@ -279,8 +283,8 @@ std::string ApplySubstitution(
     if (const auto found = substitutions.find(type); found != substitutions.end()) {
         return found->second;
     }
-    const std::string head = TypeHead(type);
-    const auto args = TypeArgs(type);
+    const std::string head = TypeHeadCompact(type);
+    const auto args = TypeArgsCompact(type);
     if (!args.empty()) {
         std::string output = head + "<";
         for (std::size_t index = 0; index < args.size(); ++index) {
@@ -369,8 +373,9 @@ bool IsFunctionType(std::string_view type) {
     return !type.empty() && type.front() == '(' && type.find("->") != std::string_view::npos;
 }
 
-std::pair<std::vector<std::string>, std::string> FunctionTypeParts(std::string_view type) {
-    const std::string normalized = CompactType(type);
+std::pair<std::vector<std::string>, std::string> FunctionTypePartsCompact(
+    std::string_view normalized
+) {
     const std::size_t arrow = normalized.find("->");
     if (arrow == std::string::npos || normalized.empty() || normalized.front() != '(') {
         return {{}, ""};
@@ -381,7 +386,11 @@ std::pair<std::vector<std::string>, std::string> FunctionTypeParts(std::string_v
     }
     auto params = SplitTopLevel(std::string_view(normalized).substr(1, close - 1), ',');
     if (params.size() == 1 && params.front().empty()) params.clear();
-    return {params, normalized.substr(arrow + 2)};
+    return {params, std::string(normalized.substr(arrow + 2))};
+}
+
+std::pair<std::vector<std::string>, std::string> FunctionTypeParts(std::string_view type) {
+    return FunctionTypePartsCompact(CompactType(type));
 }
 
 void AddBuiltinModel(Model* model) {
@@ -1146,27 +1155,27 @@ void CollectActiveLambdaVariables(FunctionContext* context) {
     }
 }
 
-bool NominalSubtype(
+bool NominalSubtypeCompact(
     std::string_view got,
     std::string_view want,
     const Model& model,
     std::unordered_set<std::string>* visited
 ) {
-    const std::string got_head = TypeHead(got);
-    const std::string want_head = TypeHead(want);
-    if (got_head == want_head) return CompactType(got) == CompactType(want);
+    const std::string got_head = TypeHeadCompact(got);
+    const std::string want_head = TypeHeadCompact(want);
+    if (got_head == want_head) return got == want;
     if (!visited->insert(got_head).second) return false;
     const auto nominal = model.nominals.find(got_head);
     if (nominal == model.nominals.end()) return false;
     std::unordered_map<std::string, std::string> substitutions;
-    const auto got_args = TypeArgs(got);
+    const auto got_args = TypeArgsCompact(got);
     for (std::size_t index = 0;
          index < nominal->second.type_params.size() && index < got_args.size(); ++index) {
         substitutions[nominal->second.type_params[index]] = got_args[index];
     }
     for (const std::string& raw_super : nominal->second.supers) {
-        const std::string super = ApplySubstitution(raw_super, substitutions);
-        if (CompactType(super) == CompactType(want) || NominalSubtype(super, want, model, visited)) {
+        const std::string super = CompactType(ApplySubstitution(raw_super, substitutions));
+        if (super == want || NominalSubtypeCompact(super, want, model, visited)) {
             return true;
         }
     }
@@ -1179,8 +1188,8 @@ bool Compatible(std::string_view got, std::string_view want, const Model& model)
     if (left.empty() || left == "?" || right.empty() || right == "?") return true;
     if (left == right) return true;
     if (IsFunctionType(left) && IsFunctionType(right)) {
-        const auto got_function = FunctionTypeParts(left);
-        const auto want_function = FunctionTypeParts(right);
+        const auto got_function = FunctionTypePartsCompact(left);
+        const auto want_function = FunctionTypePartsCompact(right);
         if (got_function.first.size() != want_function.first.size()) return false;
         for (std::size_t index = 0; index < got_function.first.size(); ++index) {
             if (!Compatible(want_function.first[index], got_function.first[index], model)) {
@@ -1189,9 +1198,9 @@ bool Compatible(std::string_view got, std::string_view want, const Model& model)
         }
         return Compatible(got_function.second, want_function.second, model);
     }
-    if (TypeHead(left) == TypeHead(right) && TypeArgs(right).empty()) return true;
+    if (TypeHeadCompact(left) == TypeHeadCompact(right) && TypeArgsCompact(right).empty()) return true;
     std::unordered_set<std::string> visited;
-    return NominalSubtype(left, right, model, &visited);
+    return NominalSubtypeCompact(left, right, model, &visited);
 }
 
 bool KnownType(std::string_view type, const Model& model) {
@@ -1202,7 +1211,7 @@ bool KnownType(std::string_view type, const Model& model) {
     };
     if (primitives.count(normalized)) return true;
     if (IsFunctionType(normalized)) return true;
-    return model.nominals.count(TypeHead(normalized)) != 0;
+    return model.nominals.count(TypeHeadCompact(normalized)) != 0;
 }
 
 bool KnownDeclaredType(
@@ -1214,7 +1223,7 @@ bool KnownDeclaredType(
     if (normalized.empty() || normalized == "Unit") return true;
     if (type_params.count(normalized)) return true;
     if (IsFunctionType(normalized)) {
-        const auto parts = FunctionTypeParts(normalized);
+        const auto parts = FunctionTypePartsCompact(normalized);
         for (const std::string& parameter : parts.first) {
             if (!KnownDeclaredType(parameter, model, type_params)) return false;
         }
@@ -1227,8 +1236,8 @@ bool KnownDeclaredType(
         }
         return true;
     }
-    if (!KnownType(TypeHead(normalized), model)) return false;
-    for (const std::string& argument : TypeArgs(normalized)) {
+    if (!KnownType(TypeHeadCompact(normalized), model)) return false;
+    for (const std::string& argument : TypeArgsCompact(normalized)) {
         if (!KnownDeclaredType(argument, model, type_params)) return false;
     }
     return true;
@@ -2557,10 +2566,11 @@ std::optional<std::string> LastCondition(std::string_view source, std::string_vi
 
 bool InsideLoop(std::string_view body) {
     static const std::regex loop_pattern(R"(\b(?:for|while)\s*\([^{}]*\)\s*\{)");
-    const std::string owned(body);
-    for (std::sregex_iterator it(owned.begin(), owned.end(), loop_pattern), end; it != end; ++it) {
+    using Iterator = std::string_view::const_iterator;
+    for (std::regex_iterator<Iterator> it(body.cbegin(), body.cend(), loop_pattern), end;
+         it != end; ++it) {
         const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
-        if (!MatchingDelimiter(owned, open, '{', '}')) return true;
+        if (!MatchingDelimiter(body, open, '{', '}')) return true;
     }
     return false;
 }
@@ -2590,7 +2600,7 @@ CheckStatus CheckDuplicateParameter(std::string_view source) {
     if (open == std::string::npos) return {};
     const auto close = MatchingDelimiter(source, open, '(', ')');
     const std::size_t end = close.value_or(source.size());
-    const std::string params = std::string(source.substr(open + 1, end - open - (close ? 1 : 0)));
+    const std::string_view params = source.substr(open + 1, end - open - (close ? 1 : 0));
     std::unordered_set<std::string> seen;
     for (const std::string& param : SplitTopLevel(params, ',')) {
         const std::size_t colon = param.find(':');
@@ -2625,7 +2635,7 @@ CheckStatus CheckGenericPrefix(std::string_view source, const Model& model) {
     } else {
         return {};
     }
-    const std::string inside(source.substr(open + 1, end - open - 1));
+    const std::string_view inside = source.substr(open + 1, end - open - 1);
     const auto args = SplitTopLevel(inside, ',');
     const std::size_t supplied = args.size();
     if (supplied > arity || (arity == 0 && !inside.empty())) return {false, "wrong generic arity"};
@@ -2689,10 +2699,10 @@ void CollectInterfaceRequirements(
 ) {
     interface_type = CompactType(interface_type);
     if (!visited->insert(interface_type).second) return;
-    const auto interface = model.nominals.find(TypeHead(interface_type));
+    const auto interface = model.nominals.find(TypeHeadCompact(interface_type));
     if (interface == model.nominals.end() || !interface->second.is_interface) return;
     std::unordered_map<std::string, std::string> substitutions;
-    const auto arguments = TypeArgs(interface_type);
+    const auto arguments = TypeArgsCompact(interface_type);
     for (std::size_t index = 0;
          index < arguments.size() && index < interface->second.type_params.size(); ++index) {
         substitutions[interface->second.type_params[index]] = arguments[index];
@@ -3057,8 +3067,12 @@ CheckStatus AnalyzeSource(
     const bool defer_expression_error = trailing_numeric_prefix || unclosed_string ||
         trailing_open_paren || (!context.is_main && !committed);
     const std::string line = std::move(active_statement);
-    const std::string trimmed_source = Trim(source);
-    const bool condition_closed_now = !trimmed_source.empty() && trimmed_source.back() == ')';
+    std::size_t trimmed_end = source.size();
+    while (trimmed_end > 0 &&
+           std::isspace(static_cast<unsigned char>(source[trimmed_end - 1]))) {
+        --trimmed_end;
+    }
+    const bool condition_closed_now = trimmed_end > 0 && source[trimmed_end - 1] == ')';
     if (condition_closed_now) {
         for (const std::string keyword : {"if", "while"}) {
             if (line.find(keyword + " (") == std::string::npos &&
@@ -3249,10 +3263,11 @@ CheckStatus IncrementalSemanticEngine::Probe(
     bool open_nominal_header = false;
     if (outer_open != std::string_view::npos && brace_depth == 1) {
         const std::size_t prior_close = source.rfind('}', outer_open);
-        const std::string header(source.substr(
-            prior_close == std::string_view::npos ? 0 : prior_close + 1,
-            outer_open - (prior_close == std::string_view::npos ? 0 : prior_close + 1)
-        ));
+        const std::size_t header_start = prior_close == std::string_view::npos
+            ? 0 : prior_close + 1;
+        const std::string_view header = source.substr(
+            header_start, outer_open - header_start
+        );
         open_nominal_header = header.find("class ") != std::string::npos ||
             header.find("interface ") != std::string::npos;
     }
