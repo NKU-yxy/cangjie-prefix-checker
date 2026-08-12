@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from differential_check import _project_programs
 from hidden_semantic_fuzz import generate_cases
+from tools.run_comprehensive_cases import load_cases
 
 
 def run_source(
@@ -132,11 +133,26 @@ def main() -> int:
         (case.name, case.source, case.expected_valid, None)
         for case in generate_cases(args.seed, args.cases_per_family)
     )
+    _, comprehensive = load_cases(
+        ROOT / "test_cases" / "comprehensive" / "manifest.json"
+    )
+    comprehensive_cases = (
+        (
+            case.name,
+            case.source,
+            case.expected != "reject",
+            None,
+        )
+        for case in comprehensive
+    )
 
     records: list[dict[str, object]] = []
     add_corpus("official", official_cases, solution, encoding, env, records)
     add_corpus("project", project_cases, solution, encoding, env, records)
     add_corpus("fuzz", fuzz_cases, solution, encoding, env, records)
+    add_corpus(
+        "comprehensive", comprehensive_cases, solution, encoding, env, records
+    )
 
     aggregate: dict[str, int] = {}
     counts: dict[str, int] = {}

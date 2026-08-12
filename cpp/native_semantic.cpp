@@ -24,6 +24,178 @@
 namespace cangjie {
 namespace {
 
+#ifdef CANGJIE_ENABLE_PROFILE
+class ProfileScopeTimer {
+ public:
+    explicit ProfileScopeTimer(std::uint64_t* target)
+        : target_(target), started_(std::chrono::steady_clock::now()) {}
+
+    ~ProfileScopeTimer() {
+        if (!target_) return;
+        *target_ += static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - started_
+            ).count()
+        );
+    }
+
+ private:
+    std::uint64_t* target_;
+    std::chrono::steady_clock::time_point started_;
+};
+
+struct ProfileCounters {
+    bool enabled = std::getenv("CANGJIE_PROFILE") != nullptr;
+    std::uint64_t accepted_events = 0;
+    std::uint64_t probe_calls = 0;
+    std::uint64_t indentation_fast_paths = 0;
+    std::uint64_t brace_scan_bytes = 0;
+    std::uint64_t model_rebuilds = 0;
+    std::uint64_t model_rebuild_source_bytes = 0;
+    std::uint64_t context_rebuilds = 0;
+    std::uint64_t context_rebuild_source_bytes = 0;
+    std::uint64_t analyze_calls = 0;
+    std::uint64_t context_copy_payload_bytes = 0;
+    std::uint64_t duplicate_parameter_checks = 0;
+    std::uint64_t declared_type_checks = 0;
+    std::uint64_t interface_checks = 0;
+    std::uint64_t constructor_checks = 0;
+    std::uint64_t range_checks = 0;
+    std::uint64_t branch_join_checks = 0;
+    std::uint64_t malformed_generic_checks = 0;
+    std::uint64_t generic_prefix_checks = 0;
+    std::uint64_t unclosed_string_scan_bytes = 0;
+    std::uint64_t analyze_total_ns = 0;
+    std::uint64_t duplicate_parameter_ns = 0;
+    std::uint64_t declared_type_ns = 0;
+    std::uint64_t interface_ns = 0;
+    std::uint64_t constructor_ns = 0;
+    std::uint64_t range_ns = 0;
+    std::uint64_t branch_join_ns = 0;
+    std::uint64_t malformed_generic_ns = 0;
+    std::uint64_t generic_prefix_ns = 0;
+    std::uint64_t brace_scan_ns = 0;
+    std::uint64_t model_rebuild_ns = 0;
+    std::uint64_t model_reset_ns = 0;
+    std::uint64_t collect_imports_ns = 0;
+    std::uint64_t collect_functions_ns = 0;
+    std::uint64_t collect_nominals_ns = 0;
+    std::uint64_t context_rebuild_ns = 0;
+    std::uint64_t context_current_function_ns = 0;
+    std::uint64_t context_local_variables_ns = 0;
+    std::uint64_t context_class_fields_ns = 0;
+    std::uint64_t context_inferred_variables_ns = 0;
+    std::uint64_t context_lambda_variables_ns = 0;
+    std::uint64_t context_for_binding_ns = 0;
+    std::uint64_t type_generations = 0;
+    std::uint64_t compact_type_calls = 0;
+    std::uint64_t compact_type_ns = 0;
+    std::uint64_t compact_type_generation_unique = 0;
+    std::uint64_t type_head_calls = 0;
+    std::uint64_t type_head_ns = 0;
+    std::uint64_t type_head_generation_unique = 0;
+    std::uint64_t type_args_calls = 0;
+    std::uint64_t type_args_ns = 0;
+    std::uint64_t type_args_generation_unique = 0;
+    std::uint64_t compatible_calls = 0;
+    std::uint64_t compatible_ns = 0;
+    std::uint64_t compatible_generation_unique = 0;
+    std::uint64_t nominal_subtype_calls = 0;
+    std::uint64_t nominal_subtype_ns = 0;
+    std::uint64_t nominal_subtype_generation_unique = 0;
+    std::unordered_set<std::string> compact_type_keys;
+    std::unordered_set<std::string> type_head_keys;
+    std::unordered_set<std::string> type_args_keys;
+    std::unordered_set<std::string> compatible_keys;
+    std::unordered_set<std::string> nominal_subtype_keys;
+
+    void BeginTypeGeneration() {
+        ++type_generations;
+        compact_type_keys.clear();
+        type_head_keys.clear();
+        type_args_keys.clear();
+        compatible_keys.clear();
+        nominal_subtype_keys.clear();
+    }
+
+    void Print() const {
+        if (!enabled) return;
+        std::cerr
+            << "CANGJIE_PROFILE {"
+            << "\"accepted_events\":" << accepted_events
+            << ",\"probe_calls\":" << probe_calls
+            << ",\"indentation_fast_paths\":" << indentation_fast_paths
+            << ",\"brace_scan_bytes\":" << brace_scan_bytes
+            << ",\"model_rebuilds\":" << model_rebuilds
+            << ",\"model_rebuild_source_bytes\":" << model_rebuild_source_bytes
+            << ",\"context_rebuilds\":" << context_rebuilds
+            << ",\"context_rebuild_source_bytes\":" << context_rebuild_source_bytes
+            << ",\"analyze_calls\":" << analyze_calls
+            << ",\"context_copy_payload_bytes\":" << context_copy_payload_bytes
+            << ",\"duplicate_parameter_checks\":" << duplicate_parameter_checks
+            << ",\"declared_type_checks\":" << declared_type_checks
+            << ",\"interface_checks\":" << interface_checks
+            << ",\"constructor_checks\":" << constructor_checks
+            << ",\"range_checks\":" << range_checks
+            << ",\"branch_join_checks\":" << branch_join_checks
+            << ",\"malformed_generic_checks\":" << malformed_generic_checks
+            << ",\"generic_prefix_checks\":" << generic_prefix_checks
+            << ",\"unclosed_string_scan_bytes\":" << unclosed_string_scan_bytes
+            << ",\"analyze_total_ns\":" << analyze_total_ns
+            << ",\"duplicate_parameter_ns\":" << duplicate_parameter_ns
+            << ",\"declared_type_ns\":" << declared_type_ns
+            << ",\"interface_ns\":" << interface_ns
+            << ",\"constructor_ns\":" << constructor_ns
+            << ",\"range_ns\":" << range_ns
+            << ",\"branch_join_ns\":" << branch_join_ns
+            << ",\"malformed_generic_ns\":" << malformed_generic_ns
+            << ",\"generic_prefix_ns\":" << generic_prefix_ns
+            << ",\"brace_scan_ns\":" << brace_scan_ns
+            << ",\"model_rebuild_ns\":" << model_rebuild_ns
+            << ",\"model_reset_ns\":" << model_reset_ns
+            << ",\"collect_imports_ns\":" << collect_imports_ns
+            << ",\"collect_functions_ns\":" << collect_functions_ns
+            << ",\"collect_nominals_ns\":" << collect_nominals_ns
+            << ",\"context_rebuild_ns\":" << context_rebuild_ns
+            << ",\"context_current_function_ns\":" << context_current_function_ns
+            << ",\"context_local_variables_ns\":" << context_local_variables_ns
+            << ",\"context_class_fields_ns\":" << context_class_fields_ns
+            << ",\"context_inferred_variables_ns\":" << context_inferred_variables_ns
+            << ",\"context_lambda_variables_ns\":" << context_lambda_variables_ns
+            << ",\"context_for_binding_ns\":" << context_for_binding_ns
+            << ",\"type_generations\":" << type_generations
+            << ",\"compact_type_calls\":" << compact_type_calls
+            << ",\"compact_type_ns\":" << compact_type_ns
+            << ",\"compact_type_generation_unique\":" << compact_type_generation_unique
+            << ",\"type_head_calls\":" << type_head_calls
+            << ",\"type_head_ns\":" << type_head_ns
+            << ",\"type_head_generation_unique\":" << type_head_generation_unique
+            << ",\"type_args_calls\":" << type_args_calls
+            << ",\"type_args_ns\":" << type_args_ns
+            << ",\"type_args_generation_unique\":" << type_args_generation_unique
+            << ",\"compatible_calls\":" << compatible_calls
+            << ",\"compatible_ns\":" << compatible_ns
+            << ",\"compatible_generation_unique\":" << compatible_generation_unique
+            << ",\"nominal_subtype_calls\":" << nominal_subtype_calls
+            << ",\"nominal_subtype_ns\":" << nominal_subtype_ns
+            << ",\"nominal_subtype_generation_unique\":"
+            << nominal_subtype_generation_unique
+            << "}\n";
+    }
+};
+
+ProfileCounters* g_profile = nullptr;
+
+std::string ProfilePairKey(std::string_view left, std::string_view right) {
+    std::string key;
+    key.reserve(left.size() + right.size() + 1);
+    key.append(left.data(), left.size());
+    key.push_back('\0');
+    key.append(right.data(), right.size());
+    return key;
+}
+#endif
+
 bool IsIdentStart(unsigned char ch) {
     return std::isalpha(ch) || ch == '_';
 }
@@ -84,6 +256,15 @@ std::string Trim(std::string_view input) {
 }
 
 std::string CompactType(std::string_view input) {
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileScopeTimer profile_timer(g_profile ? &g_profile->compact_type_ns : nullptr);
+    if (g_profile) {
+        ++g_profile->compact_type_calls;
+        if (g_profile->compact_type_keys.emplace(input).second) {
+            ++g_profile->compact_type_generation_unique;
+        }
+    }
+#endif
     std::string output;
     output.reserve(input.size());
     bool pending_space = false;
@@ -254,6 +435,15 @@ std::size_t FindTopLevel(std::string_view input, std::string_view needle) {
 }
 
 std::string TypeHead(std::string_view type) {
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileScopeTimer profile_timer(g_profile ? &g_profile->type_head_ns : nullptr);
+    if (g_profile) {
+        ++g_profile->type_head_calls;
+        if (g_profile->type_head_keys.emplace(type).second) {
+            ++g_profile->type_head_generation_unique;
+        }
+    }
+#endif
     std::string normalized = CompactType(type);
     if (StartsWith(normalized, "type:")) {
         normalized.erase(0, 5);
@@ -263,6 +453,15 @@ std::string TypeHead(std::string_view type) {
 }
 
 std::vector<std::string> TypeArgs(std::string_view type) {
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileScopeTimer profile_timer(g_profile ? &g_profile->type_args_ns : nullptr);
+    if (g_profile) {
+        ++g_profile->type_args_calls;
+        if (g_profile->type_args_keys.emplace(type).second) {
+            ++g_profile->type_args_generation_unique;
+        }
+    }
+#endif
     const std::string normalized = CompactType(type);
     const std::size_t open = normalized.find('<');
     if (open == std::string::npos || normalized.back() != '>') {
@@ -1155,6 +1354,15 @@ bool NominalSubtype(
     const Model& model,
     std::unordered_set<std::string>* visited
 ) {
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileScopeTimer profile_timer(g_profile ? &g_profile->nominal_subtype_ns : nullptr);
+    if (g_profile) {
+        ++g_profile->nominal_subtype_calls;
+        if (g_profile->nominal_subtype_keys.emplace(ProfilePairKey(got, want)).second) {
+            ++g_profile->nominal_subtype_generation_unique;
+        }
+    }
+#endif
     const std::string got_head = TypeHead(got);
     const std::string want_head = TypeHead(want);
     if (got_head == want_head) return CompactType(got) == CompactType(want);
@@ -1177,6 +1385,15 @@ bool NominalSubtype(
 }
 
 bool Compatible(std::string_view got, std::string_view want, const Model& model) {
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileScopeTimer profile_timer(g_profile ? &g_profile->compatible_ns : nullptr);
+    if (g_profile) {
+        ++g_profile->compatible_calls;
+        if (g_profile->compatible_keys.emplace(ProfilePairKey(got, want)).second) {
+            ++g_profile->compatible_generation_unique;
+        }
+    }
+#endif
     const std::string left = CompactType(got);
     const std::string right = CompactType(want);
     if (left.empty() || left == "?" || right.empty() || right == "?") return true;
@@ -3086,139 +3303,77 @@ CheckStatus CheckMalformedGenericConstruct(std::string_view source) {
 }
 
 FunctionContext BuildFunctionContext(std::string_view source, const Model& model) {
-    FunctionContext context = CurrentFunctionContext(source);
+    FunctionContext context;
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(g_profile ? &g_profile->context_current_function_ns : nullptr);
+#endif
+        context = CurrentFunctionContext(source);
+    }
     if (!context.in_function) return context;
-    CollectLocalVariables(&context);
-    if (!context.class_name.empty()) {
-        if (const auto cls = model.nominals.find(context.class_name); cls != model.nominals.end()) {
-            for (const auto& [name, type] : cls->second.fields) context.variables.emplace(name, type);
-            context.variables["this"] = context.class_name;
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(g_profile ? &g_profile->context_local_variables_ns : nullptr);
+#endif
+        CollectLocalVariables(&context);
+    }
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(g_profile ? &g_profile->context_class_fields_ns : nullptr);
+#endif
+        if (!context.class_name.empty()) {
+            if (const auto cls = model.nominals.find(context.class_name);
+                cls != model.nominals.end()) {
+                for (const auto& [name, type] : cls->second.fields) {
+                    context.variables.emplace(name, type);
+                }
+                context.variables["this"] = context.class_name;
+            }
         }
     }
-    CollectInferredLocalVariables(&context, model, source);
-    CollectActiveLambdaVariables(&context);
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->context_inferred_variables_ns : nullptr
+        );
+#endif
+        CollectInferredLocalVariables(&context, model, source);
+    }
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(g_profile ? &g_profile->context_lambda_variables_ns : nullptr);
+#endif
+        CollectActiveLambdaVariables(&context);
+    }
     static const std::regex for_binding(
         R"(\bfor\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+in\s+([^(){}\n]+)\)\s*\{)"
     );
-    for (std::sregex_iterator it(context.body.begin(), context.body.end(), for_binding), end;
-         it != end; ++it) {
-        const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
-        if (MatchingDelimiter(context.body, open, '{', '}')) continue;
-        ExpressionTyper typer(model, context, source);
-        ExprResult iterable = typer.Infer((*it)[2].str());
-        if (!iterable.known) continue;
-        if (TypeHead(iterable.type) == "HashMap") {
-            const auto args = TypeArgs(iterable.type);
-            context.variables[(*it)[1].str()] = args.size() >= 2
-                ? "(" + args[0] + "," + args[1] + ")" : "?";
-        } else {
-            context.variables[(*it)[1].str()] = IterableElement(iterable.type);
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(g_profile ? &g_profile->context_for_binding_ns : nullptr);
+#endif
+        for (std::sregex_iterator it(context.body.begin(), context.body.end(), for_binding), end;
+             it != end; ++it) {
+            const std::size_t open = static_cast<std::size_t>(
+                (*it).position() + (*it).length() - 1
+            );
+            if (MatchingDelimiter(context.body, open, '{', '}')) continue;
+            ExpressionTyper typer(model, context, source);
+            ExprResult iterable = typer.Infer((*it)[2].str());
+            if (!iterable.known) continue;
+            if (TypeHead(iterable.type) == "HashMap") {
+                const auto args = TypeArgs(iterable.type);
+                context.variables[(*it)[1].str()] = args.size() >= 2
+                    ? "(" + args[0] + "," + args[1] + ")" : "?";
+            } else {
+                context.variables[(*it)[1].str()] = IterableElement(iterable.type);
+            }
         }
     }
     return context;
 }
 
 #ifdef CANGJIE_ENABLE_PROFILE
-struct ProfileCounters {
-    bool enabled = std::getenv("CANGJIE_PROFILE") != nullptr;
-    std::uint64_t accepted_events = 0;
-    std::uint64_t probe_calls = 0;
-    std::uint64_t indentation_fast_paths = 0;
-    std::uint64_t brace_scan_bytes = 0;
-    std::uint64_t model_rebuilds = 0;
-    std::uint64_t model_rebuild_source_bytes = 0;
-    std::uint64_t context_rebuilds = 0;
-    std::uint64_t context_rebuild_source_bytes = 0;
-    std::uint64_t analyze_calls = 0;
-    std::uint64_t context_copy_payload_bytes = 0;
-    std::uint64_t duplicate_parameter_checks = 0;
-    std::uint64_t declared_type_checks = 0;
-    std::uint64_t interface_checks = 0;
-    std::uint64_t constructor_checks = 0;
-    std::uint64_t range_checks = 0;
-    std::uint64_t branch_join_checks = 0;
-    std::uint64_t malformed_generic_checks = 0;
-    std::uint64_t generic_prefix_checks = 0;
-    std::uint64_t unclosed_string_scan_bytes = 0;
-    std::uint64_t analyze_total_ns = 0;
-    std::uint64_t duplicate_parameter_ns = 0;
-    std::uint64_t declared_type_ns = 0;
-    std::uint64_t interface_ns = 0;
-    std::uint64_t constructor_ns = 0;
-    std::uint64_t range_ns = 0;
-    std::uint64_t branch_join_ns = 0;
-    std::uint64_t malformed_generic_ns = 0;
-    std::uint64_t generic_prefix_ns = 0;
-    std::uint64_t brace_scan_ns = 0;
-    std::uint64_t model_rebuild_ns = 0;
-    std::uint64_t model_reset_ns = 0;
-    std::uint64_t collect_imports_ns = 0;
-    std::uint64_t collect_functions_ns = 0;
-    std::uint64_t collect_nominals_ns = 0;
-    std::uint64_t context_rebuild_ns = 0;
-
-    void Print() const {
-        if (!enabled) return;
-        std::cerr
-            << "CANGJIE_PROFILE {"
-            << "\"accepted_events\":" << accepted_events
-            << ",\"probe_calls\":" << probe_calls
-            << ",\"indentation_fast_paths\":" << indentation_fast_paths
-            << ",\"brace_scan_bytes\":" << brace_scan_bytes
-            << ",\"model_rebuilds\":" << model_rebuilds
-            << ",\"model_rebuild_source_bytes\":" << model_rebuild_source_bytes
-            << ",\"context_rebuilds\":" << context_rebuilds
-            << ",\"context_rebuild_source_bytes\":" << context_rebuild_source_bytes
-            << ",\"analyze_calls\":" << analyze_calls
-            << ",\"context_copy_payload_bytes\":" << context_copy_payload_bytes
-            << ",\"duplicate_parameter_checks\":" << duplicate_parameter_checks
-            << ",\"declared_type_checks\":" << declared_type_checks
-            << ",\"interface_checks\":" << interface_checks
-            << ",\"constructor_checks\":" << constructor_checks
-            << ",\"range_checks\":" << range_checks
-            << ",\"branch_join_checks\":" << branch_join_checks
-            << ",\"malformed_generic_checks\":" << malformed_generic_checks
-            << ",\"generic_prefix_checks\":" << generic_prefix_checks
-            << ",\"unclosed_string_scan_bytes\":" << unclosed_string_scan_bytes
-            << ",\"analyze_total_ns\":" << analyze_total_ns
-            << ",\"duplicate_parameter_ns\":" << duplicate_parameter_ns
-            << ",\"declared_type_ns\":" << declared_type_ns
-            << ",\"interface_ns\":" << interface_ns
-            << ",\"constructor_ns\":" << constructor_ns
-            << ",\"range_ns\":" << range_ns
-            << ",\"branch_join_ns\":" << branch_join_ns
-            << ",\"malformed_generic_ns\":" << malformed_generic_ns
-            << ",\"generic_prefix_ns\":" << generic_prefix_ns
-            << ",\"brace_scan_ns\":" << brace_scan_ns
-            << ",\"model_rebuild_ns\":" << model_rebuild_ns
-            << ",\"model_reset_ns\":" << model_reset_ns
-            << ",\"collect_imports_ns\":" << collect_imports_ns
-            << ",\"collect_functions_ns\":" << collect_functions_ns
-            << ",\"collect_nominals_ns\":" << collect_nominals_ns
-            << ",\"context_rebuild_ns\":" << context_rebuild_ns
-            << "}\n";
-    }
-};
-
-class ProfileScopeTimer {
- public:
-    explicit ProfileScopeTimer(std::uint64_t* target)
-        : target_(target), started_(std::chrono::steady_clock::now()) {}
-
-    ~ProfileScopeTimer() {
-        if (!target_) return;
-        *target_ += static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now() - started_
-            ).count()
-        );
-    }
-
- private:
-    std::uint64_t* target_;
-    std::chrono::steady_clock::time_point started_;
-};
-
 template <typename Callable>
 auto ProfileTimed(std::uint64_t* target, Callable&& callable) {
     ProfileScopeTimer timer(target);
@@ -3475,13 +3630,22 @@ CheckStatus AnalyzeSource(
 class IncrementalSemanticEngine::Impl {
  public:
     explicit Impl(std::string context_path) : context_path_(std::move(context_path)) {
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (profile_.enabled) {
+            g_profile = &profile_;
+            profile_.BeginTypeGeneration();
+        }
+#endif
         AddBuiltinModel(&preload_);
         LoadContextTable(context_path_, &preload_);
         active_model_ = preload_;
     }
 
 #ifdef CANGJIE_ENABLE_PROFILE
-    ~Impl() { profile_.Print(); }
+    ~Impl() {
+        profile_.Print();
+        if (g_profile == &profile_) g_profile = nullptr;
+    }
 #endif
 
     std::string context_path_;
@@ -3569,6 +3733,7 @@ CheckStatus IncrementalSemanticEngine::Probe(
         if (profile) {
             ++profile->model_rebuilds;
             profile->model_rebuild_source_bytes += source.size();
+            profile->BeginTypeGeneration();
         }
 #endif
         {

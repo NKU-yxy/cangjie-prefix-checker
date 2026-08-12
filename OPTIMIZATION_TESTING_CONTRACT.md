@@ -1,7 +1,7 @@
 # 仓颉前缀语义检查器本地优化测试条约
 
-版本：1.0  
-生效日期：2026-08-11  
+版本：1.1
+生效日期：2026-08-12
 适用项目：T2026100552010674 / 圆周运动
 
 ## 1. 目的与效力
@@ -120,9 +120,61 @@ python3 benchmark/differential_check.py \
   --official-root /official \
   --solution ./solution \
   --mode fast
+python3 tools/generate_comprehensive_cases.py --check
+python3 tools/run_comprehensive_cases.py \
+  --solution ./solution \
+  --check-competition-output
 ```
 
+综合语料门禁必须使用版本库锁定的
+[`test_cases/comprehensive/manifest.json`](test_cases/comprehensive/manifest.json)，不得在候选
+版本上重新生成或筛选样例。当前门禁的精确期望为：
+
+- `113/113` 个样例通过；
+- `96` 个完整样例通过官方类型检查器 oracle 复核；
+- 默认协议和 `--competition-output` 协议各运行一次，共 `226` 次独立协议运行；
+- accept、reject 和 incomplete-prefix 类别均不得出现新失败。
+
+这 113 例只属于正确性门禁，不参与官方 50 例的 `SUM`、`MEDIAN`、
+`P95`、`MAX`、`WIN` 或 `LOSS` 计算。
+
 任一正确性测试失败时，候选版本直接判定为 **REJECTED**，不得讨论其性能收益。
+
+### 4.1 并发或启动路径修改的附加门禁
+
+任何修改线程、future、条件变量、启动初始化顺序或异常汇合方式的候选，
+还必须在正式性能计时前执行：
+
+```bash
+python3 tools/run_concurrency_startup_checks.py \
+  --solution ./solution \
+  --cold-starts 1000 \
+  --long-statements 2048 \
+  --parallel-clients 8 \
+  --parallel-rounds 20
+```
+
+该命令是正确性压力测试，不是性能 benchmark；其耗时统计只用于发现卡死和异常
+值，不得与第 3 节口径混合或用于宣称提升。脚本必须确认：
+
+1. 1000 个全新进程均在超时内启动、回复且正常退出；
+2. 长合法输入的每个 token 均只获得一个正确回复；
+3. 多客户并行压力下无死锁、丢回复、重复回复或非零退出；
+4. 缺失或损坏的 context、token table 和 grammar 只在临时副本上测试，失败时
+   必须非零退出、写出诊断且不得卡死；
+5. 同时缺失 token table 与 grammar 时，仍保持 token table 异常优先；
+6. 脚本不得移动、重命名、覆盖或修改仓库中的真实资源。
+
+线程创建失败和状态转移强制 yield 无法由黑盒进程稳定触发，必须通过仅测试
+构建启用的可注入 launcher/yield hook 或等价单元测试覆盖。必须验证线程创建失败
+回退到串行路径，并在每个共享状态转移前后执行强制 yield 后仍与串行结果一致。
+这些 hook 必须由编译开关隔离，在正式构建中完全编译掉。
+
+单 CPU 检查必须在额外的 `--cpus=1` 官方容器内执行同一正确性命令，并添加
+`--require-single-cpu`。这一轮不记性能数字，不得在生产代码或正式 A/B/A 计时中
+设置 CPU affinity。涉及共享内存、引用生命期或线程同步的候选必须运行
+ASan/UBSan；当官方 AArch64 工具链和 XGrammar 支持时还必须运行 TSan，无法运行时
+必须在报告中保留工具链错误和说明，不得静默跳过。
 
 ## 5. ARM64 可移植性约束
 

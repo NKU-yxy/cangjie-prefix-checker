@@ -13,6 +13,7 @@
  * checking all run in this native process.
  */
 
+#include <algorithm>
 #include <charconv>
 #ifdef CANGJIE_ENABLE_PROFILE
 #include <chrono>
@@ -65,8 +66,18 @@ class PhaseProfiler {
             << "\"semantic_init_ns\":" << semantic_init_ns
             << ",\"token_table_init_ns\":" << token_table_init_ns
             << ",\"grammar_init_ns\":" << grammar_init_ns
+            << ",\"startup_wall_ns\":" << startup_wall_ns
             << ",\"syntax_check_ns\":" << syntax_check_ns
             << ",\"semantic_check_ns\":" << semantic_check_ns
+            << ",\"syntax_semantic_overlap_upper_bound_ns\":"
+            << syntax_semantic_overlap_upper_bound_ns
+            << ",\"syntax_stable_bytes\":" << syntax_stable_bytes
+            << ",\"syntax_trailing_whitespace_scan_bytes\":"
+            << syntax_trailing_whitespace_scan_bytes
+            << ",\"syntax_stable_over_15_bytes_calls\":"
+            << syntax_stable_over_15_bytes_calls
+            << ",\"syntax_pending_capacity_growths\":"
+            << syntax_pending_capacity_growths
             << ",\"tokens_checked\":" << tokens_checked
             << "}\n";
     }
@@ -82,8 +93,14 @@ class PhaseProfiler {
     std::uint64_t semantic_init_ns = 0;
     std::uint64_t token_table_init_ns = 0;
     std::uint64_t grammar_init_ns = 0;
+    std::uint64_t startup_wall_ns = 0;
     std::uint64_t syntax_check_ns = 0;
     std::uint64_t semantic_check_ns = 0;
+    std::uint64_t syntax_semantic_overlap_upper_bound_ns = 0;
+    std::uint64_t syntax_stable_bytes = 0;
+    std::uint64_t syntax_trailing_whitespace_scan_bytes = 0;
+    std::uint64_t syntax_stable_over_15_bytes_calls = 0;
+    std::uint64_t syntax_pending_capacity_growths = 0;
     std::uint64_t tokens_checked = 0;
 
  private:
@@ -175,6 +192,15 @@ std::string read_text_file(const fs::path& path) {
 
 class NativeSyntaxChecker {
  public:
+#ifdef CANGJIE_ENABLE_PROFILE
+    struct ProfileSnapshot {
+        std::uint64_t stable_bytes = 0;
+        std::uint64_t trailing_whitespace_scan_bytes = 0;
+        std::uint64_t stable_over_15_bytes_calls = 0;
+        std::uint64_t pending_capacity_growths = 0;
+    };
+#endif
+
     explicit NativeSyntaxChecker(const fs::path& grammar_path)
         : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
           compiler_(tokenizer_, 1, false),
@@ -182,7 +208,13 @@ class NativeSyntaxChecker {
           matcher_(compiled_) {}
 
     bool check(std::string_view fragment) {
+#ifdef CANGJIE_ENABLE_PROFILE
+        const std::size_t prior_capacity = pending_.capacity();
+#endif
         pending_.append(fragment.data(), fragment.size());
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (pending_.capacity() != prior_capacity) ++profile_.pending_capacity_growths;
+#endif
         std::size_t stable_size = pending_.size();
         while (stable_size > 0) {
             const char ch = pending_[stable_size - 1];
@@ -192,12 +224,24 @@ class NativeSyntaxChecker {
             --stable_size;
         }
         if (stable_size == 0) {
+#ifdef CANGJIE_ENABLE_PROFILE
+            profile_.trailing_whitespace_scan_bytes += pending_.size();
+#endif
             return true;
         }
+#ifdef CANGJIE_ENABLE_PROFILE
+        profile_.stable_bytes += stable_size;
+        profile_.trailing_whitespace_scan_bytes += pending_.size() - stable_size;
+        if (stable_size > 15) ++profile_.stable_over_15_bytes_calls;
+#endif
         std::string stable = pending_.substr(0, stable_size);
         pending_.erase(0, stable_size);
         return matcher_.AcceptString(stable);
     }
+
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileSnapshot profile() const { return profile_; }
+#endif
 
  private:
     xgrammar::TokenizerInfo tokenizer_;
@@ -205,6 +249,9 @@ class NativeSyntaxChecker {
     xgrammar::CompiledGrammar compiled_;
     xgrammar::GrammarMatcher matcher_;
     std::string pending_;
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileSnapshot profile_;
+#endif
 };
 
 struct Args {
@@ -293,6 +340,7 @@ int main(int argc, char** argv) {
             phase_profile.semantic_init_ns += PhaseProfiler::Elapsed(phase_started);
             phase_started = PhaseProfiler::Clock::now();
         }
+        const auto startup_started = PhaseProfiler::Clock::now();
 #endif
         const TokenTable token_table(root / "generated" / "cl100k_base.bin");
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -305,6 +353,7 @@ int main(int argc, char** argv) {
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
             phase_profile.grammar_init_ns += PhaseProfiler::Elapsed(phase_started);
+            phase_profile.startup_wall_ns += PhaseProfiler::Elapsed(startup_started);
         }
 #endif
 
@@ -321,15 +370,20 @@ int main(int argc, char** argv) {
 #endif
             const bool syntax_ok = syntax.check(fragment);
 #ifdef CANGJIE_ENABLE_PROFILE
+            std::uint64_t syntax_elapsed = 0;
             if (phase_profile.enabled()) {
-                phase_profile.syntax_check_ns += PhaseProfiler::Elapsed(phase_started);
+                syntax_elapsed = PhaseProfiler::Elapsed(phase_started);
+                phase_profile.syntax_check_ns += syntax_elapsed;
                 phase_started = PhaseProfiler::Clock::now();
             }
 #endif
             const cangjie::CheckStatus semantic_status = native_semantic.Check(fragment);
 #ifdef CANGJIE_ENABLE_PROFILE
             if (phase_profile.enabled()) {
-                phase_profile.semantic_check_ns += PhaseProfiler::Elapsed(phase_started);
+                const std::uint64_t semantic_elapsed = PhaseProfiler::Elapsed(phase_started);
+                phase_profile.semantic_check_ns += semantic_elapsed;
+                phase_profile.syntax_semantic_overlap_upper_bound_ns +=
+                    std::min(syntax_elapsed, semantic_elapsed);
                 ++phase_profile.tokens_checked;
             }
 #endif
@@ -339,10 +393,20 @@ int main(int argc, char** argv) {
             }
             const bool ok = syntax_ok && semantic_ok;
             emit(ok, args.competition_output);
-            if (!ok) {
-                return 0;
-            }
+            if (!ok) break;
         }
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (phase_profile.enabled()) {
+            const NativeSyntaxChecker::ProfileSnapshot snapshot = syntax.profile();
+            phase_profile.syntax_stable_bytes = snapshot.stable_bytes;
+            phase_profile.syntax_trailing_whitespace_scan_bytes =
+                snapshot.trailing_whitespace_scan_bytes;
+            phase_profile.syntax_stable_over_15_bytes_calls =
+                snapshot.stable_over_15_bytes_calls;
+            phase_profile.syntax_pending_capacity_growths =
+                snapshot.pending_capacity_growths;
+        }
+#endif
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "native solution error: " << error.what() << '\n';
