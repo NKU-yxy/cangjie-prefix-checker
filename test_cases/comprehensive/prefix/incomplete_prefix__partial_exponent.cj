@@ -1,0 +1,1 @@
+main(): Unit { let value: Float64 = 1e

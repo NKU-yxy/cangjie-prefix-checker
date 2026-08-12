@@ -1,0 +1,1047 @@
+{
+  "schema_version": 1,
+  "description": "仓颉流式前缀检查器固定综合回归语料",
+  "generator": "tools/generate_comprehensive_cases.py",
+  "case_count": 113,
+  "family_counts": {
+    "classes_interfaces": 9,
+    "collections": 10,
+    "control_flow": 9,
+    "functions": 8,
+    "generated_generic_inheritance": 6,
+    "generated_multiline": 6,
+    "generated_nested_lambda": 6,
+    "generated_overload": 6,
+    "generated_scope_isolation": 6,
+    "generated_valid_zero_false_positive": 6,
+    "incomplete_prefix": 10,
+    "lexical": 7,
+    "scope": 6,
+    "syntax": 10,
+    "types_operators": 8
+  },
+  "expectation_counts": {
+    "accept": 47,
+    "prefix_accept": 10,
+    "reject": 56
+  },
+  "cases": [
+    {
+      "name": "class-constructor-field-method",
+      "family": "classes_interfaces",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/classes_interfaces__class_constructor_field_method.cj"
+    },
+    {
+      "name": "generic-interface-implementation",
+      "family": "classes_interfaces",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/classes_interfaces__generic_interface_implementation.cj"
+    },
+    {
+      "name": "interface-implementation",
+      "family": "classes_interfaces",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/classes_interfaces__interface_implementation.cj"
+    },
+    {
+      "name": "overloaded-constructors",
+      "family": "classes_interfaces",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/classes_interfaces__overloaded_constructors.cj"
+    },
+    {
+      "name": "constructor-argument-type",
+      "family": "classes_interfaces",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 77,
+      "oracle": true,
+      "file": "invalid/classes_interfaces__constructor_argument_type.cj"
+    },
+    {
+      "name": "constructor-return-value",
+      "family": "classes_interfaces",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 35,
+      "oracle": true,
+      "file": "invalid/classes_interfaces__constructor_return_value.cj"
+    },
+    {
+      "name": "interface-type-argument-mismatch",
+      "family": "classes_interfaces",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 176,
+      "oracle": true,
+      "file": "invalid/classes_interfaces__interface_type_argument_mismatch.cj"
+    },
+    {
+      "name": "method-return-type-mismatch",
+      "family": "classes_interfaces",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 57,
+      "oracle": true,
+      "file": "invalid/classes_interfaces__method_return_type_mismatch.cj"
+    },
+    {
+      "name": "unknown-this-field",
+      "family": "classes_interfaces",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 51,
+      "oracle": true,
+      "file": "invalid/classes_interfaces__unknown_this_field.cj"
+    },
+    {
+      "name": "array-list-overloads",
+      "family": "collections",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/collections__array_list_overloads.cj"
+    },
+    {
+      "name": "array-literal-index-and-size",
+      "family": "collections",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/collections__array_literal_index_and_size.cj"
+    },
+    {
+      "name": "array-methods",
+      "family": "collections",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/collections__array_methods.cj"
+    },
+    {
+      "name": "hash-map-methods",
+      "family": "collections",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/collections__hash_map_methods.cj"
+    },
+    {
+      "name": "hash-set-iteration",
+      "family": "collections",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/collections__hash_set_iteration.cj"
+    },
+    {
+      "name": "array-index-not-integer",
+      "family": "collections",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 65,
+      "oracle": true,
+      "file": "invalid/collections__array_index_not_integer.cj"
+    },
+    {
+      "name": "array-method-argument-type",
+      "family": "collections",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 51,
+      "oracle": true,
+      "file": "invalid/collections__array_method_argument_type.cj"
+    },
+    {
+      "name": "array-mixed-element-types",
+      "family": "collections",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 42,
+      "oracle": true,
+      "file": "invalid/collections__array_mixed_element_types.cj"
+    },
+    {
+      "name": "generic-constructor-type-mismatch",
+      "family": "collections",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 59,
+      "oracle": true,
+      "file": "invalid/collections__generic_constructor_type_mismatch.cj"
+    },
+    {
+      "name": "missing-member",
+      "family": "collections",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 65,
+      "oracle": true,
+      "file": "invalid/collections__missing_member.cj"
+    },
+    {
+      "name": "for-array-and-range",
+      "family": "control_flow",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/control_flow__for_array_and_range.cj"
+    },
+    {
+      "name": "if-else-bool-condition",
+      "family": "control_flow",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/control_flow__if_else_bool_condition.cj"
+    },
+    {
+      "name": "while-break-continue",
+      "family": "control_flow",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/control_flow__while_break_continue.cj"
+    },
+    {
+      "name": "break-outside-loop",
+      "family": "control_flow",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 15,
+      "oracle": true,
+      "file": "invalid/control_flow__break_outside_loop.cj"
+    },
+    {
+      "name": "continue-outside-loop",
+      "family": "control_flow",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 15,
+      "oracle": true,
+      "file": "invalid/control_flow__continue_outside_loop.cj"
+    },
+    {
+      "name": "for-source-not-iterable",
+      "family": "control_flow",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 25,
+      "oracle": true,
+      "file": "invalid/control_flow__for_source_not_iterable.cj"
+    },
+    {
+      "name": "if-condition-not-bool",
+      "family": "control_flow",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 19,
+      "oracle": true,
+      "file": "invalid/control_flow__if_condition_not_bool.cj"
+    },
+    {
+      "name": "return-value-type-mismatch",
+      "family": "control_flow",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 27,
+      "oracle": true,
+      "file": "invalid/control_flow__return_value_type_mismatch.cj"
+    },
+    {
+      "name": "while-condition-not-bool",
+      "family": "control_flow",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 22,
+      "oracle": true,
+      "file": "invalid/control_flow__while_condition_not_bool.cj"
+    },
+    {
+      "name": "default-parameter",
+      "family": "functions",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "valid/functions__default_parameter.cj"
+    },
+    {
+      "name": "function-value-call",
+      "family": "functions",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/functions__function_value_call.cj"
+    },
+    {
+      "name": "named-arguments",
+      "family": "functions",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/functions__named_arguments.cj"
+    },
+    {
+      "name": "recursive-function",
+      "family": "functions",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/functions__recursive_function.cj"
+    },
+    {
+      "name": "function-argument-count",
+      "family": "functions",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 80,
+      "oracle": true,
+      "file": "invalid/functions__function_argument_count.cj"
+    },
+    {
+      "name": "function-argument-type",
+      "family": "functions",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 80,
+      "oracle": true,
+      "file": "invalid/functions__function_argument_type.cj"
+    },
+    {
+      "name": "function-result-type-mismatch",
+      "family": "functions",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 20,
+      "oracle": true,
+      "file": "invalid/functions__function_result_type_mismatch.cj"
+    },
+    {
+      "name": "unknown-named-argument",
+      "family": "functions",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 90,
+      "oracle": true,
+      "file": "invalid/functions__unknown_named_argument.cj"
+    },
+    {
+      "name": "generated-generic-inheritance-valid-0_895347",
+      "family": "generated_generic_inheritance",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_generic_inheritance__generated_generic_inheritance_valid_0_895347.cj"
+    },
+    {
+      "name": "generated-generic-inheritance-valid-1_330723",
+      "family": "generated_generic_inheritance",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_generic_inheritance__generated_generic_inheritance_valid_1_330723.cj"
+    },
+    {
+      "name": "generated-generic-inheritance-valid-2_394171",
+      "family": "generated_generic_inheritance",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_generic_inheritance__generated_generic_inheritance_valid_2_394171.cj"
+    },
+    {
+      "name": "generated-generic-inheritance-mutation-0_895347",
+      "family": "generated_generic_inheritance",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 313,
+      "oracle": true,
+      "file": "invalid/generated_generic_inheritance__generated_generic_inheritance_mutation_0_895347.cj"
+    },
+    {
+      "name": "generated-generic-inheritance-mutation-1_330723",
+      "family": "generated_generic_inheritance",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 326,
+      "oracle": true,
+      "file": "invalid/generated_generic_inheritance__generated_generic_inheritance_mutation_1_330723.cj"
+    },
+    {
+      "name": "generated-generic-inheritance-mutation-2_394171",
+      "family": "generated_generic_inheritance",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 313,
+      "oracle": true,
+      "file": "invalid/generated_generic_inheritance__generated_generic_inheritance_mutation_2_394171.cj"
+    },
+    {
+      "name": "generated-multiline-valid-0_538364",
+      "family": "generated_multiline",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_multiline__generated_multiline_valid_0_538364.cj"
+    },
+    {
+      "name": "generated-multiline-valid-1_851143",
+      "family": "generated_multiline",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_multiline__generated_multiline_valid_1_851143.cj"
+    },
+    {
+      "name": "generated-multiline-valid-2_704070",
+      "family": "generated_multiline",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_multiline__generated_multiline_valid_2_704070.cj"
+    },
+    {
+      "name": "generated-multiline-return-mutation-0_538364",
+      "family": "generated_multiline",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 289,
+      "oracle": true,
+      "file": "invalid/generated_multiline__generated_multiline_return_mutation_0_538364.cj"
+    },
+    {
+      "name": "generated-multiline-return-mutation-1_851143",
+      "family": "generated_multiline",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 305,
+      "oracle": true,
+      "file": "invalid/generated_multiline__generated_multiline_return_mutation_1_851143.cj"
+    },
+    {
+      "name": "generated-multiline-return-mutation-2_704070",
+      "family": "generated_multiline",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 305,
+      "oracle": true,
+      "file": "invalid/generated_multiline__generated_multiline_return_mutation_2_704070.cj"
+    },
+    {
+      "name": "generated-nested-lambda-valid-0_949992",
+      "family": "generated_nested_lambda",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_nested_lambda__generated_nested_lambda_valid_0_949992.cj"
+    },
+    {
+      "name": "generated-nested-lambda-valid-1_639907",
+      "family": "generated_nested_lambda",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_nested_lambda__generated_nested_lambda_valid_1_639907.cj"
+    },
+    {
+      "name": "generated-nested-lambda-valid-2_849556",
+      "family": "generated_nested_lambda",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_nested_lambda__generated_nested_lambda_valid_2_849556.cj"
+    },
+    {
+      "name": "generated-nested-lambda-mutation-0_949992",
+      "family": "generated_nested_lambda",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 598,
+      "oracle": true,
+      "file": "invalid/generated_nested_lambda__generated_nested_lambda_mutation_0_949992.cj"
+    },
+    {
+      "name": "generated-nested-lambda-mutation-1_639907",
+      "family": "generated_nested_lambda",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 371,
+      "oracle": true,
+      "file": "invalid/generated_nested_lambda__generated_nested_lambda_mutation_1_639907.cj"
+    },
+    {
+      "name": "generated-nested-lambda-mutation-2_849556",
+      "family": "generated_nested_lambda",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 481,
+      "oracle": true,
+      "file": "invalid/generated_nested_lambda__generated_nested_lambda_mutation_2_849556.cj"
+    },
+    {
+      "name": "generated-overload-valid-0_472718",
+      "family": "generated_overload",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_overload__generated_overload_valid_0_472718.cj"
+    },
+    {
+      "name": "generated-overload-valid-1_602923",
+      "family": "generated_overload",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_overload__generated_overload_valid_1_602923.cj"
+    },
+    {
+      "name": "generated-overload-valid-2_619897",
+      "family": "generated_overload",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_overload__generated_overload_valid_2_619897.cj"
+    },
+    {
+      "name": "generated-overload-ambiguous-0_472718",
+      "family": "generated_overload",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 125,
+      "oracle": true,
+      "file": "invalid/generated_overload__generated_overload_ambiguous_0_472718.cj"
+    },
+    {
+      "name": "generated-overload-ambiguous-1_602923",
+      "family": "generated_overload",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 125,
+      "oracle": true,
+      "file": "invalid/generated_overload__generated_overload_ambiguous_1_602923.cj"
+    },
+    {
+      "name": "generated-overload-ambiguous-2_619897",
+      "family": "generated_overload",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 125,
+      "oracle": true,
+      "file": "invalid/generated_overload__generated_overload_ambiguous_2_619897.cj"
+    },
+    {
+      "name": "generated-scope-isolation-valid-0_808849",
+      "family": "generated_scope_isolation",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_scope_isolation__generated_scope_isolation_valid_0_808849.cj"
+    },
+    {
+      "name": "generated-scope-isolation-valid-1_028306",
+      "family": "generated_scope_isolation",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_scope_isolation__generated_scope_isolation_valid_1_028306.cj"
+    },
+    {
+      "name": "generated-scope-isolation-valid-2_640889",
+      "family": "generated_scope_isolation",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_scope_isolation__generated_scope_isolation_valid_2_640889.cj"
+    },
+    {
+      "name": "generated-scope-isolation-mutation-0_808849",
+      "family": "generated_scope_isolation",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 100,
+      "oracle": true,
+      "file": "invalid/generated_scope_isolation__generated_scope_isolation_mutation_0_808849.cj"
+    },
+    {
+      "name": "generated-scope-isolation-mutation-1_028306",
+      "family": "generated_scope_isolation",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 100,
+      "oracle": true,
+      "file": "invalid/generated_scope_isolation__generated_scope_isolation_mutation_1_028306.cj"
+    },
+    {
+      "name": "generated-scope-isolation-mutation-2_640889",
+      "family": "generated_scope_isolation",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 100,
+      "oracle": true,
+      "file": "invalid/generated_scope_isolation__generated_scope_isolation_mutation_2_640889.cj"
+    },
+    {
+      "name": "generated-valid-comment-nominal-0_072625",
+      "family": "generated_valid_zero_false_positive",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_valid_zero_false_positive__generated_valid_comment_nominal_0_072625.cj"
+    },
+    {
+      "name": "generated-valid-comment-nominal-1_954037",
+      "family": "generated_valid_zero_false_positive",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_valid_zero_false_positive__generated_valid_comment_nominal_1_954037.cj"
+    },
+    {
+      "name": "generated-valid-comment-nominal-2_887597",
+      "family": "generated_valid_zero_false_positive",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_valid_zero_false_positive__generated_valid_comment_nominal_2_887597.cj"
+    },
+    {
+      "name": "generated-valid-control-0_072625",
+      "family": "generated_valid_zero_false_positive",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_valid_zero_false_positive__generated_valid_control_0_072625.cj"
+    },
+    {
+      "name": "generated-valid-control-1_954037",
+      "family": "generated_valid_zero_false_positive",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_valid_zero_false_positive__generated_valid_control_1_954037.cj"
+    },
+    {
+      "name": "generated-valid-control-2_887597",
+      "family": "generated_valid_zero_false_positive",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/generated_valid_zero_false_positive__generated_valid_control_2_887597.cj"
+    },
+    {
+      "name": "empty-input",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__empty_input.cj"
+    },
+    {
+      "name": "function-keyword-prefix",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__function_keyword_prefix.cj"
+    },
+    {
+      "name": "open-function-block",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__open_function_block.cj"
+    },
+    {
+      "name": "open-nested-comment",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__open_nested_comment.cj"
+    },
+    {
+      "name": "open-string",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__open_string.cj"
+    },
+    {
+      "name": "partial-exponent",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__partial_exponent.cj"
+    },
+    {
+      "name": "partial-generic",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__partial_generic.cj"
+    },
+    {
+      "name": "partial-identifier",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__partial_identifier.cj"
+    },
+    {
+      "name": "partial-lambda-body",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__partial_lambda_body.cj"
+    },
+    {
+      "name": "partial-variable-type",
+      "family": "incomplete_prefix",
+      "expected": "accept",
+      "complete": false,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "prefix/incomplete_prefix__partial_variable_type.cj"
+    },
+    {
+      "name": "escaped-and-multiline-strings",
+      "family": "lexical",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/lexical__escaped_and_multiline_strings.cj"
+    },
+    {
+      "name": "float-literals",
+      "family": "lexical",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/lexical__float_literals.cj"
+    },
+    {
+      "name": "integer-bases-and-suffixes",
+      "family": "lexical",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "valid/lexical__integer_bases_and_suffixes.cj"
+    },
+    {
+      "name": "nested-comments-and-utf8",
+      "family": "lexical",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "valid/lexical__nested_comments_and_utf8.cj"
+    },
+    {
+      "name": "raw-identifier",
+      "family": "lexical",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "valid/lexical__raw_identifier.cj"
+    },
+    {
+      "name": "invalid-hex-digit",
+      "family": "lexical",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 38,
+      "oracle": true,
+      "file": "invalid/lexical__invalid_hex_digit.cj"
+    },
+    {
+      "name": "invalid-string-escape",
+      "family": "lexical",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 39,
+      "oracle": false,
+      "file": "invalid/lexical__invalid_string_escape.cj"
+    },
+    {
+      "name": "lambda-captures-outer-local",
+      "family": "scope",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/scope__lambda_captures_outer_local.cj"
+    },
+    {
+      "name": "nested-scope-shadowing",
+      "family": "scope",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/scope__nested_scope_shadowing.cj"
+    },
+    {
+      "name": "function-parameter-leaks",
+      "family": "scope",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 83,
+      "oracle": true,
+      "file": "invalid/scope__function_parameter_leaks.cj"
+    },
+    {
+      "name": "lambda-parameter-escapes",
+      "family": "scope",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 85,
+      "oracle": true,
+      "file": "invalid/scope__lambda_parameter_escapes.cj"
+    },
+    {
+      "name": "undefined-identifier",
+      "family": "scope",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 34,
+      "oracle": true,
+      "file": "invalid/scope__undefined_identifier.cj"
+    },
+    {
+      "name": "use-before-declaration",
+      "family": "scope",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 34,
+      "oracle": true,
+      "file": "invalid/scope__use_before_declaration.cj"
+    },
+    {
+      "name": "comma-after-last-function-argument",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 58,
+      "oracle": true,
+      "file": "invalid/syntax__comma_after_last_function_argument.cj"
+    },
+    {
+      "name": "dangling-binary-operator",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 5,
+      "oracle": true,
+      "file": "invalid/syntax__dangling_binary_operator.cj"
+    },
+    {
+      "name": "double-else",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 36,
+      "oracle": true,
+      "file": "invalid/syntax__double_else.cj"
+    },
+    {
+      "name": "extra-right-bracket",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 31,
+      "oracle": true,
+      "file": "invalid/syntax__extra_right_bracket.cj"
+    },
+    {
+      "name": "extra-right-paren",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 5,
+      "oracle": true,
+      "file": "invalid/syntax__extra_right_paren.cj"
+    },
+    {
+      "name": "function-parameter-missing-colon",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 15,
+      "oracle": true,
+      "file": "invalid/syntax__function_parameter_missing_colon.cj"
+    },
+    {
+      "name": "invalid-at-character",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 30,
+      "oracle": true,
+      "file": "invalid/syntax__invalid_at_character.cj"
+    },
+    {
+      "name": "lambda-missing-arrow",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 52,
+      "oracle": true,
+      "file": "invalid/syntax__lambda_missing_arrow.cj"
+    },
+    {
+      "name": "malformed-generic-close",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 76,
+      "oracle": true,
+      "file": "invalid/syntax__malformed_generic_close.cj"
+    },
+    {
+      "name": "missing-variable-name",
+      "family": "syntax",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 25,
+      "oracle": true,
+      "file": "invalid/syntax__missing_variable_name.cj"
+    },
+    {
+      "name": "mutable-compound-assignment",
+      "family": "types_operators",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": false,
+      "file": "valid/types_operators__mutable_compound_assignment.cj"
+    },
+    {
+      "name": "numeric-and-logical-operators",
+      "family": "types_operators",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/types_operators__numeric_and_logical_operators.cj"
+    },
+    {
+      "name": "string-concatenation-method",
+      "family": "types_operators",
+      "expected": "accept",
+      "complete": true,
+      "safe_prefix_bytes": null,
+      "oracle": true,
+      "file": "valid/types_operators__string_concatenation_method.cj"
+    },
+    {
+      "name": "assign-to-let",
+      "family": "types_operators",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 37,
+      "oracle": false,
+      "file": "invalid/types_operators__assign_to_let.cj"
+    },
+    {
+      "name": "assignment-type-mismatch",
+      "family": "types_operators",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 45,
+      "oracle": true,
+      "file": "invalid/types_operators__assignment_type_mismatch.cj"
+    },
+    {
+      "name": "boolean-arithmetic",
+      "family": "types_operators",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 34,
+      "oracle": true,
+      "file": "invalid/types_operators__boolean_arithmetic.cj"
+    },
+    {
+      "name": "logical-operator-on-integer",
+      "family": "types_operators",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 33,
+      "oracle": true,
+      "file": "invalid/types_operators__logical_operator_on_integer.cj"
+    },
+    {
+      "name": "typed-integer-suffix-mismatch",
+      "family": "types_operators",
+      "expected": "reject",
+      "complete": true,
+      "safe_prefix_bytes": 34,
+      "oracle": true,
+      "file": "invalid/types_operators__typed_integer_suffix_mismatch.cj"
+    }
+  ]
+}

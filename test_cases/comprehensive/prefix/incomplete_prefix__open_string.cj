@@ -1,0 +1,1 @@
+main(): Unit { let text: String = "hello
