@@ -35,6 +35,14 @@ A/B/A，以 `f596964` 为同轮 control 获得 `SUM 8.184%` 改善并正式接�
 control，但新性能 control 必须先修复两个 authoritative false reject 并达到
 `219/219`；不要求把诊断项改成 `373/373`。旧 A/B/A 报告不因此被改写。
 
+2026-08-13 的后续正确性提交 `6382994` 和 `c35afae` 已修复 lambda/IIFE
+与 call/member/index 链的前缀过早拒绝，恢复 authoritative `219/219`。
+`68d780d` 只增加正式构建中关闭的细粒度画像，是当前 accepted control。
+DeclarationSnapshot 候选起点索引 `735a52e` 虽然全部正确性门禁通过，
+但两轮扩展 `1+21` A/B/A 的 SUM 仅改善 `4.552% / 4.777%`，未达
+5% 门槛，已由 `75e9702` 回退。详见
+[`20260813_snapshot_candidate_index_verdict.md`](20260813_snapshot_candidate_index_verdict.md)。
+
 ## 复现命令
 
 必须在同一个一次性容器中先构建、再测试。`build.sh` 会在容器内安装并动态
