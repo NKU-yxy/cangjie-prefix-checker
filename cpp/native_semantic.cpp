@@ -102,14 +102,6 @@ struct ProfileCounters {
     std::uint64_t declaration_snapshot_delimiter_ns = 0;
     std::uint64_t declaration_snapshot_delimiter_hits = 0;
     std::uint64_t declaration_snapshot_delimiter_misses = 0;
-    std::uint64_t declaration_candidate_locator_ns = 0;
-    std::uint64_t declaration_candidate_source_bytes = 0;
-    std::uint64_t declaration_candidate_count = 0;
-    std::uint64_t declaration_anchored_attempts = 0;
-    std::uint64_t declaration_anchored_matches = 0;
-    std::uint64_t declaration_candidate_resume_skips = 0;
-    std::uint64_t declaration_candidate_no_open_skips = 0;
-    std::uint64_t declaration_candidate_bounded_bytes = 0;
     std::uint64_t model_reset_ns = 0;
     std::uint64_t collect_imports_ns = 0;
     std::uint64_t collect_functions_ns = 0;
@@ -231,22 +223,6 @@ struct ProfileCounters {
             << declaration_snapshot_delimiter_hits
             << ",\"declaration_snapshot_delimiter_misses\":"
             << declaration_snapshot_delimiter_misses
-            << ",\"declaration_candidate_locator_ns\":"
-            << declaration_candidate_locator_ns
-            << ",\"declaration_candidate_source_bytes\":"
-            << declaration_candidate_source_bytes
-            << ",\"declaration_candidate_count\":"
-            << declaration_candidate_count
-            << ",\"declaration_anchored_attempts\":"
-            << declaration_anchored_attempts
-            << ",\"declaration_anchored_matches\":"
-            << declaration_anchored_matches
-            << ",\"declaration_candidate_resume_skips\":"
-            << declaration_candidate_resume_skips
-            << ",\"declaration_candidate_no_open_skips\":"
-            << declaration_candidate_no_open_skips
-            << ",\"declaration_candidate_bounded_bytes\":"
-            << declaration_candidate_bounded_bytes
             << ",\"model_reset_ns\":" << model_reset_ns
             << ",\"collect_imports_ns\":" << collect_imports_ns
             << ",\"collect_functions_ns\":" << collect_functions_ns
@@ -1235,97 +1211,6 @@ struct DeclarationSnapshot {
 using DelimiterCloseCache =
     std::unordered_map<std::size_t, std::optional<std::size_t>>;
 
-enum class DeclarationStartKind : std::uint8_t {
-    Class,
-    Interface,
-    Function,
-    Main,
-};
-
-struct DeclarationCandidate {
-    std::size_t offset = 0;
-    DeclarationStartKind kind = DeclarationStartKind::Class;
-    std::size_t header_open = std::string_view::npos;
-};
-
-struct DeclarationCandidateIndex {
-    std::vector<DeclarationCandidate> starts;
-};
-
-bool LiteralAt(std::string_view source, std::size_t offset, std::string_view literal) {
-    return offset <= source.size() && literal.size() <= source.size() - offset &&
-        source.substr(offset, literal.size()) == literal;
-}
-
-DeclarationCandidateIndex BuildDeclarationCandidateIndex(std::string_view source) {
-    DeclarationCandidateIndex index;
-    for (std::size_t offset = 0; offset < source.size(); ++offset) {
-        DeclarationStartKind kind;
-        std::size_t length = 0;
-        switch (source[offset]) {
-            case 'c':
-                if (LiteralAt(source, offset, "class")) {
-                    kind = DeclarationStartKind::Class;
-                    length = 5;
-                }
-                break;
-            case 'f':
-                if (LiteralAt(source, offset, "func")) {
-                    kind = DeclarationStartKind::Function;
-                    length = 4;
-                }
-                break;
-            case 'i':
-                if (LiteralAt(source, offset, "interface")) {
-                    kind = DeclarationStartKind::Interface;
-                    length = 9;
-                }
-                break;
-            case 'm':
-                if (LiteralAt(source, offset, "main")) {
-                    kind = DeclarationStartKind::Main;
-                    length = 4;
-                }
-                break;
-            default:
-                break;
-        }
-        if (length != 0) index.starts.push_back({offset, kind});
-    }
-    std::size_t cursor = source.size();
-    std::size_t next_structural = std::string_view::npos;
-    for (auto it = index.starts.rbegin(); it != index.starts.rend(); ++it) {
-        while (cursor > it->offset) {
-            --cursor;
-            if (source[cursor] == '{' || source[cursor] == '}') {
-                next_structural = cursor;
-            }
-        }
-        if (next_structural != std::string_view::npos &&
-            source[next_structural] == '{') {
-            it->header_open = next_structural;
-        }
-    }
-    return index;
-}
-
-enum DeclarationKindMask : unsigned {
-    kClassStart = 1u << 0,
-    kInterfaceStart = 1u << 1,
-    kFunctionStart = 1u << 2,
-    kMainStart = 1u << 3,
-};
-
-unsigned DeclarationKindBit(DeclarationStartKind kind) {
-    switch (kind) {
-        case DeclarationStartKind::Class: return kClassStart;
-        case DeclarationStartKind::Interface: return kInterfaceStart;
-        case DeclarationStartKind::Function: return kFunctionStart;
-        case DeclarationStartKind::Main: return kMainStart;
-    }
-    return 0;
-}
-
 std::optional<std::size_t> CachedDelimiterClose(
     std::string_view source,
     std::size_t open,
@@ -1351,59 +1236,19 @@ std::optional<std::size_t> CachedDelimiterClose(
 
 std::vector<DeclarationRecord> ScanDeclarationFamily(
     const std::string& source,
-    const DeclarationCandidateIndex& candidates,
     const std::regex& pattern,
-    unsigned allowed_kinds,
     bool multiline_only,
     DelimiterCloseCache* close_cache
 ) {
     std::vector<DeclarationRecord> records;
-    std::size_t resume = 0;
-    for (const DeclarationCandidate& candidate : candidates.starts) {
-        if ((DeclarationKindBit(candidate.kind) & allowed_kinds) == 0) continue;
-        if (candidate.offset < resume) {
-#ifdef CANGJIE_ENABLE_PROFILE
-            if (g_profile) ++g_profile->declaration_candidate_resume_skips;
-#endif
-            continue;
-        }
-        if (candidate.header_open == std::string_view::npos) {
-#ifdef CANGJIE_ENABLE_PROFILE
-            if (g_profile) ++g_profile->declaration_candidate_no_open_skips;
-#endif
-            continue;
-        }
-        std::match_results<std::string::const_iterator> match;
-        std::regex_constants::match_flag_type flags =
-            std::regex_constants::match_continuous;
-        if (candidate.offset != 0) flags |= std::regex_constants::match_prev_avail;
-#ifdef CANGJIE_ENABLE_PROFILE
-        if (g_profile) {
-            ++g_profile->declaration_anchored_attempts;
-            g_profile->declaration_candidate_bounded_bytes +=
-                candidate.header_open + 1 - candidate.offset;
-        }
-#endif
-        if (!std::regex_search(
-                source.cbegin() + static_cast<std::ptrdiff_t>(candidate.offset),
-                source.cbegin() + static_cast<std::ptrdiff_t>(candidate.header_open + 1),
-                match, pattern, flags
-            )) {
-            continue;
-        }
-#ifdef CANGJIE_ENABLE_PROFILE
-        if (g_profile) ++g_profile->declaration_anchored_matches;
-#endif
-        const std::size_t match_offset = candidate.offset +
-            static_cast<std::size_t>(match.position(0));
-        const std::size_t match_length = static_cast<std::size_t>(match.length(0));
-        resume = match_offset + match_length;
-        if (multiline_only && match.str(0).find_first_of("\n\r") == std::string::npos) {
+    for (std::sregex_iterator it(source.begin(), source.end(), pattern), end;
+         it != end; ++it) {
+        if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
             continue;
         }
         DeclarationRecord record;
-        record.offset = match_offset;
-        record.length = match_length;
+        record.offset = static_cast<std::size_t>((*it).position());
+        record.length = static_cast<std::size_t>((*it).length());
         record.open = record.offset + record.length - 1;
         record.close = CachedDelimiterClose(source, record.open, close_cache);
         {
@@ -1412,15 +1257,14 @@ std::vector<DeclarationRecord> ScanDeclarationFamily(
                 g_profile ? &g_profile->declaration_snapshot_capture_copy_ns : nullptr
             );
 #endif
-            record.captures.reserve(match.size());
-            for (std::size_t index = 0; index < match.size(); ++index) {
+            record.captures.reserve(it->size());
+            for (std::size_t index = 0; index < it->size(); ++index) {
                 SnapshotCapture capture;
-                capture.matched = match[index].matched;
-                capture.length = static_cast<std::size_t>(match.length(index));
+                capture.matched = (*it)[index].matched;
+                capture.length = static_cast<std::size_t>((*it).length(index));
                 if (capture.matched) {
-                    capture.offset = candidate.offset +
-                        static_cast<std::size_t>(match.position(index));
-                    capture.text = match[index].str();
+                    capture.offset = static_cast<std::size_t>((*it).position(index));
+                    capture.text = (*it)[index].str();
                 }
                 record.captures.push_back(std::move(capture));
             }
@@ -1455,21 +1299,6 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
 #else
     const std::string owned(source);
 #endif
-    DeclarationCandidateIndex candidates;
-    {
-#ifdef CANGJIE_ENABLE_PROFILE
-        ProfileScopeTimer timer(
-            g_profile ? &g_profile->declaration_candidate_locator_ns : nullptr
-        );
-        if (g_profile) g_profile->declaration_candidate_source_bytes += source.size();
-#endif
-        candidates = BuildDeclarationCandidateIndex(owned);
-#ifdef CANGJIE_ENABLE_PROFILE
-        if (g_profile) {
-            g_profile->declaration_candidate_count += candidates.starts.size();
-        }
-#endif
-    }
     DelimiterCloseCache close_cache;
     DeclarationSnapshot snapshot;
     {
@@ -1479,8 +1308,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
         );
 #endif
         snapshot.strict_nominals = ScanDeclarationFamily(
-            owned, candidates, StrictNominalPattern(),
-            kClassStart | kInterfaceStart, false, &close_cache
+            owned, StrictNominalPattern(), false, &close_cache
         );
     }
     {
@@ -1490,7 +1318,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
         );
 #endif
         snapshot.broad_classes = ScanDeclarationFamily(
-            owned, candidates, BroadClassPattern(), kClassStart, false, &close_cache
+            owned, BroadClassPattern(), false, &close_cache
         );
     }
     {
@@ -1500,8 +1328,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
         );
 #endif
         snapshot.current_functions_single_line = ScanDeclarationFamily(
-            owned, candidates, CurrentFunctionSingleLinePattern(),
-            kFunctionStart | kMainStart, false, &close_cache
+            owned, CurrentFunctionSingleLinePattern(), false, &close_cache
         );
     }
     {
@@ -1511,8 +1338,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
         );
 #endif
         snapshot.explicit_functions_single_line = ScanDeclarationFamily(
-            owned, candidates, ExplicitFunctionSingleLinePattern(),
-            kFunctionStart, false, &close_cache
+            owned, ExplicitFunctionSingleLinePattern(), false, &close_cache
         );
     }
     {
@@ -1522,8 +1348,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
         );
 #endif
         snapshot.optional_functions_single_line = ScanDeclarationFamily(
-            owned, candidates, OptionalFunctionSingleLinePattern(),
-            kFunctionStart, false, &close_cache
+            owned, OptionalFunctionSingleLinePattern(), false, &close_cache
         );
     }
     bool has_multiline = false;
@@ -1543,8 +1368,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
             );
 #endif
             snapshot.current_functions_multiline_only = ScanDeclarationFamily(
-                owned, candidates, CurrentFunctionMultilinePattern(),
-                kFunctionStart | kMainStart, true, &close_cache
+                owned, CurrentFunctionMultilinePattern(), true, &close_cache
             );
         }
         {
@@ -1554,8 +1378,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
             );
 #endif
             snapshot.explicit_functions_multiline_only = ScanDeclarationFamily(
-                owned, candidates, ExplicitFunctionMultilinePattern(),
-                kFunctionStart, true, &close_cache
+                owned, ExplicitFunctionMultilinePattern(), true, &close_cache
             );
         }
         {
@@ -1565,8 +1388,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
             );
 #endif
             snapshot.optional_functions_multiline_only = ScanDeclarationFamily(
-                owned, candidates, OptionalFunctionMultilinePattern(),
-                kFunctionStart, true, &close_cache
+                owned, OptionalFunctionMultilinePattern(), true, &close_cache
             );
         }
     }
