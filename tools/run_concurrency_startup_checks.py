@@ -100,22 +100,6 @@ class ByteTokenEncoder:
         return [self._by_byte[value] for value in payload]
 
 
-class Cl100kEncoder:
-    """Use the same canonical cl100k segmentation as the official harness."""
-
-    def __init__(self) -> None:
-        try:
-            import tiktoken
-        except ImportError as error:
-            raise CheckFailure(
-                "tiktoken is required for canonical long-input stress"
-            ) from error
-        self._encoding = tiktoken.get_encoding("cl100k_base")
-
-    def encode(self, source: str) -> List[int]:
-        return self._encoding.encode(source)
-
-
 def _protocol_input(token_ids: Sequence[int]) -> str:
     return "".join(f"{token_id}\n" for token_id in token_ids)
 
@@ -261,7 +245,7 @@ def make_long_valid_source(statement_count: int) -> str:
 
 def run_long_input(
     solution: Path,
-    encoder: object,
+    encoder: ByteTokenEncoder,
     *,
     statement_count: int,
     competition_output: bool,
@@ -269,7 +253,7 @@ def run_long_input(
     allow_stderr: bool,
 ) -> Dict[str, object]:
     source = make_long_valid_source(statement_count)
-    token_ids = encoder.encode(source)  # type: ignore[attr-defined]
+    token_ids = encoder.encode(source)
     result = _run_accept(
         solution,
         token_ids,
@@ -548,19 +532,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="cl100k table used only to construct test token IDs.",
     )
     parser.add_argument("--cold-starts", type=int, default=1000)
-    parser.add_argument("--long-statements", type=int, default=256)
+    parser.add_argument("--long-statements", type=int, default=2048)
     parser.add_argument("--parallel-clients", type=int, default=0)
     parser.add_argument("--parallel-rounds", type=int, default=1)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--competition-output", action="store_true")
-    parser.add_argument(
-        "--byte-fragments",
-        action="store_true",
-        help=(
-            "Use one-byte token fragments for the long-input check; the default "
-            "uses official cl100k segmentation."
-        ),
-    )
     parser.add_argument(
         "--allow-stderr",
         action="store_true",
@@ -611,9 +587,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             raise CheckFailure(
                 "single CPU limit not detected; launch the official container with --cpus=1"
             )
-        byte_encoder = ByteTokenEncoder(token_table)
-        long_encoder = byte_encoder if args.byte_fragments else Cl100kEncoder()
-        cold_token_ids = byte_encoder.encode(" ")
+        encoder = ByteTokenEncoder(token_table)
+        cold_token_ids = encoder.encode(" ")
         if args.cold_starts:
             report["cold_start"] = run_cold_starts(
                 solution,
@@ -626,7 +601,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.long_statements:
             report["long_input"] = run_long_input(
                 solution,
-                long_encoder,
+                encoder,
                 statement_count=args.long_statements,
                 competition_output=args.competition_output,
                 timeout=args.timeout,
