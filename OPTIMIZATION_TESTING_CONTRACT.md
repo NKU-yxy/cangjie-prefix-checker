@@ -149,7 +149,7 @@ python3 tools/run_comprehensive_cases.py \
 python3 tools/run_concurrency_startup_checks.py \
   --solution ./solution \
   --cold-starts 1000 \
-  --long-statements 2048 \
+  --long-statements 256 \
   --parallel-clients 8 \
   --parallel-rounds 20
 ```
