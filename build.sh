@@ -61,6 +61,9 @@ fi
 if [[ "${CANGJIE_REGEX_SHADOW_BUILD:-0}" == "1" ]]; then
   native_compile_flags+=("-DCANGJIE_ENABLE_REGEX_SHADOW=1")
 fi
+if [[ "${CANGJIE_CONCURRENCY_TEST_BUILD:-0}" == "1" ]]; then
+  native_compile_flags+=("-DCANGJIE_ENABLE_CONCURRENCY_TESTS=1")
+fi
 native_platform_flags=(
   "-Wl,-rpath,${native_xgrammar_dir}"
   "-Wl,-rpath,${native_tvm_ffi_dir}/lib"

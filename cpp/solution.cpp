@@ -21,14 +21,17 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -254,6 +257,31 @@ class NativeSyntaxChecker {
 #endif
 };
 
+struct TokenTableStartup {
+    std::unique_ptr<TokenTable> table;
+#ifdef CANGJIE_ENABLE_PROFILE
+    std::uint64_t elapsed_ns = 0;
+#endif
+};
+
+TokenTableStartup build_token_table(const fs::path& path) {
+    TokenTableStartup result;
+#ifdef CANGJIE_ENABLE_PROFILE
+    const auto started = PhaseProfiler::Clock::now();
+#endif
+    result.table = std::make_unique<TokenTable>(path);
+#ifdef CANGJIE_ENABLE_PROFILE
+    result.elapsed_ns = PhaseProfiler::Elapsed(started);
+#endif
+    return result;
+}
+
+bool is_async_resource_failure(const std::system_error& error) {
+    return error.code() == std::make_error_code(
+        std::errc::resource_unavailable_try_again
+    );
+}
+
 struct Args {
     std::string context_path;
     bool competition_output = false;
@@ -332,27 +360,80 @@ int main(int argc, char** argv) {
             native_context = args.context_path;
         }
 #ifdef CANGJIE_ENABLE_PROFILE
-        auto phase_started = PhaseProfiler::Clock::now();
+        const auto semantic_started = PhaseProfiler::Clock::now();
 #endif
         cangjie::NativeSemanticChecker native_semantic(native_context.string());
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
-            phase_profile.semantic_init_ns += PhaseProfiler::Elapsed(phase_started);
-            phase_started = PhaseProfiler::Clock::now();
+            phase_profile.semantic_init_ns += PhaseProfiler::Elapsed(semantic_started);
         }
         const auto startup_started = PhaseProfiler::Clock::now();
 #endif
-        const TokenTable token_table(root / "generated" / "cl100k_base.bin");
-#ifdef CANGJIE_ENABLE_PROFILE
-        if (phase_profile.enabled()) {
-            phase_profile.token_table_init_ns += PhaseProfiler::Elapsed(phase_started);
-            phase_started = PhaseProfiler::Clock::now();
-        }
+        const fs::path token_table_path = root / "generated" / "cl100k_base.bin";
+        const fs::path grammar_path = root / "grammar" / "cangjie.gbnf";
+        std::unique_ptr<TokenTable> token_table;
+        std::unique_ptr<NativeSyntaxChecker> syntax;
+        std::future<TokenTableStartup> token_future;
+        bool async_started = false;
+        try {
+#ifdef CANGJIE_ENABLE_CONCURRENCY_TESTS
+            if (std::getenv("CANGJIE_TEST_FORCE_ASYNC_LAUNCH_FAILURE")) {
+                throw std::system_error(std::make_error_code(
+                    std::errc::resource_unavailable_try_again
+                ));
+            }
 #endif
-        NativeSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
+            token_future = std::async(
+                std::launch::async,
+                [token_table_path] { return build_token_table(token_table_path); }
+            );
+            async_started = true;
+        } catch (const std::system_error& error) {
+            if (!is_async_resource_failure(error)) throw;
+        } catch (const std::bad_alloc&) {
+            // A shared-state allocation failure may still leave enough memory
+            // for the original serial startup path.
+        }
+
+        if (!async_started) {
+            TokenTableStartup token_result = build_token_table(token_table_path);
+            token_table = std::move(token_result.table);
+#ifdef CANGJIE_ENABLE_PROFILE
+            phase_profile.token_table_init_ns += token_result.elapsed_ns;
+            const auto grammar_started = PhaseProfiler::Clock::now();
+#endif
+            syntax = std::make_unique<NativeSyntaxChecker>(grammar_path);
+#ifdef CANGJIE_ENABLE_PROFILE
+            phase_profile.grammar_init_ns += PhaseProfiler::Elapsed(grammar_started);
+#endif
+        } else {
+            std::exception_ptr grammar_error;
+            std::exception_ptr token_error;
+#ifdef CANGJIE_ENABLE_PROFILE
+            const auto grammar_started = PhaseProfiler::Clock::now();
+#endif
+            try {
+                syntax = std::make_unique<NativeSyntaxChecker>(grammar_path);
+            } catch (...) {
+                grammar_error = std::current_exception();
+            }
+#ifdef CANGJIE_ENABLE_PROFILE
+            phase_profile.grammar_init_ns += PhaseProfiler::Elapsed(grammar_started);
+#endif
+            try {
+                TokenTableStartup token_result = token_future.get();
+                token_table = std::move(token_result.table);
+#ifdef CANGJIE_ENABLE_PROFILE
+                phase_profile.token_table_init_ns += token_result.elapsed_ns;
+#endif
+            } catch (...) {
+                token_error = std::current_exception();
+            }
+            if (token_error) std::rethrow_exception(token_error);
+            if (grammar_error) std::rethrow_exception(grammar_error);
+        }
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
-            phase_profile.grammar_init_ns += PhaseProfiler::Elapsed(phase_started);
             phase_profile.startup_wall_ns += PhaseProfiler::Elapsed(startup_started);
         }
 #endif
@@ -361,26 +442,27 @@ int main(int argc, char** argv) {
         while (std::getline(std::cin, line)) {
             std::int64_t token_id = -1;
             std::string_view fragment;
-            if (!parse_token_id(line, &token_id) || !token_table.decode(token_id, &fragment)) {
+            if (!parse_token_id(line, &token_id) || !token_table->decode(token_id, &fragment)) {
                 emit(false, args.competition_output);
                 return 0;
             }
 #ifdef CANGJIE_ENABLE_PROFILE
-            phase_started = PhaseProfiler::Clock::now();
+            const auto syntax_started = PhaseProfiler::Clock::now();
 #endif
-            const bool syntax_ok = syntax.check(fragment);
+            const bool syntax_ok = syntax->check(fragment);
 #ifdef CANGJIE_ENABLE_PROFILE
             std::uint64_t syntax_elapsed = 0;
             if (phase_profile.enabled()) {
-                syntax_elapsed = PhaseProfiler::Elapsed(phase_started);
+                syntax_elapsed = PhaseProfiler::Elapsed(syntax_started);
                 phase_profile.syntax_check_ns += syntax_elapsed;
-                phase_started = PhaseProfiler::Clock::now();
             }
+            const auto semantic_check_started = PhaseProfiler::Clock::now();
 #endif
             const cangjie::CheckStatus semantic_status = native_semantic.Check(fragment);
 #ifdef CANGJIE_ENABLE_PROFILE
             if (phase_profile.enabled()) {
-                const std::uint64_t semantic_elapsed = PhaseProfiler::Elapsed(phase_started);
+                const std::uint64_t semantic_elapsed =
+                    PhaseProfiler::Elapsed(semantic_check_started);
                 phase_profile.semantic_check_ns += semantic_elapsed;
                 phase_profile.syntax_semantic_overlap_upper_bound_ns +=
                     std::min(syntax_elapsed, semantic_elapsed);
@@ -397,7 +479,7 @@ int main(int argc, char** argv) {
         }
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
-            const NativeSyntaxChecker::ProfileSnapshot snapshot = syntax.profile();
+            const NativeSyntaxChecker::ProfileSnapshot snapshot = syntax->profile();
             phase_profile.syntax_stable_bytes = snapshot.stable_bytes;
             phase_profile.syntax_trailing_whitespace_scan_bytes =
                 snapshot.trailing_whitespace_scan_bytes;
