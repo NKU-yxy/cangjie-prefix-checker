@@ -2408,12 +2408,25 @@ bool ContinuesAfterNewline(std::string_view statement) {
 
 class ActiveStatementCache {
  public:
+    enum class Boundary {
+        None,
+        Newline,
+        Semicolon,
+        FunctionClose,
+    };
+
+    struct Result {
+        std::string text;
+        Boundary boundary = Boundary::None;
+    };
+
     void Reset() {
         body_start_ = std::string_view::npos;
         cursor_ = 0;
         statement_start_ = 0;
         last_start_ = std::string_view::npos;
         last_end_ = 0;
+        last_boundary_ = Boundary::None;
         paren_ = 0;
         bracket_ = 0;
         brace_ = 0;
@@ -2423,7 +2436,7 @@ class ActiveStatementCache {
         block_comment_depth_ = 0;
     }
 
-    std::string Update(
+    Result Update(
         std::string_view source,
         std::size_t body_start,
         std::size_t body_end
@@ -2492,7 +2505,7 @@ class ActiveStatementCache {
                 --brace_;
                 ++cursor_;
             } else if (ch == ';' && AtTopLevel()) {
-                Commit(source, index);
+                Commit(source, index, Boundary::Semicolon);
                 statement_start_ = index + 1;
                 ++cursor_;
             } else if ((ch == '\n' || ch == '\r') && AtTopLevel()) {
@@ -2518,9 +2531,19 @@ class ActiveStatementCache {
         const std::string active = Trim(source.substr(
             statement_start_, visible_end - statement_start_
         ));
-        if (!active.empty()) return active;
+        if (!active.empty()) {
+            const bool function_closed = body_end < source.size() &&
+                source[body_end] == '}';
+            return {
+                active,
+                function_closed ? Boundary::FunctionClose : Boundary::None,
+            };
+        }
         if (last_start_ != std::string_view::npos) {
-            return Trim(source.substr(last_start_, last_end_ - last_start_));
+            return {
+                Trim(source.substr(last_start_, last_end_ - last_start_)),
+                last_boundary_,
+            };
         }
         return {};
     }
@@ -2537,10 +2560,11 @@ class ActiveStatementCache {
         return paren_ == 0 && bracket_ == 0 && brace_ == 0;
     }
 
-    void Commit(std::string_view source, std::size_t end) {
+    void Commit(std::string_view source, std::size_t end, Boundary boundary) {
         if (!Trim(source.substr(statement_start_, end - statement_start_)).empty()) {
             last_start_ = statement_start_;
             last_end_ = end;
+            last_boundary_ = boundary;
         }
     }
 
@@ -2548,7 +2572,7 @@ class ActiveStatementCache {
         if (!ContinuesAfterNewline(source.substr(
                 statement_start_, index - statement_start_
             ))) {
-            Commit(source, index);
+            Commit(source, index, Boundary::Newline);
             statement_start_ = index + 1;
         }
     }
@@ -2558,6 +2582,7 @@ class ActiveStatementCache {
     std::size_t statement_start_ = 0;
     std::size_t last_start_ = std::string_view::npos;
     std::size_t last_end_ = 0;
+    Boundary last_boundary_ = Boundary::None;
     int paren_ = 0;
     int bracket_ = 0;
     int brace_ = 0;
@@ -2633,17 +2658,12 @@ bool HasUnclosedString(std::string_view source) {
     return in_string;
 }
 
-bool EndsAtSemanticCommit(std::string_view source) {
-    if (source.empty()) return false;
-    const char ch = source.back();
-    return ch == '\n' || ch == '\r' || ch == ';' || ch == '}';
-}
-
 struct ExprResult {
     std::string type = "?";
     bool known = false;
     bool error = false;
     std::string message;
+    bool suffix_may_change_type = false;
 };
 
 class ExpressionTyper {
@@ -3223,7 +3243,7 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             type += param_types[index];
         }
         type += ")->" + (result_body.known ? result_body.type : expected_fn.second);
-        return {type, !type.empty() && type.back() != '>', false, {}};
+        return {type, !type.empty() && type.back() != '>', false, {}, true};
     }
 
     if (expression.front() == '"') {
@@ -4381,7 +4401,7 @@ CheckStatus AnalyzeSource(
     bool model_dirty,
     bool commit_dirty,
     const FunctionContext& cached_context,
-    std::string active_statement
+    ActiveStatementCache::Result active_statement
 #ifdef CANGJIE_ENABLE_PROFILE
     , ProfileCounters* profile
 #endif
@@ -4488,7 +4508,8 @@ CheckStatus AnalyzeSource(
     ExpressionTyper typer(model, context, source);
     const bool trailing_numeric_prefix = !source.empty() &&
         std::isdigit(static_cast<unsigned char>(source.back()));
-    const bool committed = EndsAtSemanticCommit(source);
+    const bool committed =
+        active_statement.boundary != ActiveStatementCache::Boundary::None;
 #ifdef CANGJIE_ENABLE_PROFILE
     if (profile) profile->unclosed_string_scan_bytes += source.size();
 #endif
@@ -4496,7 +4517,7 @@ CheckStatus AnalyzeSource(
     const bool trailing_open_paren = !source.empty() && source.back() == '(';
     const bool defer_expression_error = trailing_numeric_prefix || unclosed_string ||
         trailing_open_paren || (!context.is_main && !committed);
-    const std::string line = std::move(active_statement);
+    const std::string line = std::move(active_statement.text);
     const std::string trimmed_source = Trim(source);
     const bool condition_closed_now = !trimmed_source.empty() && trimmed_source.back() == ')';
     if (condition_closed_now) {
@@ -4550,7 +4571,9 @@ CheckStatus AnalyzeSource(
             trailing_open_paren ||
             std::regex_match(declaration->second, incomplete_float)
         ) && declaration->second != "true" && declaration->second != "false";
-        if (actual.known && !Compatible(actual.type, declaration->first, model) && !defer_atom) {
+        const bool defer_suffix = !committed && actual.suffix_may_change_type;
+        if (actual.known && !Compatible(actual.type, declaration->first, model) &&
+            !defer_atom && !defer_suffix) {
             return {false, "variable initializer type mismatch"};
         }
     } else if (const auto declaration = ParseAnyVariableDeclaration(line)) {
@@ -4800,7 +4823,7 @@ CheckStatus IncrementalSemanticEngine::Probe(
     }
     impl_->source_bytes_ = source.size();
     impl_->last_partial_ = partial.text;
-    std::string active_statement;
+    ActiveStatementCache::Result active_statement;
     if (impl_->active_context_.in_function &&
         impl_->active_context_.body_start <= source.size()) {
         const std::size_t body_end = impl_->active_context_.body_end == std::string::npos
