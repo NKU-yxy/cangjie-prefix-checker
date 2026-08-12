@@ -322,6 +322,18 @@ python3 benchmark/native_context_differential.py
 python3 benchmark/hidden_semantic_fuzz.py --seed 20260805 --cases-per-family 12 --solution ./solution
 ```
 
+仓库还提供 `113` 个固定综合样例，覆盖 `47` 个完整合法程序、`56` 个已提交错误和
+`10` 个仍可继续补全的截断前缀。运行器会复核完整程序标签，并通过真实
+`cl100k_base` 逐 token 协议检查首次拒绝和安全前缀：
+
+```bash
+python3 tools/run_comprehensive_cases.py --solution ./solution
+python3 tools/run_comprehensive_cases.py --solution ./solution --check-competition-output
+```
+
+样例分类、筛选方式、JSON 报告和确定性重新生成方法见
+[`test_cases/comprehensive/README.md`](test_cases/comprehensive/README.md)。
+
 若已在项目同级目录准备竞赛配套的 `cangjie-fragment-checker` 仓库，可运行公开样例精确首错差分和冷进程性能测试：
 
 ```bash
