@@ -15,20 +15,26 @@
 
 #include <algorithm>
 #include <charconv>
+#include <condition_variable>
 #ifdef CANGJIE_ENABLE_PROFILE
 #include <chrono>
 #endif
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <mutex>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -71,6 +77,9 @@ class PhaseProfiler {
             << ",\"semantic_check_ns\":" << semantic_check_ns
             << ",\"syntax_semantic_overlap_upper_bound_ns\":"
             << syntax_semantic_overlap_upper_bound_ns
+            << ",\"syntax_semantic_actual_overlap_ns\":"
+            << syntax_semantic_actual_overlap_ns
+            << ",\"parallel_round_wall_ns\":" << parallel_round_wall_ns
             << ",\"syntax_stable_bytes\":" << syntax_stable_bytes
             << ",\"syntax_trailing_whitespace_scan_bytes\":"
             << syntax_trailing_whitespace_scan_bytes
@@ -88,6 +97,14 @@ class PhaseProfiler {
         );
     }
 
+    static std::uint64_t Timestamp() {
+        return static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                Clock::now().time_since_epoch()
+            ).count()
+        );
+    }
+
     bool enabled() const { return enabled_; }
 
     std::uint64_t semantic_init_ns = 0;
@@ -97,6 +114,8 @@ class PhaseProfiler {
     std::uint64_t syntax_check_ns = 0;
     std::uint64_t semantic_check_ns = 0;
     std::uint64_t syntax_semantic_overlap_upper_bound_ns = 0;
+    std::uint64_t syntax_semantic_actual_overlap_ns = 0;
+    std::uint64_t parallel_round_wall_ns = 0;
     std::uint64_t syntax_stable_bytes = 0;
     std::uint64_t syntax_trailing_whitespace_scan_bytes = 0;
     std::uint64_t syntax_stable_over_15_bytes_calls = 0;
@@ -254,6 +273,247 @@ class NativeSyntaxChecker {
 #endif
 };
 
+struct SyntaxOutcome {
+    bool ok = false;
+    std::exception_ptr error;
+#ifdef CANGJIE_ENABLE_PROFILE
+    std::uint64_t started_ns = 0;
+    std::uint64_t finished_ns = 0;
+#endif
+};
+
+#ifdef CANGJIE_ENABLE_CONCURRENCY_TESTS
+void ConcurrencyYieldPoint() {
+    if (std::getenv("CANGJIE_TEST_FORCE_YIELD")) std::this_thread::yield();
+}
+#else
+void ConcurrencyYieldPoint() {}
+#endif
+
+class SyntaxExecutor {
+ public:
+    static std::unique_ptr<SyntaxExecutor> Create(const fs::path& grammar_path) {
+        auto result = std::unique_ptr<SyntaxExecutor>(
+            new SyntaxExecutor(grammar_path)
+        );
+        bool launched = false;
+        try {
+#ifdef CANGJIE_ENABLE_CONCURRENCY_TESTS
+            if (std::getenv("CANGJIE_TEST_FORCE_THREAD_LAUNCH_FAILURE")) {
+                throw std::system_error(std::make_error_code(
+                    std::errc::resource_unavailable_try_again
+                ));
+            }
+#endif
+            result->worker_ = std::thread(&SyntaxExecutor::WorkerMain, result.get());
+            launched = true;
+        } catch (const std::system_error&) {
+            // This try block contains only std::thread construction.  Standard
+            // libraries may report thread-resource exhaustion through
+            // different error_code categories, so every launch failure falls
+            // back to the original serial syntax path.
+        } catch (const std::bad_alloc&) {
+            // A failed thread shared-state allocation may still leave enough
+            // memory for the original serial syntax path.
+        }
+        if (!launched) {
+#ifdef CANGJIE_ENABLE_PROFILE
+            const auto started = PhaseProfiler::Clock::now();
+#endif
+            result->serial_ = std::make_unique<NativeSyntaxChecker>(grammar_path);
+#ifdef CANGJIE_ENABLE_PROFILE
+            result->grammar_init_ns_ = PhaseProfiler::Elapsed(started);
+#endif
+            return result;
+        }
+
+        std::exception_ptr initialization_error;
+        {
+            std::unique_lock<std::mutex> lock(result->mutex_);
+            result->ready_cv_.wait(lock, [&] { return result->ready_; });
+            initialization_error = result->initialization_error_;
+        }
+        if (initialization_error) {
+            result->StopAndJoin();
+            std::rethrow_exception(initialization_error);
+        }
+        return result;
+    }
+
+    SyntaxExecutor(const SyntaxExecutor&) = delete;
+    SyntaxExecutor& operator=(const SyntaxExecutor&) = delete;
+    SyntaxExecutor(SyntaxExecutor&&) = delete;
+    SyntaxExecutor& operator=(SyntaxExecutor&&) = delete;
+
+    ~SyntaxExecutor() { StopAndJoin(); }
+
+    void Submit(std::string_view fragment) {
+        if (serial_) {
+            serial_outcome_ = CheckSerial(fragment);
+            serial_pending_ = true;
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (state_ != State::Idle || stop_requested_) {
+                throw std::logic_error("syntax worker received an invalid submit");
+            }
+            ConcurrencyYieldPoint();
+            fragment_ = fragment;
+            outcome_ = {};
+            state_ = State::Pending;
+            ConcurrencyYieldPoint();
+        }
+        task_cv_.notify_one();
+    }
+
+    SyntaxOutcome Wait() {
+        if (serial_) {
+            if (!serial_pending_) {
+                throw std::logic_error("serial syntax path has no pending task");
+            }
+            serial_pending_ = false;
+            return serial_outcome_;
+        }
+        std::unique_lock<std::mutex> lock(mutex_);
+        done_cv_.wait(lock, [&] { return state_ == State::Done; });
+        ConcurrencyYieldPoint();
+        SyntaxOutcome result = outcome_;
+        state_ = State::Idle;
+        ConcurrencyYieldPoint();
+        return result;
+    }
+
+#ifdef CANGJIE_ENABLE_PROFILE
+    std::uint64_t grammar_init_ns() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return grammar_init_ns_;
+    }
+
+    NativeSyntaxChecker::ProfileSnapshot profile() const {
+        if (serial_) return serial_->profile();
+        std::lock_guard<std::mutex> lock(mutex_);
+        return profile_;
+    }
+#endif
+
+ private:
+    enum class State { Idle, Pending, Done };
+
+    explicit SyntaxExecutor(fs::path grammar_path)
+        : grammar_path_(std::move(grammar_path)) {}
+
+    static SyntaxOutcome Check(NativeSyntaxChecker* checker, std::string_view fragment) {
+        SyntaxOutcome result;
+#ifdef CANGJIE_ENABLE_PROFILE
+        result.started_ns = PhaseProfiler::Timestamp();
+#endif
+        try {
+#ifdef CANGJIE_ENABLE_CONCURRENCY_TESTS
+            if (std::getenv("CANGJIE_TEST_FORCE_SYNTAX_EXCEPTION")) {
+                throw std::runtime_error("forced syntax exception");
+            }
+#endif
+            result.ok = checker->check(fragment);
+        } catch (...) {
+            result.error = std::current_exception();
+        }
+#ifdef CANGJIE_ENABLE_PROFILE
+        result.finished_ns = PhaseProfiler::Timestamp();
+#endif
+        return result;
+    }
+
+    SyntaxOutcome CheckSerial(std::string_view fragment) {
+        return Check(serial_.get(), fragment);
+    }
+
+    void WorkerMain() noexcept {
+        std::unique_ptr<NativeSyntaxChecker> checker;
+        std::exception_ptr initialization_error;
+#ifdef CANGJIE_ENABLE_PROFILE
+        const auto grammar_started = PhaseProfiler::Clock::now();
+#endif
+        try {
+            checker = std::make_unique<NativeSyntaxChecker>(grammar_path_);
+        } catch (...) {
+            initialization_error = std::current_exception();
+        }
+#ifdef CANGJIE_ENABLE_PROFILE
+        const std::uint64_t grammar_elapsed = PhaseProfiler::Elapsed(grammar_started);
+#endif
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            initialization_error_ = initialization_error;
+#ifdef CANGJIE_ENABLE_PROFILE
+            grammar_init_ns_ = grammar_elapsed;
+#endif
+            ready_ = true;
+        }
+        ready_cv_.notify_one();
+        if (initialization_error) return;
+
+        while (true) {
+            std::string_view fragment;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                task_cv_.wait(lock, [&] {
+                    return stop_requested_ || state_ == State::Pending;
+                });
+                if (stop_requested_ && state_ != State::Pending) return;
+                ConcurrencyYieldPoint();
+                fragment = fragment_;
+                ConcurrencyYieldPoint();
+            }
+
+            SyntaxOutcome result = Check(checker.get(), fragment);
+            bool should_stop = false;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                outcome_ = result;
+#ifdef CANGJIE_ENABLE_PROFILE
+                profile_ = checker->profile();
+#endif
+                state_ = State::Done;
+                should_stop = stop_requested_;
+            }
+            done_cv_.notify_one();
+            if (should_stop) return;
+        }
+    }
+
+    void StopAndJoin() noexcept {
+        if (!worker_.joinable()) return;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_requested_ = true;
+        }
+        task_cv_.notify_one();
+        done_cv_.notify_all();
+        worker_.join();
+    }
+
+    fs::path grammar_path_;
+    std::unique_ptr<NativeSyntaxChecker> serial_;
+    SyntaxOutcome serial_outcome_;
+    bool serial_pending_ = false;
+    mutable std::mutex mutex_;
+    std::condition_variable ready_cv_;
+    std::condition_variable task_cv_;
+    std::condition_variable done_cv_;
+    std::thread worker_;
+    State state_ = State::Idle;
+    bool ready_ = false;
+    bool stop_requested_ = false;
+    std::string_view fragment_;
+    SyntaxOutcome outcome_;
+    std::exception_ptr initialization_error_;
+#ifdef CANGJIE_ENABLE_PROFILE
+    std::uint64_t grammar_init_ns_ = 0;
+    NativeSyntaxChecker::ProfileSnapshot profile_;
+#endif
+};
+
 struct Args {
     std::string context_path;
     bool competition_output = false;
@@ -346,15 +606,19 @@ int main(int argc, char** argv) {
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
             phase_profile.token_table_init_ns += PhaseProfiler::Elapsed(phase_started);
-            phase_started = PhaseProfiler::Clock::now();
         }
 #endif
-        NativeSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
+        std::unique_ptr<SyntaxExecutor> syntax = SyntaxExecutor::Create(
+            root / "grammar" / "cangjie.gbnf"
+        );
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
-            phase_profile.grammar_init_ns += PhaseProfiler::Elapsed(phase_started);
+            phase_profile.grammar_init_ns += syntax->grammar_init_ns();
             phase_profile.startup_wall_ns += PhaseProfiler::Elapsed(startup_started);
         }
+#endif
+#ifdef CANGJIE_ENABLE_PARALLEL_SHADOW
+        NativeSyntaxChecker syntax_shadow(root / "grammar" / "cangjie.gbnf");
 #endif
 
         std::string line;
@@ -363,30 +627,75 @@ int main(int argc, char** argv) {
             std::string_view fragment;
             if (!parse_token_id(line, &token_id) || !token_table.decode(token_id, &fragment)) {
                 emit(false, args.competition_output);
-                return 0;
+                break;
             }
 #ifdef CANGJIE_ENABLE_PROFILE
-            phase_started = PhaseProfiler::Clock::now();
+            const auto parallel_round_started = PhaseProfiler::Clock::now();
 #endif
-            const bool syntax_ok = syntax.check(fragment);
+            syntax->Submit(fragment);
+            cangjie::CheckStatus semantic_status;
+            std::exception_ptr semantic_error;
 #ifdef CANGJIE_ENABLE_PROFILE
-            std::uint64_t syntax_elapsed = 0;
+            const std::uint64_t semantic_started_ns = PhaseProfiler::Timestamp();
+#endif
+            try {
+#ifdef CANGJIE_ENABLE_CONCURRENCY_TESTS
+                if (std::getenv("CANGJIE_TEST_FORCE_SEMANTIC_EXCEPTION")) {
+                    throw std::runtime_error("forced semantic exception");
+                }
+#endif
+                semantic_status = native_semantic.Check(fragment);
+            } catch (...) {
+                semantic_error = std::current_exception();
+            }
+#ifdef CANGJIE_ENABLE_PROFILE
+            const std::uint64_t semantic_finished_ns = PhaseProfiler::Timestamp();
+#endif
+            const SyntaxOutcome syntax_outcome = syntax->Wait();
+#ifdef CANGJIE_ENABLE_PROFILE
             if (phase_profile.enabled()) {
-                syntax_elapsed = PhaseProfiler::Elapsed(phase_started);
+                const std::uint64_t syntax_elapsed =
+                    syntax_outcome.finished_ns - syntax_outcome.started_ns;
+                const std::uint64_t semantic_elapsed =
+                    semantic_finished_ns - semantic_started_ns;
+                const std::uint64_t overlap_start = std::max(
+                    syntax_outcome.started_ns, semantic_started_ns
+                );
+                const std::uint64_t overlap_end = std::min(
+                    syntax_outcome.finished_ns, semantic_finished_ns
+                );
                 phase_profile.syntax_check_ns += syntax_elapsed;
-                phase_started = PhaseProfiler::Clock::now();
-            }
-#endif
-            const cangjie::CheckStatus semantic_status = native_semantic.Check(fragment);
-#ifdef CANGJIE_ENABLE_PROFILE
-            if (phase_profile.enabled()) {
-                const std::uint64_t semantic_elapsed = PhaseProfiler::Elapsed(phase_started);
                 phase_profile.semantic_check_ns += semantic_elapsed;
                 phase_profile.syntax_semantic_overlap_upper_bound_ns +=
                     std::min(syntax_elapsed, semantic_elapsed);
+                if (overlap_end > overlap_start) {
+                    phase_profile.syntax_semantic_actual_overlap_ns +=
+                        overlap_end - overlap_start;
+                }
+                phase_profile.parallel_round_wall_ns +=
+                    PhaseProfiler::Elapsed(parallel_round_started);
                 ++phase_profile.tokens_checked;
             }
 #endif
+#ifdef CANGJIE_ENABLE_PARALLEL_SHADOW
+            bool shadow_ok = false;
+            std::exception_ptr shadow_error;
+            try {
+                shadow_ok = syntax_shadow.check(fragment);
+            } catch (...) {
+                shadow_error = std::current_exception();
+            }
+            if (static_cast<bool>(shadow_error) !=
+                static_cast<bool>(syntax_outcome.error)) {
+                throw std::logic_error("parallel syntax exception diverged from serial shadow");
+            }
+            if (!shadow_error && shadow_ok != syntax_outcome.ok) {
+                throw std::logic_error("parallel syntax result diverged from serial shadow");
+            }
+#endif
+            if (syntax_outcome.error) std::rethrow_exception(syntax_outcome.error);
+            if (semantic_error) std::rethrow_exception(semantic_error);
+            const bool syntax_ok = syntax_outcome.ok;
             const bool semantic_ok = semantic_status.ok;
             if (!semantic_status.ok && std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
                 std::cerr << "native semantic rejection: " << semantic_status.message << '\n';
@@ -397,7 +706,7 @@ int main(int argc, char** argv) {
         }
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
-            const NativeSyntaxChecker::ProfileSnapshot snapshot = syntax.profile();
+            const NativeSyntaxChecker::ProfileSnapshot snapshot = syntax->profile();
             phase_profile.syntax_stable_bytes = snapshot.stable_bytes;
             phase_profile.syntax_trailing_whitespace_scan_bytes =
                 snapshot.trailing_whitespace_scan_bytes;
