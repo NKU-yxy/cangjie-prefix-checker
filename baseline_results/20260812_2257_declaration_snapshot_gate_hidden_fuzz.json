@@ -1,0 +1,1169 @@
+{
+  "summary": {
+    "seed": 20260805,
+    "cases_per_family": 12,
+    "generated_cases": 144,
+    "families": {
+      "multiline": 24,
+      "nested_lambda": 24,
+      "overload": 24,
+      "generic_inheritance": 24,
+      "valid_zero_false_positive": 24,
+      "scope_isolation": 24
+    },
+    "fragmentations": [
+      "byte",
+      "random",
+      "line",
+      "cl100k",
+      "whole"
+    ],
+    "official_labels_checked": 144,
+    "solution_checked": true,
+    "legacy_prefix_disagreements": 190,
+    "failures": 0
+  },
+  "failures": [],
+  "legacy_prefix_disagreements": [
+    {
+      "name": "multiline-return-mutation-0_538364",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 297, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-0_538364",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 299, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-0_538364",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-0_538364",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-0_538364",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 310, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-0_949992",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 642 (expected Int64, got Int64>( 5, { outer: Int64 => apply_0_949992<Int64>( outer, { level_4_0_949992: Int64 => apply_0_949992<Int64>( level_4_0_949992, { level_3_0_949992: Int64 => apply_0_949992<Int64>( level_3_0_949992, { level_2_0_949992: Int64 => apply_0_949992<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-0_949992",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 678 (expected Int64, got Int64>( 5, { outer: Int64 => apply_0_949992<Int64>( outer, { level_4_0_949992: Int64 => apply_0_949992<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-0_949992",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 642 (expected Int64, got Int64>( 5, { outer: Int64 => apply_0_949992<Int64>( outer, { level_4_0_949992: Int64 => apply_0_949992<Int64>( level_4_0_949992, { level_3_0_949992: Int64 => apply_0_949992<Int64>( level_3_0_949992, { level_2_0_949992: Int64 => apply_0_949992<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-0_949992",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 615, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-0_949992",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 695, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-0_472718",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-0_472718",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-0_472718",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-0_895347",
+      "family": "generic_inheritance",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 421, python=True at None ()"
+    },
+    {
+      "name": "generic-inheritance-mutation-0_895347",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 421, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-1_851143",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 313, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-1_851143",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 321, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-1_851143",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 314, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-1_851143",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 314, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-1_851143",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 326, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-1_639907",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 407 (expected Int64, got Int64>( 13, { outer: Int64 => apply_1_639907<Int64>( outer, { level_2_1_639907: Int64 => apply_1_639907<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-1_639907",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 407 (expected Int64, got Int64>( 13, { outer: Int64 => apply_1_639907<Int64>( outer, { level_2_1_639907: Int64 => apply_1_639907<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-1_639907",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 407 (expected Int64, got Int64>( 13, { outer: Int64 => apply_1_639907<Int64>( outer, { level_2_1_639907: Int64 => apply_1_639907<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-1_639907",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 388, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-1_639907",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 424, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-1_602923",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-1_602923",
+      "family": "overload",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 184 (add expects 1..1 argument(s), got 2)"
+    },
+    {
+      "name": "overload-valid-1_602923",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-1_602923",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-1_330723",
+      "family": "generic_inheritance",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 274 (method get does not match interface Middle_1_330723<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-1_330723",
+      "family": "generic_inheritance",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 274 (method get does not match interface Middle_1_330723<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-1_330723",
+      "family": "generic_inheritance",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 427, python=True at None ()"
+    },
+    {
+      "name": "generic-inheritance-mutation-1_330723",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 427, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-2_704070",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 313, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-2_704070",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 317, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-2_704070",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 314, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-2_704070",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 314, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-2_704070",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 326, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-2_849556",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 521 (expected Int64, got Int64>( 19, { outer: Int64 => apply_2_849556<Int64>( outer, { level_3_2_849556: Int64 => apply_2_849556<Int64>( level_3_2_849556, { level_2_2_849556: Int64 => apply_2_849556<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-2_849556",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 521 (expected Int64, got Int64>( 19, { outer: Int64 => apply_2_849556<Int64>( outer, { level_3_2_849556: Int64 => apply_2_849556<Int64>( level_3_2_849556, { level_2_2_849556: Int64 => apply_2_849556<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-2_849556",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 499, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-2_849556",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 498, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-2_849556",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 554, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-2_619897",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-2_619897",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-2_619897",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-2_394171",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 421, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-3_929054",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 297, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-3_929054",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 308, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-3_929054",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-3_929054",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-3_929054",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 310, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-3_480165",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 406 (expected Int64, got Int64>( 1, { outer: Int64 => apply_3_480165<Int64>( outer, { level_2_3_480165: Int64 => apply_3_480165<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-3_480165",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 406 (expected Int64, got Int64>( 1, { outer: Int64 => apply_3_480165<Int64>( outer, { level_2_3_480165: Int64 => apply_3_480165<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-3_480165",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 406 (expected Int64, got Int64>( 1, { outer: Int64 => apply_3_480165<Int64>( outer, { level_2_3_480165: Int64 => apply_3_480165<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-3_480165",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 392, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-3_480165",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 387, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-3_480165",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 423, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-3_794643",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-3_794643",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-3_794643",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-3_427178",
+      "family": "generic_inheritance",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 270 (method get does not match interface Middle_3_427178<Bool>)"
+    },
+    {
+      "name": "generic-inheritance-valid-3_427178",
+      "family": "generic_inheritance",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 270 (method get does not match interface Middle_3_427178<Bool>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-3_427178",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 423, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-4_039311",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 297, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-4_039311",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 300, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-4_039311",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-4_039311",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-4_039311",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 310, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-4_981871",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 643 (expected Int64, got Int64>( 16, { outer: Int64 => apply_4_981871<Int64>( outer, { level_4_4_981871: Int64 => apply_4_981871<Int64>( level_4_4_981871, { level_3_4_981871: Int64 => apply_4_981871<Int64>( level_3_4_981871, { level_2_4_981871: Int64 => apply_4_981871<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-4_981871",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 643 (expected Int64, got Int64>( 16, { outer: Int64 => apply_4_981871<Int64>( outer, { level_4_4_981871: Int64 => apply_4_981871<Int64>( level_4_4_981871, { level_3_4_981871: Int64 => apply_4_981871<Int64>( level_3_4_981871, { level_2_4_981871: Int64 => apply_4_981871<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-4_981871",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 616, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-4_981871",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 696, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-4_457057",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-4_457057",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-4_457057",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-4_049033",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 428, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-5_594478",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 297, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-5_594478",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 308, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-5_594478",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-5_594478",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-5_594478",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 310, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-5_293943",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 520 (expected Int64, got Int64>( 1, { outer: Int64 => apply_5_293943<Int64>( outer, { level_3_5_293943: Int64 => apply_5_293943<Int64>( level_3_5_293943, { level_2_5_293943: Int64 => apply_5_293943<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-5_293943",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 521 (expected Int64, got Int64>( 1, { outer: Int64 => apply_5_293943<Int64>( outer, { level_3_5_293943: Int64 => apply_5_293943<Int64>( level_3_5_293943, { level_2_5_293943: Int64 => apply_5_293943<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-5_293943",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 520 (expected Int64, got Int64>( 1, { outer: Int64 => apply_5_293943<Int64>( outer, { level_3_5_293943: Int64 => apply_5_293943<Int64>( level_3_5_293943, { level_2_5_293943: Int64 => apply_5_293943<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-5_293943",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 497, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-5_293943",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 553, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-5_772559",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-5_772559",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-5_772559",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-5_495058",
+      "family": "generic_inheritance",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 270 (method get does not match interface Middle_5_495058<Bool>)"
+    },
+    {
+      "name": "generic-inheritance-valid-5_495058",
+      "family": "generic_inheritance",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 270 (method get does not match interface Middle_5_495058<Bool>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-5_495058",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 423, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-6_971114",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 297, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-6_971114",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-6_971114",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-6_971114",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-6_971114",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 310, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-6_512376",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 643 (expected Int64, got Int64>( 10, { outer: Int64 => apply_6_512376<Int64>( outer, { level_4_6_512376: Int64 => apply_6_512376<Int64>( level_4_6_512376, { level_3_6_512376: Int64 => apply_6_512376<Int64>( level_3_6_512376, { level_2_6_512376: Int64 => apply_6_512376<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-6_512376",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 691 (expected Int64, got Int64>( 10, { outer: Int64 => apply_6_512376<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-6_512376",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 643 (expected Int64, got Int64>( 10, { outer: Int64 => apply_6_512376<Int64>( outer, { level_4_6_512376: Int64 => apply_6_512376<Int64>( level_4_6_512376, { level_3_6_512376: Int64 => apply_6_512376<Int64>( level_3_6_512376, { level_2_6_512376: Int64 => apply_6_512376<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-6_512376",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 625, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-6_512376",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 616, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-6_512376",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 696, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-6_124906",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-6_124906",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-6_124906",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-6_265441",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 421, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-7_179287",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 313, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-7_179287",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 316, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-7_179287",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 314, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-7_179287",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 314, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-7_179287",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 326, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-7_479541",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 407 (expected Int64, got Int64>( 16, { outer: Int64 => apply_7_479541<Int64>( outer, { level_2_7_479541: Int64 => apply_7_479541<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-7_479541",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 407 (expected Int64, got Int64>( 16, { outer: Int64 => apply_7_479541<Int64>( outer, { level_2_7_479541: Int64 => apply_7_479541<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-7_479541",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 407 (expected Int64, got Int64>( 16, { outer: Int64 => apply_7_479541<Int64>( outer, { level_2_7_479541: Int64 => apply_7_479541<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-7_479541",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 390, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-7_479541",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 388, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-7_479541",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 424, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-7_490859",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-7_490859",
+      "family": "overload",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-7_490859",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-7_490859",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 151 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-7_472067",
+      "family": "generic_inheritance",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 274 (method get does not match interface Middle_7_472067<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-7_472067",
+      "family": "generic_inheritance",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 274 (method get does not match interface Middle_7_472067<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-7_472067",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 427, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-8_845681",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 297, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-8_845681",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 299, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-8_845681",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-8_845681",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-8_845681",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 310, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-8_305305",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 521 (expected Int64, got Int64>( 12, { outer: Int64 => apply_8_305305<Int64>( outer, { level_3_8_305305: Int64 => apply_8_305305<Int64>( level_3_8_305305, { level_2_8_305305: Int64 => apply_8_305305<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-8_305305",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 521 (expected Int64, got Int64>( 12, { outer: Int64 => apply_8_305305<Int64>( outer, { level_3_8_305305: Int64 => apply_8_305305<Int64>( level_3_8_305305, { level_2_8_305305: Int64 => apply_8_305305<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-8_305305",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 498, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-8_305305",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 554, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-8_182853",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-8_182853",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-8_182853",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-8_314387",
+      "family": "generic_inheritance",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 421, python=True at None ()"
+    },
+    {
+      "name": "generic-inheritance-mutation-8_314387",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 421, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-9_598775",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 297, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-9_598775",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 301, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-9_598775",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-9_598775",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 298, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-9_598775",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 310, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-9_137124",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 642 (expected Int64, got Int64>( 4, { outer: Int64 => apply_9_137124<Int64>( outer, { level_4_9_137124: Int64 => apply_9_137124<Int64>( level_4_9_137124, { level_3_9_137124: Int64 => apply_9_137124<Int64>( level_3_9_137124, { level_2_9_137124: Int64 => apply_9_137124<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-9_137124",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 663 (expected Int64, got Int64>( 4, { outer: Int64 => apply_9_137124<Int64>( outer, { level_4_9_137124: Int64 => apply_9_137124<Int64>( level_4_9_137124, { level_3_9_137124: Int64 => apply_9_137124<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-9_137124",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 642 (expected Int64, got Int64>( 4, { outer: Int64 => apply_9_137124<Int64>( outer, { level_4_9_137124: Int64 => apply_9_137124<Int64>( level_4_9_137124, { level_3_9_137124: Int64 => apply_9_137124<Int64>( level_3_9_137124, { level_2_9_137124: Int64 => apply_9_137124<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-9_137124",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 626, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-9_137124",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 615, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-9_137124",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 695, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-9_307068",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-9_307068",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-9_307068",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 152 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-9_964817",
+      "family": "generic_inheritance",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 270 (method get does not match interface Middle_9_964817<Bool>)"
+    },
+    {
+      "name": "generic-inheritance-valid-9_964817",
+      "family": "generic_inheritance",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 270 (method get does not match interface Middle_9_964817<Bool>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-9_964817",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 423, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-10_655512",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 300, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-10_655512",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 300, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-10_655512",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 301, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-10_655512",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 301, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-10_655512",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 313, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-10_928713",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 658 (expected Int64, got Int64>( 10, { outer: Int64 => apply_10_928713<Int64>( outer, { level_4_10_928713: Int64 => apply_10_928713<Int64>( level_4_10_928713, { level_3_10_928713: Int64 => apply_10_928713<Int64>( level_3_10_928713, { level_2_10_928713: Int64 => apply_10_928713<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-10_928713",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 658 (expected Int64, got Int64>( 10, { outer: Int64 => apply_10_928713<Int64>( outer, { level_4_10_928713: Int64 => apply_10_928713<Int64>( level_4_10_928713, { level_3_10_928713: Int64 => apply_10_928713<Int64>( level_3_10_928713, { level_2_10_928713: Int64 => apply_10_928713<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-10_928713",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 658 (expected Int64, got Int64>( 10, { outer: Int64 => apply_10_928713<Int64>( outer, { level_4_10_928713: Int64 => apply_10_928713<Int64>( level_4_10_928713, { level_3_10_928713: Int64 => apply_10_928713<Int64>( level_3_10_928713, { level_2_10_928713: Int64 => apply_10_928713<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-10_928713",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 630, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-10_928713",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 710, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-10_915231",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 155 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-10_915231",
+      "family": "overload",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 187 (add expects 1..1 argument(s), got 2)"
+    },
+    {
+      "name": "overload-valid-10_915231",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 155 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-10_915231",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 155 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-10_656134",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 431, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-11_277280",
+      "family": "multiline",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=False at 300, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-11_277280",
+      "family": "multiline",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 303, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-11_277280",
+      "family": "multiline",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 301, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-11_277280",
+      "family": "multiline",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=False at 301, python=True at None ()"
+    },
+    {
+      "name": "multiline-return-mutation-11_277280",
+      "family": "multiline",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 313, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-valid-11_564375",
+      "family": "nested_lambda",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 657 (expected Int64, got Int64>( 8, { outer: Int64 => apply_11_564375<Int64>( outer, { level_4_11_564375: Int64 => apply_11_564375<Int64>( level_4_11_564375, { level_3_11_564375: Int64 => apply_11_564375<Int64>( level_3_11_564375, { level_2_11_564375: Int64 => apply_11_564375<Int64)"
+    },
+    {
+      "name": "nested-lambda-valid-11_564375",
+      "family": "nested_lambda",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 657 (expected Int64, got Int64>( 8, { outer: Int64 => apply_11_564375<Int64>( outer, { level_4_11_564375: Int64 => apply_11_564375<Int64>( level_4_11_564375, { level_3_11_564375: Int64 => apply_11_564375<Int64>( level_3_11_564375, { level_2_11_564375: Int64 => apply_11_564375<Int64)"
+    },
+    {
+      "name": "nested-lambda-mutation-11_564375",
+      "family": "nested_lambda",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 629, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-11_564375",
+      "family": "nested_lambda",
+      "layout": "line",
+      "message": "native/python line disagreement: native=False at 629, python=True at None ()"
+    },
+    {
+      "name": "nested-lambda-mutation-11_564375",
+      "family": "nested_lambda",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 709, python=True at None ()"
+    },
+    {
+      "name": "overload-valid-11_348682",
+      "family": "overload",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 155 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-11_348682",
+      "family": "overload",
+      "layout": "line",
+      "message": "native/python line disagreement: native=True at None, python=False at 155 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "overload-valid-11_348682",
+      "family": "overload",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 155 (expected T, got ArrayList<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-11_179110",
+      "family": "generic_inheritance",
+      "layout": "byte",
+      "message": "native/python byte disagreement: native=True at None, python=False at 279 (method get does not match interface Middle_11_179110<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-11_179110",
+      "family": "generic_inheritance",
+      "layout": "random",
+      "message": "native/python random disagreement: native=True at None, python=False at 279 (method get does not match interface Middle_11_179110<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-valid-11_179110",
+      "family": "generic_inheritance",
+      "layout": "cl100k",
+      "message": "native/python cl100k disagreement: native=True at None, python=False at 279 (method get does not match interface Middle_11_179110<Int64>)"
+    },
+    {
+      "name": "generic-inheritance-mutation-11_179110",
+      "family": "generic_inheritance",
+      "layout": "random",
+      "message": "native/python random disagreement: native=False at 437, python=True at None ()"
+    },
+    {
+      "name": "generic-inheritance-mutation-11_179110",
+      "family": "generic_inheritance",
+      "layout": "whole",
+      "message": "native/python whole disagreement: native=False at 437, python=True at None ()"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "phase": "post-build",
+  "docker_image": "docker.educg.net/compiler_system_challenge/cjchecker:20260522",
+  "platform": "Linux-6.12.76-linuxkit-aarch64-with-glibc2.35",
+  "machine": "aarch64",
+  "uname": "Linux e15e201f8e54 6.12.76-linuxkit #1 SMP Thu May 28 18:54:18 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux",
+  "cpu_count": 10,
+  "memory": "MemTotal:        8126480 kB",
+  "compiler": "c++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+  "python": "3.10.12",
+  "control": {
+    "head": "f5969646a6bd7cd8a2a66d7e004d92837320d1b9",
+    "status": "M solution",
+    "diff_stat": "solution | Bin 117 -> 485904 bytes\n 1 file changed, 0 insertions(+), 0 deletions(-)"
+  },
+  "candidate": {
+    "head": "58f03c760a1a57cf4bc7a875ea8b61b10edd5870",
+    "status": "M solution",
+    "diff_stat": "solution | Bin 117 -> 483312 bytes\n 1 file changed, 0 insertions(+), 0 deletions(-)"
+  },
+  "official": {
+    "head": "88336c400e7a4a671424e3e6c46c0866c8c0af93",
+    "status": "?? .DS_Store",
+    "diff_stat": ""
+  },
+  "hashes": {
+    "control_build_sh": "f3232ef08d4fde32c0f9670e8d658234d7a96ba1411c0ad676d96ca0626f85e6",
+    "candidate_build_sh": "f3232ef08d4fde32c0f9670e8d658234d7a96ba1411c0ad676d96ca0626f85e6",
+    "control_context": "8058e383390f444f56ee4ac0008493c44c8e32fa632d18ed48f998dc36623348",
+    "candidate_context": "8058e383390f444f56ee4ac0008493c44c8e32fa632d18ed48f998dc36623348",
+    "control_grammar": "6131041ed52120b65ee75440c97704dfe91d1a0fda0aaf99b3e1c75e3054f989",
+    "candidate_grammar": "6131041ed52120b65ee75440c97704dfe91d1a0fda0aaf99b3e1c75e3054f989",
+    "control_token_grammar": "cbe033bea0b88c4d042e258cb4a9b79dfe0912072dc6b5468f742c5d57d6dae0",
+    "candidate_token_grammar": "cbe033bea0b88c4d042e258cb4a9b79dfe0912072dc6b5468f742c5d57d6dae0",
+    "registry": "2425e64184d69dd392f6cdec52dc20d42d0977cbe84be744a0ffbd1dfad374f2",
+    "control_solution": "52747c12de6129cc132d2e145cf05a3bafeac427cdc622a7a42009217ade5fbd",
+    "candidate_solution": "0b380688ab8a5fb850437f594a1154d2738059d07431459433f17a5e6b9e4bd2"
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "control_commit": "f5969646a6bd7cd8a2a66d7e004d92837320d1b9",
+  "candidate_commit": "58f03c760a1a57cf4bc7a875ea8b61b10edd5870",
+  "warmups": 1,
+  "repetitions": 9,
+  "phases": {
+    "process_total_ms": {
+      "metrics_ms": {
+        "A1": {
+          "SUM": 1637.8239999999996,
+          "MEDIAN": 33.9255,
+          "P95": 42.115,
+          "MAX": 45.959
+        },
+        "control": {
+          "SUM": 1646.1104999999998,
+          "MEDIAN": 34.01075,
+          "P95": 42.054,
+          "MAX": 46.5375
+        },
+        "candidate": {
+          "SUM": 1511.386,
+          "MEDIAN": 30.9655,
+          "P95": 38.076,
+          "MAX": 41.023
+        },
+        "A2": {
+          "SUM": 1654.3970000000002,
+          "MEDIAN": 34.0195,
+          "P95": 41.993,
+          "MAX": 47.116
+        }
+      },
+      "improvement_percent": {
+        "SUM": 8.184414108287372,
+        "MEDIAN": 8.953786670390986,
+        "P95": 9.459266657155089,
+        "MAX": 11.849583669084069
+      }
+    },
+    "first_response_ms": {
+      "metrics_ms": {
+        "A1": {
+          "SUM": 419.75600000000003,
+          "MEDIAN": 8.3935,
+          "P95": 8.456,
+          "MAX": 8.516
+        },
+        "control": {
+          "SUM": 422.9195,
+          "MEDIAN": 8.4625,
+          "P95": 8.499500000000001,
+          "MAX": 8.5135
+        },
+        "candidate": {
+          "SUM": 400.09999999999985,
+          "MEDIAN": 8.003,
+          "P95": 8.046,
+          "MAX": 8.098
+        },
+        "A2": {
+          "SUM": 426.083,
+          "MEDIAN": 8.523,
+          "P95": 8.575,
+          "MAX": 8.606
+        }
+      },
+      "improvement_percent": {
+        "SUM": 5.3957076937810085,
+        "MEDIAN": 5.429837518463813,
+        "P95": 5.33560797693984,
+        "MAX": 4.880483937276088
+      }
+    },
+    "detection_ms": {
+      "metrics_ms": {
+        "A1": {
+          "SUM": 1535.5879999999997,
+          "MEDIAN": 31.7865,
+          "P95": 39.838,
+          "MAX": 44.124
+        },
+        "control": {
+          "SUM": 1544.5174999999997,
+          "MEDIAN": 31.996000000000002,
+          "P95": 40.084,
+          "MAX": 44.3145
+        },
+        "candidate": {
+          "SUM": 1411.8200000000002,
+          "MEDIAN": 29.222,
+          "P95": 36.266,
+          "MAX": 39.516
+        },
+        "A2": {
+          "SUM": 1553.4470000000003,
+          "MEDIAN": 32.2055,
+          "P95": 40.33,
+          "MAX": 44.505
+        }
+      },
+      "improvement_percent": {
+        "SUM": 8.591518063084399,
+        "MEDIAN": 8.669833729216155,
+        "P95": 9.524997505239009,
+        "MAX": 10.828284195917824
+      }
+    }
+  },
+  "drift_percent": {
+    "A1_A2_SUM": 1.0067975388043846,
+    "A1_A2_MEDIAN_metric": 0.2766943851644748,
+    "median_per_case_relative": 0.36915751547247083,
+    "gate_maximum": 1.0067975388043846
+  },
+  "wins": 46,
+  "losses": 0,
+  "win_cases": [
+    "err_arith_non_numeric",
+    "err_arity",
+    "err_array_fill_type",
+    "err_array_index_not_int64",
+    "err_arraylist_add_type",
+    "err_arraylist_toarray_assign",
+    "err_assign_let",
+    "err_bound_var_mismatch",
+    "err_break",
+    "err_continue_outside_loop",
+    "err_ctor_call_mismatch",
+    "err_eq_incomparable",
+    "err_for_not_iterable",
+    "err_for_pattern_map_bad",
+    "err_generic_arity",
+    "err_hashmap_key_type",
+    "err_if_not_bool",
+    "err_index_non_array",
+    "err_interface_as_value",
+    "err_lambda_arg_arity_explicit",
+    "err_lambda_hof_explicit",
+    "err_lambda_in_class_static_explicit",
+    "err_lambda_infer_ambiguous_1",
+    "err_lambda_infer_ambiguous_2",
+    "err_lambda_infer_class_helper",
+    "err_lambda_infer_collection_1",
+    "err_lambda_infer_collection_2",
+    "err_lambda_infer_interface_helper",
+    "err_lambda_infer_wrong_return_1",
+    "err_lambda_infer_wrong_return_2",
+    "err_lambda_interface_callback_explicit",
+    "err_lambda_param_narrow_explicit",
+    "err_lambda_return_type_explicit",
+    "err_lambda_zero_body_explicit",
+    "err_mod_non_int64",
+    "err_no_member",
+    "err_range_non_int",
+    "err_rel_mixed_numeric",
+    "err_rel_unordered",
+    "err_string_contains_arg",
+    "err_type_mismatch",
+    "err_unary_minus_non_numeric",
+    "err_unary_not_non_bool",
+    "err_undefined",
+    "err_unknown_named_arg",
+    "err_while_not_bool"
+  ],
+  "loss_cases": [],
+  "severe_regressions": [],
+  "worst_absolute_regression": {
+    "name": "err_interface_not_implemented",
+    "milliseconds": 0.06649999999999956,
+    "percent": 0.4780217805412823
+  },
+  "official_harness": {
+    "control_elapsed_ms": 5648.604044,
+    "candidate_elapsed_ms": 5544.867668,
+    "candidate_regression_percent": -1.8364957995274884,
+    "correct": true
+  },
+  "classification": "ACCEPTED"
+}

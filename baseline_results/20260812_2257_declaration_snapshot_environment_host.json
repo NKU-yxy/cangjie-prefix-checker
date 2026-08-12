@@ -1,0 +1,19 @@
+{
+  "timestamp_local": "2026-08-12T22:57:00+08:00",
+  "power_source": "AC Power",
+  "battery_percent": 100,
+  "docker_info": {
+    "os_type": "linux",
+    "architecture": "aarch64",
+    "server_version": "29.5.3",
+    "cpu_count": 10,
+    "memory_bytes": 8321515520
+  },
+  "image": {
+    "tag": "docker.educg.net/compiler_system_challenge/cjchecker:20260522",
+    "id": "sha256:980dd9f2ede4f0132e9c71c71c1d6553cafd5de7cf1977c2ffe97a5ab34b8c90",
+    "repo_digest": "docker.educg.net/compiler_system_challenge/cjchecker@sha256:980dd9f2ede4f0132e9c71c71c1d6553cafd5de7cf1977c2ffe97a5ab34b8c90",
+    "architecture": "arm64",
+    "os": "linux"
+  }
+}

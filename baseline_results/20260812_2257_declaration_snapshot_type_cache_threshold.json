@@ -1,0 +1,27 @@
+{
+  "source": "20260812_2257_declaration_snapshot_arm64_profile.json",
+  "profile_scope": {
+    "architecture": "linux/aarch64",
+    "all_corpora_cases": 364,
+    "official_cases_used_for_threshold": 50
+  },
+  "formal_control_sum_ms": 1646.1105,
+  "formal_candidate_sum_ms": 1511.386,
+  "required_removable_share_percent": 7.0,
+  "required_removable_time_ms": 115.227735,
+  "compatible": {
+    "calls": 3786,
+    "generation_unique_keys": 607,
+    "duplicate_rate_percent": 83.96724775488642,
+    "inclusive_time_ms": 0.868858
+  },
+  "all_profiled_type_helpers": {
+    "inclusive_time_ms": 20.873195,
+    "share_of_formal_control_sum_percent": 1.2680312166163814,
+    "share_of_formal_candidate_sum_percent": 1.381036622010523,
+    "note": "Inclusive helper timers overlap, so their sum is a deliberately generous upper bound rather than additive removable time."
+  },
+  "repeat_rate_threshold_passed": true,
+  "time_upper_bound_threshold_passed": false,
+  "decision": "DO_NOT_IMPLEMENT_TYPE_CACHE"
+}

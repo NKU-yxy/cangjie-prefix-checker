@@ -1,0 +1,11 @@
+{
+  "mode": "fast",
+  "solution": "solution_asan",
+  "public_exact": 50,
+  "public_total": 50,
+  "oracle_corpus_matched": 45,
+  "oracle_corpus_total": 45,
+  "project_corpus_matched": 57,
+  "project_corpus_total": 57,
+  "failures": 0
+}

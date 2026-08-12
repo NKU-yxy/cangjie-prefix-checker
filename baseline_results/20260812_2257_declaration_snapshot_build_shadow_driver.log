@@ -1,0 +1,14 @@
+cpp/native_semantic.cpp: In function 'void cangjie::{anonymous}::AddBuiltinModel(cangjie::{anonymous}::Model*)':
+cpp/native_semantic.cpp:611:29: warning: loop variable 'name' of type 'const string&' {aka 'const std::__cxx11::basic_string<char>&'} binds to a temporary constructed from type 'const char* const' [-Wrange-loop-construct]
+  611 |     for (const std::string& name : {"println", "print", "eprintln", "eprint"}) {
+      |                             ^~~~
+cpp/native_semantic.cpp:611:29: note: use non-reference type 'const string' {aka 'const std::__cxx11::basic_string<char>'} to make the copy explicit or 'const char* const&' to prevent copying
+cpp/native_semantic.cpp:715:29: warning: loop variable 'name' of type 'const string&' {aka 'const std::__cxx11::basic_string<char>&'} binds to a temporary constructed from type 'const char* const' [-Wrange-loop-construct]
+  715 |     for (const std::string& name : {"contains", "startsWith", "endsWith"}) {
+      |                             ^~~~
+cpp/native_semantic.cpp:715:29: note: use non-reference type 'const string' {aka 'const std::__cxx11::basic_string<char>'} to make the copy explicit or 'const char* const&' to prevent copying
+cpp/native_semantic.cpp: In function 'bool cangjie::{anonymous}::IsStatementPrefix(std::string_view)':
+cpp/native_semantic.cpp:2578:29: warning: loop variable 'keyword' of type 'const string&' {aka 'const std::__cxx11::basic_string<char>&'} binds to a temporary constructed from type 'const char* const' [-Wrange-loop-construct]
+ 2578 |     for (const std::string& keyword : {"let", "var", "func", "class", "interface",
+      |                             ^~~~~~~
+cpp/native_semantic.cpp:2578:29: note: use non-reference type 'const string' {aka 'const std::__cxx11::basic_string<char>'} to make the copy explicit or 'const char* const&' to prevent copying

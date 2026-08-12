@@ -1,0 +1,817 @@
+{
+  "control": {
+    "passed": 50,
+    "total": 50,
+    "elapsed_ms": 5648.604044,
+    "cases": [
+      {
+        "name": "err_undefined",
+        "elapsed_ms": 121.175125,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_assign_let",
+        "elapsed_ms": 126.317333,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_arity",
+        "elapsed_ms": 119.408875,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_if_not_bool",
+        "elapsed_ms": 113.734333,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_break",
+        "elapsed_ms": 119.130959,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_type_mismatch",
+        "elapsed_ms": 119.772709,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_continue_outside_loop",
+        "elapsed_ms": 118.585834,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_return_type_mismatch",
+        "elapsed_ms": 90.837584,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_duplicate_var",
+        "elapsed_ms": 93.751833,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_arraylist_toarray_assign",
+        "elapsed_ms": 116.612041,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_unary_minus_non_numeric",
+        "elapsed_ms": 114.697334,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_eq_incomparable",
+        "elapsed_ms": 111.165875,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_rel_mixed_numeric",
+        "elapsed_ms": 110.418417,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_mod_non_int64",
+        "elapsed_ms": 109.245792,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_range_non_int",
+        "elapsed_ms": 110.840666,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_for_not_iterable",
+        "elapsed_ms": 110.597833,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_for_pattern_map_bad",
+        "elapsed_ms": 114.009083,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_array_index_not_int64",
+        "elapsed_ms": 118.895583,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_array_fill_type",
+        "elapsed_ms": 117.64275,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_string_contains_arg",
+        "elapsed_ms": 115.410042,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_ctor_call_mismatch",
+        "elapsed_ms": 115.454125,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_generic_arity",
+        "elapsed_ms": 115.703583,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_interface_not_implemented",
+        "elapsed_ms": 92.018333,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_interface_sig_mismatch",
+        "elapsed_ms": 92.126667,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_no_member",
+        "elapsed_ms": 112.014709,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_unknown_named_arg",
+        "elapsed_ms": 113.893167,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_index_non_array",
+        "elapsed_ms": 112.128041,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_unary_not_non_bool",
+        "elapsed_ms": 108.551083,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_while_not_bool",
+        "elapsed_ms": 110.785167,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_arraylist_add_type",
+        "elapsed_ms": 115.674,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_hashmap_key_type",
+        "elapsed_ms": 115.855041,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_bound_var_mismatch",
+        "elapsed_ms": 111.781626,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_rel_unordered",
+        "elapsed_ms": 111.151875,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_interface_as_value",
+        "elapsed_ms": 109.085709,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_arith_non_numeric",
+        "elapsed_ms": 116.771625,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_arg_arity_explicit",
+        "elapsed_ms": 114.362,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_return_type_explicit",
+        "elapsed_ms": 113.274958,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_zero_body_explicit",
+        "elapsed_ms": 109.869376,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_hof_explicit",
+        "elapsed_ms": 123.43925,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_interface_callback_explicit",
+        "elapsed_ms": 123.516416,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_in_class_static_explicit",
+        "elapsed_ms": 111.565667,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_param_narrow_explicit",
+        "elapsed_ms": 112.940209,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_ambiguous_1",
+        "elapsed_ms": 111.7735,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_ambiguous_2",
+        "elapsed_ms": 116.231334,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_wrong_return_1",
+        "elapsed_ms": 109.270292,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_wrong_return_2",
+        "elapsed_ms": 115.786667,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_collection_1",
+        "elapsed_ms": 113.681166,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_collection_2",
+        "elapsed_ms": 114.815166,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_class_helper",
+        "elapsed_ms": 113.176584,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_interface_helper",
+        "elapsed_ms": 119.534001,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      }
+    ]
+  },
+  "candidate": {
+    "passed": 50,
+    "total": 50,
+    "elapsed_ms": 5544.867668,
+    "cases": [
+      {
+        "name": "err_undefined",
+        "elapsed_ms": 117.489667,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_assign_let",
+        "elapsed_ms": 121.003583,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_arity",
+        "elapsed_ms": 114.964958,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_if_not_bool",
+        "elapsed_ms": 110.979708,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_break",
+        "elapsed_ms": 115.035583,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_type_mismatch",
+        "elapsed_ms": 115.431833,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_continue_outside_loop",
+        "elapsed_ms": 118.060166,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_return_type_mismatch",
+        "elapsed_ms": 90.657917,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_duplicate_var",
+        "elapsed_ms": 92.458625,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_arraylist_toarray_assign",
+        "elapsed_ms": 114.67775,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_unary_minus_non_numeric",
+        "elapsed_ms": 111.802875,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_eq_incomparable",
+        "elapsed_ms": 108.760959,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_rel_mixed_numeric",
+        "elapsed_ms": 108.578459,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_mod_non_int64",
+        "elapsed_ms": 107.737708,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_range_non_int",
+        "elapsed_ms": 107.288667,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_for_not_iterable",
+        "elapsed_ms": 107.218833,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_for_pattern_map_bad",
+        "elapsed_ms": 112.584041,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_array_index_not_int64",
+        "elapsed_ms": 114.671959,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_array_fill_type",
+        "elapsed_ms": 113.38225,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_string_contains_arg",
+        "elapsed_ms": 112.359625,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_ctor_call_mismatch",
+        "elapsed_ms": 113.189625,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_generic_arity",
+        "elapsed_ms": 112.77125,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_interface_not_implemented",
+        "elapsed_ms": 92.804458,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_interface_sig_mismatch",
+        "elapsed_ms": 92.522625,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_no_member",
+        "elapsed_ms": 110.111375,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_unknown_named_arg",
+        "elapsed_ms": 111.448292,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_index_non_array",
+        "elapsed_ms": 107.888875,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_unary_not_non_bool",
+        "elapsed_ms": 106.840042,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_while_not_bool",
+        "elapsed_ms": 107.249375,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_arraylist_add_type",
+        "elapsed_ms": 112.293541,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_hashmap_key_type",
+        "elapsed_ms": 112.9605,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_bound_var_mismatch",
+        "elapsed_ms": 109.185667,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_rel_unordered",
+        "elapsed_ms": 107.6355,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_interface_as_value",
+        "elapsed_ms": 107.208291,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_arith_non_numeric",
+        "elapsed_ms": 119.53225,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_arg_arity_explicit",
+        "elapsed_ms": 112.212333,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_return_type_explicit",
+        "elapsed_ms": 115.300209,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_zero_body_explicit",
+        "elapsed_ms": 109.743958,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_hof_explicit",
+        "elapsed_ms": 118.32975,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_interface_callback_explicit",
+        "elapsed_ms": 122.076792,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_in_class_static_explicit",
+        "elapsed_ms": 109.355458,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_param_narrow_explicit",
+        "elapsed_ms": 110.291208,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_ambiguous_1",
+        "elapsed_ms": 108.993458,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_ambiguous_2",
+        "elapsed_ms": 112.483834,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_wrong_return_1",
+        "elapsed_ms": 106.92075,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_wrong_return_2",
+        "elapsed_ms": 116.999,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_collection_1",
+        "elapsed_ms": 114.901667,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_collection_2",
+        "elapsed_ms": 118.724666,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_class_helper",
+        "elapsed_ms": 111.356542,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      },
+      {
+        "name": "err_lambda_infer_interface_helper",
+        "elapsed_ms": 118.256791,
+        "passed": true,
+        "returncode": 0,
+        "stdout": "PASSED\n",
+        "stderr": ""
+      }
+    ]
+  },
+  "candidate_regression_percent": -1.8364957995274884
+}

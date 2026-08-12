@@ -19,6 +19,12 @@ ARM64 Docker 镜像中的公开 50 例测试结果。
 提交的同轮累计 A/B/A 原始结果使用 `20260812_cumulative_*` 前缀；各独立候选的
 ACCEPTED、PROVISIONAL、NO PROVEN GAIN 或 REJECTED 结论见同目录的 `*_verdict.md`。
 
+下一轮的 DeclarationSnapshot 声明扫描复用候选已在 Linux AArch64 完成全门禁和正式
+A/B/A，以 `f596964` 为同轮 control 获得 `SUM 8.184%` 改善并正式接受。完整结论见
+[`20260812_2257_declaration_snapshot_verdict.md`](20260812_2257_declaration_snapshot_verdict.md)。
+当前后续优化 control 为 `58f03c7`；上文的 `20260812_final_optimization_report.md` 是
+上一轮历史封板，不包含这次新接受的 DeclarationSnapshot。
+
 ## 复现命令
 
 必须在同一个一次性容器中先构建、再测试。`build.sh` 会在容器内安装并动态
