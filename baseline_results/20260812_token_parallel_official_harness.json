@@ -1,0 +1,15 @@
+{
+  "control": {
+    "passed": 50,
+    "total": 50,
+    "elapsed_ms": 5630.825336,
+    "failures": []
+  },
+  "candidate": {
+    "passed": 50,
+    "total": 50,
+    "elapsed_ms": 5874.622253,
+    "failures": []
+  },
+  "candidate_regression_percent": 4.329683526876844
+}

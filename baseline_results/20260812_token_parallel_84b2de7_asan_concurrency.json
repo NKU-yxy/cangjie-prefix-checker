@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "purpose": "correctness_stress_not_performance_benchmark",
+  "solution": "/workspace/candidate/solution_asan",
+  "resource_root": "/workspace/candidate",
+  "token_table": "/workspace/candidate/generated/cl100k_base.bin",
+  "competition_output": false,
+  "cpu": {
+    "quota_cores": null,
+    "affinity_cpu_count": 10,
+    "single_cpu_detected": false,
+    "affinity_was_not_modified": true
+  },
+  "status": "PASS",
+  "cold_start": {
+    "runs": 100,
+    "token_count_per_run": 1,
+    "diagnostic_only": true,
+    "min_ms": 39.282959,
+    "median_ms": 40.2310415,
+    "p95_ms": 41.3765,
+    "max_ms": 41.856208
+  },
+  "long_input": {
+    "statements": 64,
+    "source_bytes": 977,
+    "token_count": 325,
+    "elapsed_ms": 484.2015,
+    "diagnostic_only": true
+  },
+  "parallel_stress": {
+    "clients": 4,
+    "rounds": 5,
+    "processes": 20,
+    "token_count_per_process": 1,
+    "diagnostic_only": true,
+    "min_ms": 44.064708,
+    "median_ms": 47.996604000000005,
+    "p95_ms": 59.547666,
+    "max_ms": 64.501583
+  },
+  "resource_faults": {
+    "passed": 7,
+    "native_layout_checked": true,
+    "cases": [
+      {
+        "name": "missing-context",
+        "returncode": 1,
+        "elapsed_ms": 10.442875,
+        "stderr": "native solution error: cannot open native context table: /tmp/cangjie-startup-fault-9ff9999g/missing-context.bin"
+      },
+      {
+        "name": "corrupt-context",
+        "returncode": 1,
+        "elapsed_ms": 9.762583,
+        "stderr": "native solution error: invalid native context table"
+      },
+      {
+        "name": "missing-token-table",
+        "returncode": 1,
+        "elapsed_ms": 8.384125,
+        "stderr": "native solution error: cannot open token table: /tmp/cangjie-missing-token-table-zt_7c3tj/generated/cl100k_base.bin"
+      },
+      {
+        "name": "corrupt-token-table",
+        "returncode": 1,
+        "elapsed_ms": 7.89325,
+        "stderr": "native solution error: invalid cl100k table header"
+      },
+      {
+        "name": "missing-grammar",
+        "returncode": 1,
+        "elapsed_ms": 27.279667,
+        "stderr": "native solution error: cannot open grammar: /tmp/cangjie-missing-grammar-0ng471b6/grammar/cangjie.gbnf"
+      },
+      {
+        "name": "corrupt-grammar",
+        "returncode": 1,
+        "elapsed_ms": 30.373916,
+        "stderr": "native solution error: [12:32:46] /project/cpp/grammar_parser.cc:564: EBNF parser error at line 1, column 1: The root rule with name \"root\" is not found"
+      },
+      {
+        "name": "token-table-priority",
+        "returncode": 1,
+        "elapsed_ms": 7.647125,
+        "stderr": "native solution error: cannot open token table: /tmp/cangjie-token-table-priority-5wsrci3n/generated/cl100k_base.bin"
+      }
+    ]
+  }
+}
