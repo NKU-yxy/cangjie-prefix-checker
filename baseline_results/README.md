@@ -42,6 +42,8 @@ DeclarationSnapshot 候选起点索引 `735a52e` 虽然全部正确性门禁通�
 但两轮扩展 `1+21` A/B/A 的 SUM 仅改善 `4.552% / 4.777%`，未达
 5% 门槛，已由 `75e9702` 回退。详见
 [`20260813_snapshot_candidate_index_verdict.md`](20260813_snapshot_candidate_index_verdict.md)。
+本轮正确性修复、候选停止判定和 scale 超时根因的整体报告见
+[`20260813_correctness_first_followup_report.md`](20260813_correctness_first_followup_report.md)。
 
 ## 复现命令
 
