@@ -1,0 +1,12 @@
+main(): Unit { var value: Int64 = 8
+ value += 1
+ value -= 1
+ value *= 1
+ value /= 1
+ value %= 1
+ value **= 1
+ value <<= 1
+ value >>= 1
+ value &= 1
+ value ^= 1
+ value |= 1 }

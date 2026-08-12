@@ -1,0 +1,2 @@
+operator (@)(): Unit {}
+main(): Unit {}

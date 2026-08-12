@@ -1,0 +1,8 @@
+# These fixtures intentionally preserve CRLF line endings.  Treat the CR as
+# part of the line terminator so `git diff --check` still catches real trailing
+# whitespace without flagging the fixture format itself.
+valid/literal_matrix__crlf_tabs_and_comments.cj whitespace=cr-at-eol
+valid/scale_stress__two_hundred_crlf_lines.cj whitespace=cr-at-eol
+# These two incomplete prefixes deliberately end after a space.
+prefix/prefix_matrix__partial_import_alias.cj whitespace=-blank-at-eol
+prefix/prefix_matrix__partial_match_case.cj whitespace=-blank-at-eol

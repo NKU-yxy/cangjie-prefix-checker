@@ -1,0 +1,13 @@
+main(): Unit { let text: String = "  alpha  "
+ let size: Int64 = text.size
+ let empty: Bool = text.isEmpty()
+ let starts: Bool = text.startsWith("  a")
+ let ends: Bool = text.endsWith("a  ")
+ let has: Bool = text.contains("ph")
+ let joined: String = text.concat("!")
+ let copy: String = text.clone()
+ let rune: Rune = text.get(0).getOrThrow()
+ let changed: String = text.replace("alpha", "beta")
+ let trimmed: String = text.trimAscii()
+ let hash: Int64 = text.hashCode()
+ let order: Int64 = text.compare("other") }

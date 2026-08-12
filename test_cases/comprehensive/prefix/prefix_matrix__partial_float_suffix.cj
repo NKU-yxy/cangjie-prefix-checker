@@ -1,0 +1,1 @@
+main(): Unit { let value: Float32 = 1.0f

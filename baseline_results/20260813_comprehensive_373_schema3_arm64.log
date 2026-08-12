@@ -1,0 +1,72 @@
+
+[FAIL] lambda-block-body-and-iife
+  - default: accepted case produced 22/29 answers
+  - default: expected only 0, got ('0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0')
+  - competition: accepted case produced 22/29 answers
+  - competition: expected only 1, got ('1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1')
+
+[FAIL] postfix-member-call-index-chain
+  - default: accepted case produced 50/63 answers
+  - default: expected only 0, got ('0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0')
+  - competition: accepted case produced 50/63 answers
+  - competition: expected only 1, got ('1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1')
+{
+  "manifest": "/workspace/project/test_cases/comprehensive/manifest.json",
+  "manifest_case_count": 373,
+  "selected_cases": 373,
+  "executed_cases": 373,
+  "aborted": false,
+  "families": {
+    "classes_interfaces": 9,
+    "collections": 10,
+    "context_api": 19,
+    "context_api_negative": 6,
+    "control_flow": 9,
+    "declaration_matrix": 23,
+    "expression_matrix": 4,
+    "functions": 8,
+    "generated_generic_inheritance": 16,
+    "generated_multiline": 16,
+    "generated_nested_lambda": 16,
+    "generated_overload": 16,
+    "generated_scope_isolation": 16,
+    "generated_valid_zero_false_positive": 16,
+    "incomplete_prefix": 10,
+    "lexical": 7,
+    "literal_matrix": 8,
+    "operator_matrix": 24,
+    "prefix_matrix": 29,
+    "primitive_matrix": 18,
+    "scale_stress": 9,
+    "scope": 6,
+    "semantic_syntax_guard": 1,
+    "statement_matrix": 7,
+    "supplemental": 15,
+    "supplemental_negative": 12,
+    "syntax": 9,
+    "syntax_matrix": 20,
+    "type_matrix": 6,
+    "types_operators": 8
+  },
+  "grammar_checked": 364,
+  "oracle_checked": 227,
+  "protocol_modes": 2,
+  "protocol_runs": 746,
+  "reference_protocol_runs": 0,
+  "safe_prefix_runs": 240,
+  "reference_safe_prefix_runs": 0,
+  "input_edge_runs": 26,
+  "reference_input_edge_runs": 0,
+  "passed_cases": 371,
+  "failed_cases": 2,
+  "infrastructure_failures": 0,
+  "expectation_policy": "oracle-backed",
+  "authoritative_cases": 219,
+  "authoritative_executed": 219,
+  "authoritative_passed": 217,
+  "authoritative_failed": 2,
+  "diagnostic_cases": 154,
+  "diagnostic_executed": 154,
+  "diagnostic_disagreements": 42,
+  "scale_cases": 9
+}

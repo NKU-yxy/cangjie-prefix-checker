@@ -1,0 +1,9 @@
+Linux 524e4714a774 6.12.76-linuxkit #1 SMP Thu May 28 18:54:18 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+Python 3.10.12
+tiktoken 0.13.0
+3ba41564238358e487e72cf40678aef8606921a26da14b30a2ba4ed6ddc51c4a  tools/generate_comprehensive_cases.py
+d04f1df184b095996503f004598b6b99d42d414f94a410710e81ff8ac125b55e  tools/run_comprehensive_cases.py
+e0af56059f58f8f5d99fc9c1d243c75ed9df9670f2057b20421292dc48782496  test_cases/comprehensive/manifest.json
+87b9784c22996a9cb5f00158199d4e4efabe00c855dfa60b085eba15209606c5  test_cases/comprehensive/.cangjie-comprehensive-corpus
+0b380688ab8a5fb850437f594a1154d2738059d07431459433f17a5e6b9e4bd2  solution

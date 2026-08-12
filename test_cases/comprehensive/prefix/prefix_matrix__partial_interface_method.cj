@@ -1,0 +1,1 @@
+interface I { func value(

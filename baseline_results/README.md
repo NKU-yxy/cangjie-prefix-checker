@@ -25,6 +25,16 @@ A/B/A，以 `f596964` 为同轮 control 获得 `SUM 8.184%` 改善并正式接�
 当前后续优化 control 为 `58f03c7`；上文的 `20260812_final_optimization_report.md` 是
 上一轮历史封板，不包含这次新接受的 DeclarationSnapshot。
 
+2026-08-13 接入并加固的 373 例综合正确性语料见
+[`20260813_comprehensive_373_integration_verdict.md`](20260813_comprehensive_373_integration_verdict.md)。
+语料按证据分为 `authoritative=219`、`diagnostic_spec_pending=145` 和
+`diagnostic_scale=9`；官方公开 50 例精确首错仍是最高优先级门禁。最终 AArch64
+`oracle-backed` 运行是 `371/373`：authoritative 为 `217/219`，40 个 spec-pending
+标签差异和 2 个规模超时均只作诊断；按全部 manifest 标签观察则为 `329/373`。
+`58f03c7` 仍是历史性能
+control，但新性能 control 必须先修复两个 authoritative false reject 并达到
+`219/219`；不要求把诊断项改成 `373/373`。旧 A/B/A 报告不因此被改写。
+
 ## 复现命令
 
 必须在同一个一次性容器中先构建、再测试。`build.sh` 会在容器内安装并动态

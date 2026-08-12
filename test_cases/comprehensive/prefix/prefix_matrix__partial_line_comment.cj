@@ -1,0 +1,1 @@
+main(): Unit {} // comment without newline

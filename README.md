@@ -322,17 +322,55 @@ python3 benchmark/native_context_differential.py
 python3 benchmark/hidden_semantic_fuzz.py --seed 20260805 --cases-per-family 12 --solution ./solution
 ```
 
-仓库还提供 `113` 个固定综合样例，覆盖 `47` 个完整合法程序、`56` 个已提交错误和
-`10` 个仍可继续补全的截断前缀。运行器会复核完整程序标签，并通过真实
-`cl100k_base` 逐 token 协议检查首次拒绝和安全前缀：
+仓库还提供 `373` 个固定综合样例，覆盖 `214` 个完整合法程序、`120` 个已提交错误和
+`39` 个仍可继续补全的截断前缀。覆盖矩阵锁定 `305` 个语法、语义、运算符、类型及
+`context.json` API 标签。运行器使用生产 grammar 和 vendored reference-derived 类型
+oracle 辅助复核标签，并通过真实 `cl100k_base` 逐 token 协议检查首次拒绝、独立安全
+前缀、双协议一致性及非法协议输入。
+
+综合语料按证据强度分层，而不是把生产 grammar 对自身标签的一致性检查误作赛事规范：
+
+- `authoritative=219`：`oracle=true` 且非 `scale_stress`，属于新增正确性硬门禁；
+- `diagnostic_spec_pending=145`：尚缺独立赛事规范/oracle 证明，差异必须报告但不单独
+  否决优化；
+- `diagnostic_scale=9`：规模、超时与非线性增长诊断，不进入硬门禁。
+
+官方公开 50 例精确首错始终是最高优先级硬门禁，任何综合语料层级都不能替代或放宽它。
 
 ```bash
-python3 tools/run_comprehensive_cases.py --solution ./solution
-python3 tools/run_comprehensive_cases.py --solution ./solution --check-competition-output
+python3 tools/generate_comprehensive_cases.py --check
+python3 tools/run_comprehensive_cases.py \
+  --solution ./solution \
+  --check-competition-output \
+  --expectation-policy oracle-backed \
+  --skip-family scale_stress \
+  --timeout 30 \
+  --json /tmp/comprehensive-report.json
+```
+
+这套综合语料不进入官方 50 例的 `SUM`、`MEDIAN`、`P95` 或 `MAX`。行为保持不变的
+性能候选必须达到 authoritative `219/219`，并使用
+`--reference-solution /control/solution` 对全部 `364` 个非规模样例与当前 control 做
+严格逐 token 差分；这会锁住 spec-pending 的既有行为，但不会把其标签升级成赛事规范。
+
+日常快速回归可以排除专门用于发现非线性耗时的规模压力族；需要每次生成不同程序时，
+使用随机种子运行器：
+
+```bash
+python3 tools/run_comprehensive_cases.py --solution ./solution --skip-family scale_stress
+python3 tools/run_fresh_comprehensive_cases.py --solution ./solution --quick
 ```
 
 样例分类、筛选方式、JSON 报告和确定性重新生成方法见
 [`test_cases/comprehensive/README.md`](test_cases/comprehensive/README.md)。
+
+截至 2026-08-13，当前生产逻辑已在官方 Linux AArch64 环境通过原有官方 `50/50`
+精确首错、oracle `45/45` 和项目语料 `57/57`。最终分层运行的 `oracle-backed` 摘要为
+`371/373`：authoritative 为 `217/219`，存在 2 个明确 false reject；145 个
+spec-pending 样例有 40 个标签差异，仅作诊断；9 个 scale 样例有 2 个 30 秒超时，也
+仅作诊断。若把全部 manifest 标签统一计分，原始匹配数为 `329/373`，但这不能解释成
+赛事统一硬门禁。后续先修复两个 authoritative 缺陷并建立
+`219/219` control；不要求为了恢复性能优化而把未经独立证明的诊断项做成 `373/373`。
 
 若已在项目同级目录准备竞赛配套的 `cangjie-fragment-checker` 仓库，可运行公开样例精确首错差分和冷进程性能测试：
 
