@@ -52,6 +52,9 @@ struct ProfileCounters {
     std::uint64_t brace_scan_bytes = 0;
     std::uint64_t model_rebuilds = 0;
     std::uint64_t model_rebuild_source_bytes = 0;
+    std::uint64_t declaration_snapshot_rebuilds = 0;
+    std::uint64_t declaration_snapshot_source_bytes = 0;
+    std::uint64_t declaration_snapshot_records = 0;
     std::uint64_t context_rebuilds = 0;
     std::uint64_t context_rebuild_source_bytes = 0;
     std::uint64_t analyze_calls = 0;
@@ -76,6 +79,7 @@ struct ProfileCounters {
     std::uint64_t generic_prefix_ns = 0;
     std::uint64_t brace_scan_ns = 0;
     std::uint64_t model_rebuild_ns = 0;
+    std::uint64_t declaration_snapshot_build_ns = 0;
     std::uint64_t model_reset_ns = 0;
     std::uint64_t collect_imports_ns = 0;
     std::uint64_t collect_functions_ns = 0;
@@ -128,6 +132,12 @@ struct ProfileCounters {
             << ",\"brace_scan_bytes\":" << brace_scan_bytes
             << ",\"model_rebuilds\":" << model_rebuilds
             << ",\"model_rebuild_source_bytes\":" << model_rebuild_source_bytes
+            << ",\"declaration_snapshot_rebuilds\":"
+            << declaration_snapshot_rebuilds
+            << ",\"declaration_snapshot_source_bytes\":"
+            << declaration_snapshot_source_bytes
+            << ",\"declaration_snapshot_records\":"
+            << declaration_snapshot_records
             << ",\"context_rebuilds\":" << context_rebuilds
             << ",\"context_rebuild_source_bytes\":" << context_rebuild_source_bytes
             << ",\"analyze_calls\":" << analyze_calls
@@ -152,6 +162,8 @@ struct ProfileCounters {
             << ",\"generic_prefix_ns\":" << generic_prefix_ns
             << ",\"brace_scan_ns\":" << brace_scan_ns
             << ",\"model_rebuild_ns\":" << model_rebuild_ns
+            << ",\"declaration_snapshot_build_ns\":"
+            << declaration_snapshot_build_ns
             << ",\"model_reset_ns\":" << model_reset_ns
             << ",\"collect_imports_ns\":" << collect_imports_ns
             << ",\"collect_functions_ns\":" << collect_functions_ns
@@ -1045,7 +1057,389 @@ bool HasMultilineFunctionHeader(std::string_view source) {
     return false;
 }
 
-void CollectFunctions(std::string_view source, Model* model) {
+const std::regex& StrictNominalPattern() {
+    static const std::regex pattern(
+        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
+    );
+    return pattern;
+}
+
+const std::regex& BroadClassPattern() {
+    static const std::regex pattern(
+        R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)"
+    );
+    return pattern;
+}
+
+const std::regex& ExplicitFunctionSingleLinePattern() {
+    static const std::regex pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{}\n]+?)\s*\{)"
+    );
+    return pattern;
+}
+
+const std::regex& ExplicitFunctionMultilinePattern() {
+    static const std::regex pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*:\s*([^{}]+?)\s*\{)"
+    );
+    return pattern;
+}
+
+const std::regex& OptionalFunctionSingleLinePattern() {
+    static const std::regex pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
+    );
+    return pattern;
+}
+
+const std::regex& OptionalFunctionMultilinePattern() {
+    static const std::regex pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
+    );
+    return pattern;
+}
+
+const std::regex& CurrentFunctionSingleLinePattern() {
+    static const std::regex pattern(
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
+    );
+    return pattern;
+}
+
+const std::regex& CurrentFunctionMultilinePattern() {
+    static const std::regex pattern(
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
+    );
+    return pattern;
+}
+
+struct SnapshotCapture {
+    bool matched = false;
+    std::size_t offset = std::string::npos;
+    std::size_t length = 0;
+    std::string text;
+};
+
+struct DeclarationRecord {
+    std::size_t offset = 0;
+    std::size_t length = 0;
+    std::size_t open = 0;
+    std::optional<std::size_t> close;
+    std::vector<SnapshotCapture> captures;
+};
+
+struct DeclarationSnapshot {
+    std::vector<DeclarationRecord> strict_nominals;
+    std::vector<DeclarationRecord> broad_classes;
+    std::vector<DeclarationRecord> explicit_functions_single_line;
+    std::vector<DeclarationRecord> explicit_functions_multiline_only;
+    std::vector<DeclarationRecord> optional_functions_single_line;
+    std::vector<DeclarationRecord> optional_functions_multiline_only;
+    std::vector<DeclarationRecord> current_functions_single_line;
+    std::vector<DeclarationRecord> current_functions_multiline_only;
+
+    std::size_t RecordCount() const {
+        return strict_nominals.size() + broad_classes.size() +
+            explicit_functions_single_line.size() +
+            explicit_functions_multiline_only.size() +
+            optional_functions_single_line.size() +
+            optional_functions_multiline_only.size() +
+            current_functions_single_line.size() +
+            current_functions_multiline_only.size();
+    }
+};
+
+using DelimiterCloseCache =
+    std::unordered_map<std::size_t, std::optional<std::size_t>>;
+
+std::optional<std::size_t> CachedDelimiterClose(
+    std::string_view source,
+    std::size_t open,
+    DelimiterCloseCache* cache
+) {
+    const auto found = cache->find(open);
+    if (found != cache->end()) return found->second;
+    const std::optional<std::size_t> close = MatchingDelimiter(source, open, '{', '}');
+    cache->emplace(open, close);
+    return close;
+}
+
+std::vector<DeclarationRecord> ScanDeclarationFamily(
+    const std::string& source,
+    const std::regex& pattern,
+    bool multiline_only,
+    DelimiterCloseCache* close_cache
+) {
+    std::vector<DeclarationRecord> records;
+    for (std::sregex_iterator it(source.begin(), source.end(), pattern), end;
+         it != end; ++it) {
+        if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
+            continue;
+        }
+        DeclarationRecord record;
+        record.offset = static_cast<std::size_t>((*it).position());
+        record.length = static_cast<std::size_t>((*it).length());
+        record.open = record.offset + record.length - 1;
+        record.close = CachedDelimiterClose(source, record.open, close_cache);
+        record.captures.reserve(it->size());
+        for (std::size_t index = 0; index < it->size(); ++index) {
+            SnapshotCapture capture;
+            capture.matched = (*it)[index].matched;
+            capture.length = static_cast<std::size_t>((*it).length(index));
+            if (capture.matched) {
+                capture.offset = static_cast<std::size_t>((*it).position(index));
+                capture.text = (*it)[index].str();
+            }
+            record.captures.push_back(std::move(capture));
+        }
+        records.push_back(std::move(record));
+    }
+    return records;
+}
+
+DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
+    const std::string owned(source);
+    DelimiterCloseCache close_cache;
+    DeclarationSnapshot snapshot;
+    snapshot.strict_nominals = ScanDeclarationFamily(
+        owned, StrictNominalPattern(), false, &close_cache
+    );
+    snapshot.broad_classes = ScanDeclarationFamily(
+        owned, BroadClassPattern(), false, &close_cache
+    );
+    snapshot.current_functions_single_line = ScanDeclarationFamily(
+        owned, CurrentFunctionSingleLinePattern(), false, &close_cache
+    );
+    snapshot.explicit_functions_single_line = ScanDeclarationFamily(
+        owned, ExplicitFunctionSingleLinePattern(), false, &close_cache
+    );
+    snapshot.optional_functions_single_line = ScanDeclarationFamily(
+        owned, OptionalFunctionSingleLinePattern(), false, &close_cache
+    );
+    if (HasMultilineFunctionHeader(source)) {
+        snapshot.current_functions_multiline_only = ScanDeclarationFamily(
+            owned, CurrentFunctionMultilinePattern(), true, &close_cache
+        );
+        snapshot.explicit_functions_multiline_only = ScanDeclarationFamily(
+            owned, ExplicitFunctionMultilinePattern(), true, &close_cache
+        );
+        snapshot.optional_functions_multiline_only = ScanDeclarationFamily(
+            owned, OptionalFunctionMultilinePattern(), true, &close_cache
+        );
+    }
+    return snapshot;
+}
+
+const SnapshotCapture& SnapshotCaptureAt(
+    const DeclarationRecord& record,
+    std::size_t index
+) {
+    if (index >= record.captures.size()) {
+        throw std::logic_error("declaration snapshot capture index out of range");
+    }
+    return record.captures[index];
+}
+
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+class RegexShadowProfileGuard {
+ public:
+    RegexShadowProfileGuard() {
+#ifdef CANGJIE_ENABLE_PROFILE
+        saved_ = g_profile;
+        g_profile = nullptr;
+#endif
+    }
+
+    ~RegexShadowProfileGuard() {
+#ifdef CANGJIE_ENABLE_PROFILE
+        g_profile = saved_;
+#endif
+    }
+
+    RegexShadowProfileGuard(const RegexShadowProfileGuard&) = delete;
+    RegexShadowProfileGuard& operator=(const RegexShadowProfileGuard&) = delete;
+
+ private:
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileCounters* saved_ = nullptr;
+#endif
+};
+
+struct LegacyCapture {
+    bool matched = false;
+    std::size_t offset = std::string::npos;
+    std::size_t length = 0;
+    std::string text;
+};
+
+struct LegacyDeclarationRecord {
+    std::size_t offset = 0;
+    std::size_t length = 0;
+    std::size_t open = 0;
+    std::optional<std::size_t> close;
+    std::vector<LegacyCapture> captures;
+};
+
+std::vector<LegacyDeclarationRecord> LegacyScanDeclarationFamily(
+    std::string_view source,
+    const std::regex& pattern,
+    bool multiline_only
+) {
+    const std::string owned(source);
+    std::vector<LegacyDeclarationRecord> records;
+    for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end;
+         it != end; ++it) {
+        if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
+            continue;
+        }
+        LegacyDeclarationRecord record;
+        record.offset = static_cast<std::size_t>((*it).position());
+        record.length = static_cast<std::size_t>((*it).length());
+        record.open = record.offset + record.length - 1;
+        record.close = MatchingDelimiter(owned, record.open, '{', '}');
+        record.captures.reserve(it->size());
+        for (std::size_t index = 0; index < it->size(); ++index) {
+            LegacyCapture capture;
+            capture.matched = (*it)[index].matched;
+            capture.length = static_cast<std::size_t>((*it).length(index));
+            if (capture.matched) {
+                capture.offset = static_cast<std::size_t>((*it).position(index));
+                capture.text = (*it)[index].str();
+            }
+            record.captures.push_back(std::move(capture));
+        }
+        records.push_back(std::move(record));
+    }
+    return records;
+}
+
+bool SameDeclarationRecord(
+    const DeclarationRecord& left,
+    const LegacyDeclarationRecord& right
+) {
+    if (left.offset != right.offset || left.length != right.length ||
+        left.open != right.open || left.close != right.close ||
+        left.captures.size() != right.captures.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < left.captures.size(); ++index) {
+        const SnapshotCapture& left_capture = left.captures[index];
+        const LegacyCapture& right_capture = right.captures[index];
+        if (left_capture.matched != right_capture.matched ||
+            left_capture.offset != right_capture.offset ||
+            left_capture.length != right_capture.length ||
+            left_capture.text != right_capture.text) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool SameDeclarationRecords(
+    const std::vector<DeclarationRecord>& left,
+    const std::vector<LegacyDeclarationRecord>& right
+) {
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        if (!SameDeclarationRecord(left[index], right[index])) return false;
+    }
+    return true;
+}
+
+void VerifyDeclarationSnapshot(
+    std::string_view source,
+    const DeclarationSnapshot& snapshot
+) {
+    static const std::regex strict_nominal_pattern(
+        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
+    );
+    static const std::regex broad_class_pattern(
+        R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)"
+    );
+    static const std::regex explicit_single_line_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{}\n]+?)\s*\{)"
+    );
+    static const std::regex explicit_multiline_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*:\s*([^{}]+?)\s*\{)"
+    );
+    static const std::regex optional_single_line_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
+    );
+    static const std::regex optional_multiline_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
+    );
+    static const std::regex current_single_line_pattern(
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
+    );
+    static const std::regex current_multiline_pattern(
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
+    );
+    auto verify = [&](const std::vector<DeclarationRecord>& actual,
+                      const std::regex& pattern,
+                      bool multiline_only,
+                      const char* family) {
+        const std::vector<LegacyDeclarationRecord> expected = LegacyScanDeclarationFamily(
+            source, pattern, multiline_only
+        );
+        if (!SameDeclarationRecords(actual, expected)) {
+            throw std::logic_error(
+                std::string("declaration snapshot record family diverged: ") + family
+            );
+        }
+    };
+    verify(snapshot.strict_nominals, strict_nominal_pattern, false, "strict nominal");
+    verify(snapshot.broad_classes, broad_class_pattern, false, "broad class");
+    verify(
+        snapshot.explicit_functions_single_line,
+        explicit_single_line_pattern, false, "explicit function single-line"
+    );
+    verify(
+        snapshot.optional_functions_single_line,
+        optional_single_line_pattern, false, "optional function single-line"
+    );
+    verify(
+        snapshot.current_functions_single_line,
+        current_single_line_pattern, false, "current function single-line"
+    );
+    if (HasMultilineFunctionHeader(source)) {
+        verify(
+            snapshot.explicit_functions_multiline_only,
+            explicit_multiline_pattern, true, "explicit function multiline-only"
+        );
+        verify(
+            snapshot.optional_functions_multiline_only,
+            optional_multiline_pattern, true, "optional function multiline-only"
+        );
+        verify(
+            snapshot.current_functions_multiline_only,
+            current_multiline_pattern, true, "current function multiline-only"
+        );
+    } else if (!snapshot.explicit_functions_multiline_only.empty() ||
+               !snapshot.optional_functions_multiline_only.empty() ||
+               !snapshot.current_functions_multiline_only.empty()) {
+        throw std::logic_error("declaration snapshot contains unexpected multiline records");
+    }
+}
+#endif
+
+void CollectFunctions(const DeclarationSnapshot& snapshot, Model* model) {
+    auto collect = [&](const std::vector<DeclarationRecord>& records) {
+        for (const DeclarationRecord& record : records) {
+            FunctionSig sig = ParseFunctionSignature(
+                SnapshotCaptureAt(record, 1).text,
+                SnapshotCaptureAt(record, 2).text,
+                SnapshotCaptureAt(record, 3).text,
+                SnapshotCaptureAt(record, 4).text
+            );
+            model->functions[sig.name].push_back(std::move(sig));
+        }
+    };
+    collect(snapshot.explicit_functions_single_line);
+    collect(snapshot.explicit_functions_multiline_only);
+}
+
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+void CollectFunctionsRegex(std::string_view source, Model* model) {
     static const std::regex single_line_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{}\n]+?)\s*\{)"
     );
@@ -1054,7 +1448,8 @@ void CollectFunctions(std::string_view source, Model* model) {
     );
     const std::string owned(source);
     auto collect = [&](const std::regex& pattern, bool multiline_only) {
-        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end; it != end; ++it) {
+        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end;
+             it != end; ++it) {
             if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
                 continue;
             }
@@ -1065,8 +1460,11 @@ void CollectFunctions(std::string_view source, Model* model) {
         }
     };
     collect(single_line_pattern, false);
-    if (HasMultilineFunctionHeader(source)) collect(multiline_pattern, true);
+    if (HasMultilineFunctionHeader(source)) {
+        collect(multiline_pattern, true);
+    }
 }
+#endif
 
 void CollectImports(std::string_view source, Model* model) {
     static const std::regex import_pattern(
@@ -1079,10 +1477,11 @@ void CollectImports(std::string_view source, Model* model) {
     }
 }
 
-void CollectNominals(std::string_view source, Model* model) {
-    static const std::regex nominal_pattern(
-        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
-    );
+void CollectNominalsFromRecords(
+    std::string_view source,
+    const std::vector<DeclarationRecord>& records,
+    Model* model
+) {
     static const std::regex single_line_method_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{};\n]*[^\s{};\n]))"
     );
@@ -1098,16 +1497,16 @@ void CollectNominals(std::string_view source, Model* model) {
     static const std::regex init_pattern(R"(\binit\s*\(([^{};\n]*)\))");
     static const std::regex let_or_var_prefix(R"(\b(?:let|var)\s*$)");
     const std::string owned(source);
-    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end; it != end; ++it) {
-        const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
-        const auto close = MatchingDelimiter(owned, open, '{', '}');
+    for (const DeclarationRecord& record : records) {
+        const std::size_t open = record.open;
+        const std::optional<std::size_t>& close = record.close;
         const std::size_t body_end = close.value_or(owned.size());
         const std::string body = owned.substr(open + 1, body_end - open - 1);
         NominalInfo info;
-        info.is_interface = (*it)[1].str() == "interface";
-        info.name = (*it)[2].str();
-        info.type_params = ParseTypeParameters((*it)[3].str());
-        info.supers = ParseSupers((*it)[4].str());
+        info.is_interface = SnapshotCaptureAt(record, 1).text == "interface";
+        info.name = SnapshotCaptureAt(record, 2).text;
+        info.type_params = ParseTypeParameters(SnapshotCaptureAt(record, 3).text);
+        info.supers = ParseSupers(SnapshotCaptureAt(record, 4).text);
 
         auto collect_methods = [&](const std::regex& pattern, bool multiline_only) {
             for (std::sregex_iterator method(body.begin(), body.end(), pattern), method_end;
@@ -1201,6 +1600,208 @@ void CollectNominals(std::string_view source, Model* model) {
     }
 }
 
+void CollectNominals(
+    std::string_view source,
+    const DeclarationSnapshot& snapshot,
+    Model* model
+) {
+    CollectNominalsFromRecords(source, snapshot.strict_nominals, model);
+}
+
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+void CollectNominalsRegex(std::string_view source, Model* model) {
+    static const std::regex nominal_pattern(
+        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
+    );
+    static const std::regex single_line_method_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{};\n]*[^\s{};\n]))"
+    );
+    static const std::regex multiline_method_pattern(
+        R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*:\s*([^{};\n]*[^\s{};\n]))"
+    );
+    static const std::regex field_pattern(
+        R"(\b(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^={}\n]+))"
+    );
+    static const std::regex bare_field_pattern(
+        R"(\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()\n]+>)?))"
+    );
+    static const std::regex init_pattern(R"(\binit\s*\(([^{};\n]*)\))");
+    static const std::regex let_or_var_prefix(R"(\b(?:let|var)\s*$)");
+    const std::string owned(source);
+    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end;
+         it != end; ++it) {
+        const std::size_t open = static_cast<std::size_t>(
+            (*it).position() + (*it).length() - 1
+        );
+        const auto close = MatchingDelimiter(owned, open, '{', '}');
+        const std::size_t body_end = close.value_or(owned.size());
+        const std::string body = owned.substr(open + 1, body_end - open - 1);
+        NominalInfo info;
+        info.is_interface = (*it)[1].str() == "interface";
+        info.name = (*it)[2].str();
+        info.type_params = ParseTypeParameters((*it)[3].str());
+        info.supers = ParseSupers((*it)[4].str());
+
+        auto collect_methods = [&](const std::regex& pattern, bool multiline_only) {
+            for (std::sregex_iterator method(body.begin(), body.end(), pattern), method_end;
+                 method != method_end; ++method) {
+                if (multiline_only &&
+                    (*method)[0].str().find_first_of("\n\r") == std::string::npos) {
+                    continue;
+                }
+                FunctionSig sig = ParseFunctionSignature(
+                    (*method)[1].str(), (*method)[2].str(),
+                    (*method)[3].str(), (*method)[4].str()
+                );
+                const std::size_t method_pos = static_cast<std::size_t>((*method).position());
+                const std::size_t prefix_start = body.rfind('\n', method_pos);
+                const std::string prefix = body.substr(
+                    prefix_start == std::string::npos ? 0 : prefix_start + 1,
+                    method_pos - (prefix_start == std::string::npos ? 0 : prefix_start + 1)
+                );
+                sig.is_static = prefix.find("static") != std::string::npos;
+                auto& methods = sig.is_static ? info.static_methods : info.methods;
+                methods[sig.name].push_back(std::move(sig));
+            }
+        };
+        collect_methods(single_line_method_pattern, false);
+        if (HasMultilineFunctionHeader(body)) {
+            collect_methods(multiline_method_pattern, true);
+        }
+        for (std::sregex_iterator field(body.begin(), body.end(), field_pattern), field_end;
+             field != field_end; ++field) {
+            const std::size_t field_pos = static_cast<std::size_t>((*field).position());
+            const std::size_t line_start = body.rfind('\n', field_pos);
+            const std::string prefix = body.substr(
+                line_start == std::string::npos ? 0 : line_start + 1,
+                field_pos - (line_start == std::string::npos ? 0 : line_start + 1)
+            );
+            auto& fields = prefix.find("static") != std::string::npos
+                ? info.static_fields : info.fields;
+            fields[(*field)[1].str()] = CompactType((*field)[2].str());
+        }
+        for (std::sregex_iterator field(body.begin(), body.end(), bare_field_pattern), field_end;
+             field != field_end; ++field) {
+            const std::size_t position = static_cast<std::size_t>((*field).position());
+            int paren_depth = 0;
+            int brace_depth = 0;
+            for (std::size_t index = 0; index < position; ++index) {
+                if (body[index] == '(') ++paren_depth;
+                else if (body[index] == ')' && paren_depth > 0) --paren_depth;
+                else if (body[index] == '{') ++brace_depth;
+                else if (body[index] == '}' && brace_depth > 0) --brace_depth;
+            }
+            if (paren_depth == 0 && brace_depth == 0) {
+                const std::size_t line_start = body.find_last_of("\n;{}", position);
+                const std::string prefix = body.substr(
+                    line_start == std::string::npos ? 0 : line_start + 1,
+                    position - (line_start == std::string::npos ? 0 : line_start + 1)
+                );
+                if (!std::regex_search(prefix, let_or_var_prefix)) {
+                    info.fields.emplace(
+                        (*field)[1].str(), CompactType((*field)[2].str())
+                    );
+                }
+            }
+        }
+        for (std::sregex_iterator init(body.begin(), body.end(), init_pattern), init_end;
+             init != init_end; ++init) {
+            FunctionSig sig = ParseFunctionSignature(
+                info.name, {}, (*init)[1].str(), info.name
+            );
+            sig.type_params = info.type_params;
+            if (!info.type_params.empty()) {
+                sig.result = info.name + "<";
+                for (std::size_t index = 0; index < info.type_params.size(); ++index) {
+                    if (index) sig.result += ",";
+                    sig.result += info.type_params[index];
+                }
+                sig.result += ">";
+            }
+            info.constructors.push_back(std::move(sig));
+        }
+        if (!info.is_interface && info.constructors.empty()) {
+            FunctionSig ctor;
+            ctor.name = info.name;
+            ctor.type_params = info.type_params;
+            ctor.result = info.name;
+            if (!info.type_params.empty()) {
+                ctor.result += "<";
+                for (std::size_t index = 0; index < info.type_params.size(); ++index) {
+                    if (index) ctor.result += ",";
+                    ctor.result += info.type_params[index];
+                }
+                ctor.result += ">";
+            }
+            info.constructors.push_back(std::move(ctor));
+        }
+        model->nominals[info.name] = std::move(info);
+    }
+}
+
+bool SameFunctionSignature(const FunctionSig& left, const FunctionSig& right) {
+    return left.name == right.name &&
+        left.type_params == right.type_params &&
+        left.param_names == right.param_names &&
+        left.param_types == right.param_types &&
+        left.result == right.result &&
+        left.required == right.required &&
+        left.is_static == right.is_static;
+}
+
+bool SameSignatureVector(
+    const std::vector<FunctionSig>& left,
+    const std::vector<FunctionSig>& right
+) {
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        if (!SameFunctionSignature(left[index], right[index])) return false;
+    }
+    return true;
+}
+
+bool SameSignatureMap(
+    const std::unordered_map<std::string, std::vector<FunctionSig>>& left,
+    const std::unordered_map<std::string, std::vector<FunctionSig>>& right
+) {
+    if (left.size() != right.size()) return false;
+    for (const auto& [name, signatures] : left) {
+        const auto found = right.find(name);
+        if (found == right.end() || !SameSignatureVector(signatures, found->second)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool SameNominalInfo(const NominalInfo& left, const NominalInfo& right) {
+    return left.name == right.name &&
+        left.is_interface == right.is_interface &&
+        left.type_params == right.type_params &&
+        left.supers == right.supers &&
+        left.fields == right.fields &&
+        left.static_fields == right.static_fields &&
+        SameSignatureMap(left.methods, right.methods) &&
+        SameSignatureMap(left.static_methods, right.static_methods) &&
+        SameSignatureVector(left.constructors, right.constructors);
+}
+
+bool SameModel(const Model& left, const Model& right) {
+    if (left.globals != right.globals ||
+        !SameSignatureMap(left.functions, right.functions) ||
+        left.nominals.size() != right.nominals.size()) {
+        return false;
+    }
+    for (const auto& [name, nominal] : left.nominals) {
+        const auto found = right.nominals.find(name);
+        if (found == right.nominals.end() || !SameNominalInfo(nominal, found->second)) {
+            return false;
+        }
+    }
+    return true;
+}
+#endif
+
 struct FunctionContext {
     bool in_function = false;
     bool is_main = false;
@@ -1213,7 +1814,71 @@ struct FunctionContext {
     std::string class_name;
 };
 
-FunctionContext CurrentFunctionContext(std::string_view source) {
+FunctionContext CurrentFunctionContextFromRecords(
+    std::string_view source,
+    const std::vector<DeclarationRecord>& single_line_records,
+    const std::vector<DeclarationRecord>& multiline_only_records,
+    const std::vector<DeclarationRecord>& broad_class_records
+) {
+    const std::string owned(source);
+    FunctionContext best;
+    std::size_t best_open = std::string::npos;
+    std::optional<std::size_t> best_close;
+    auto inspect = [&](const std::vector<DeclarationRecord>& records) {
+        for (const DeclarationRecord& record : records) {
+            const std::size_t open = record.open;
+            if (best_open != std::string::npos && open < best_open) continue;
+            best_open = open;
+            best_close = record.close;
+            best.in_function = true;
+            best.is_main = StartsWith(Trim(SnapshotCaptureAt(record, 0).text), "main");
+            const SnapshotCapture& result_capture = SnapshotCaptureAt(record, 2);
+            best.result = CompactType(result_capture.matched ? result_capture.text : "Unit");
+            best.variables.clear();
+            best.immutable.clear();
+            const FunctionSig params = ParseFunctionSignature(
+                "", {}, SnapshotCaptureAt(record, 1).text, best.result
+            );
+            for (std::size_t index = 0; index < params.param_names.size(); ++index) {
+                best.variables[params.param_names[index]] = params.param_types[index];
+                best.immutable.insert(params.param_names[index]);
+            }
+        }
+    };
+    inspect(single_line_records);
+    inspect(multiline_only_records);
+    if (best_open == std::string::npos) {
+        best.body = owned;
+        return best;
+    }
+    best.body_start = best_open + 1;
+    best.body_end = best_close.value_or(std::string::npos);
+    best.body = best_close
+        ? owned.substr(best_open + 1, *best_close - best_open - 1)
+        : owned.substr(best_open + 1);
+
+    for (const DeclarationRecord& record : broad_class_records) {
+        if (record.open < best_open && (!record.close || *record.close > best_open)) {
+            best.class_name = SnapshotCaptureAt(record, 1).text;
+        }
+    }
+    return best;
+}
+
+FunctionContext CurrentFunctionContext(
+    std::string_view source,
+    const DeclarationSnapshot& snapshot
+) {
+    return CurrentFunctionContextFromRecords(
+        source,
+        snapshot.current_functions_single_line,
+        snapshot.current_functions_multiline_only,
+        snapshot.broad_classes
+    );
+}
+
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+FunctionContext CurrentFunctionContextRegex(std::string_view source) {
     static const std::regex single_line_pattern(
         R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
     );
@@ -1225,7 +1890,8 @@ FunctionContext CurrentFunctionContext(std::string_view source) {
     std::size_t best_open = std::string::npos;
     std::optional<std::size_t> best_close;
     auto inspect = [&](const std::regex& pattern, bool multiline_only) {
-        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end; it != end; ++it) {
+        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end;
+             it != end; ++it) {
             if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
                 continue;
             }
@@ -1240,7 +1906,9 @@ FunctionContext CurrentFunctionContext(std::string_view source) {
             best.result = CompactType((*it)[2].matched ? (*it)[2].str() : "Unit");
             best.variables.clear();
             best.immutable.clear();
-            const FunctionSig params = ParseFunctionSignature("", {}, (*it)[1].str(), best.result);
+            const FunctionSig params = ParseFunctionSignature(
+                "", {}, (*it)[1].str(), best.result
+            );
             for (std::size_t index = 0; index < params.param_names.size(); ++index) {
                 best.variables[params.param_names[index]] = params.param_types[index];
                 best.immutable.insert(params.param_names[index]);
@@ -1259,14 +1927,22 @@ FunctionContext CurrentFunctionContext(std::string_view source) {
         ? owned.substr(best_open + 1, *best_close - best_open - 1)
         : owned.substr(best_open + 1);
 
-    static const std::regex nominal_pattern(R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)");
-    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end; it != end; ++it) {
-        const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
+    static const std::regex nominal_pattern(
+        R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)"
+    );
+    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end;
+         it != end; ++it) {
+        const std::size_t open = static_cast<std::size_t>(
+            (*it).position() + (*it).length() - 1
+        );
         const auto close = MatchingDelimiter(owned, open, '{', '}');
-        if (open < best_open && (!close || *close > best_open)) best.class_name = (*it)[1].str();
+        if (open < best_open && (!close || *close > best_open)) {
+            best.class_name = (*it)[1].str();
+        }
     }
     return best;
 }
+#endif
 
 void CollectLocalVariables(FunctionContext* context) {
     static const std::regex declaration_pattern(
@@ -1487,22 +2163,16 @@ struct NominalDeclaration {
 };
 
 std::vector<NominalDeclaration> CollectNominalDeclarations(
-    std::string_view source
+    const DeclarationSnapshot& snapshot
 ) {
-    static const std::regex nominal_pattern(
-        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
-    );
-    const std::string owned(source);
     std::vector<NominalDeclaration> declarations;
-    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end;
-         it != end; ++it) {
+    declarations.reserve(snapshot.strict_nominals.size());
+    for (const DeclarationRecord& record : snapshot.strict_nominals) {
         NominalDeclaration declaration;
-        declaration.open = static_cast<std::size_t>(
-            (*it).position() + (*it).length() - 1
-        );
-        declaration.close = MatchingDelimiter(owned, declaration.open, '{', '}');
-        declaration.type_parameters = ParseTypeParameters((*it)[3].str());
-        declaration.super_header = (*it)[4].str();
+        declaration.open = record.open;
+        declaration.close = record.close;
+        declaration.type_parameters = ParseTypeParameters(SnapshotCaptureAt(record, 3).text);
+        declaration.super_header = SnapshotCaptureAt(record, 4).text;
         declarations.push_back(std::move(declaration));
     }
     return declarations;
@@ -1526,7 +2196,102 @@ std::unordered_set<std::string> EnclosingNominalTypeParameters(
     return std::unordered_set<std::string>(nearest->begin(), nearest->end());
 }
 
-CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
+CheckStatus CheckDeclaredTypesFromRecords(
+    std::string_view source,
+    const Model& model,
+    const std::vector<DeclarationRecord>& single_line_records,
+    const std::vector<DeclarationRecord>& multiline_only_records,
+    const std::vector<NominalDeclaration>& nominal_declarations
+) {
+#ifndef CANGJIE_ENABLE_REGEX_SHADOW
+    (void)source;
+#endif
+    static const std::unordered_set<std::string> primitives = {
+        "Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
+        "Bool", "Rune", "String", "Unit"
+    };
+    auto check_functions = [&](const std::vector<DeclarationRecord>& records) -> CheckStatus {
+        for (const DeclarationRecord& record : records) {
+            const auto params = ParseTypeParameters(SnapshotCaptureAt(record, 2).text);
+            const std::size_t function_position = record.offset;
+            std::unordered_set<std::string> allowed = EnclosingNominalTypeParameters(
+                nominal_declarations, function_position
+            );
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+            if (allowed != EnclosingNominalTypeParametersRegex(source, function_position)) {
+                throw std::logic_error(
+                    "nominal declaration index diverged from regex shadow"
+                );
+            }
+#endif
+            allowed.insert(params.begin(), params.end());
+            for (const std::string& parameter : params) {
+                if (primitives.count(parameter)) {
+                    return {false, "type parameter conflicts with primitive"};
+                }
+            }
+            FunctionSig sig = ParseFunctionSignature(
+                SnapshotCaptureAt(record, 1).text,
+                SnapshotCaptureAt(record, 2).text,
+                SnapshotCaptureAt(record, 3).text,
+                SnapshotCaptureAt(record, 4).matched
+                    ? SnapshotCaptureAt(record, 4).text : "Unit"
+            );
+            for (const std::string& type : sig.param_types) {
+                if (!KnownDeclaredType(type, model, allowed)) {
+                    return {false, "unknown parameter type"};
+                }
+            }
+            if (!KnownDeclaredType(sig.result, model, allowed)) {
+                return {false, "unknown return type"};
+            }
+        }
+        return {};
+    };
+    if (CheckStatus status = check_functions(single_line_records); !status.ok) {
+        return status;
+    }
+    if (CheckStatus status = check_functions(multiline_only_records); !status.ok) {
+        return status;
+    }
+    for (const NominalDeclaration& declaration : nominal_declarations) {
+        for (const std::string& parameter : declaration.type_parameters) {
+            if (primitives.count(parameter)) return {false, "type parameter conflicts with primitive"};
+        }
+        const std::unordered_set<std::string> allowed(
+            declaration.type_parameters.begin(), declaration.type_parameters.end()
+        );
+        for (const std::string& super : ParseSupers(declaration.super_header)) {
+            if (!KnownDeclaredType(super, model, allowed)) return {false, "unknown supertype"};
+        }
+    }
+    return {};
+}
+
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+std::vector<NominalDeclaration> CollectNominalDeclarationsRegex(
+    std::string_view source
+) {
+    static const std::regex nominal_pattern(
+        R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
+    );
+    const std::string owned(source);
+    std::vector<NominalDeclaration> declarations;
+    for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end;
+         it != end; ++it) {
+        NominalDeclaration declaration;
+        declaration.open = static_cast<std::size_t>(
+            (*it).position() + (*it).length() - 1
+        );
+        declaration.close = MatchingDelimiter(owned, declaration.open, '{', '}');
+        declaration.type_parameters = ParseTypeParameters((*it)[3].str());
+        declaration.super_header = (*it)[4].str();
+        declarations.push_back(std::move(declaration));
+    }
+    return declarations;
+}
+
+CheckStatus CheckDeclaredTypesRegex(std::string_view source, const Model& model) {
     static const std::regex single_line_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
     );
@@ -1539,9 +2304,11 @@ CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
     };
     const std::string owned(source);
     const std::vector<NominalDeclaration> nominal_declarations =
-        CollectNominalDeclarations(source);
-    auto check_functions = [&](const std::regex& pattern, bool multiline_only) -> CheckStatus {
-        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end; it != end; ++it) {
+        CollectNominalDeclarationsRegex(source);
+    auto check_functions = [&](const std::regex& pattern,
+                               bool multiline_only) -> CheckStatus {
+        for (std::sregex_iterator it(owned.begin(), owned.end(), pattern), end;
+             it != end; ++it) {
             if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
                 continue;
             }
@@ -1550,13 +2317,11 @@ CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
             std::unordered_set<std::string> allowed = EnclosingNominalTypeParameters(
                 nominal_declarations, function_position
             );
-#ifdef CANGJIE_ENABLE_REGEX_SHADOW
             if (allowed != EnclosingNominalTypeParametersRegex(owned, function_position)) {
                 throw std::logic_error(
-                    "nominal declaration index diverged from regex shadow"
+                    "legacy nominal declaration index diverged from direct regex shadow"
                 );
             }
-#endif
             allowed.insert(params.begin(), params.end());
             for (const std::string& parameter : params) {
                 if (primitives.count(parameter)) {
@@ -1588,16 +2353,44 @@ CheckStatus CheckDeclaredTypes(std::string_view source, const Model& model) {
     }
     for (const NominalDeclaration& declaration : nominal_declarations) {
         for (const std::string& parameter : declaration.type_parameters) {
-            if (primitives.count(parameter)) return {false, "type parameter conflicts with primitive"};
+            if (primitives.count(parameter)) {
+                return {false, "type parameter conflicts with primitive"};
+            }
         }
         const std::unordered_set<std::string> allowed(
             declaration.type_parameters.begin(), declaration.type_parameters.end()
         );
         for (const std::string& super : ParseSupers(declaration.super_header)) {
-            if (!KnownDeclaredType(super, model, allowed)) return {false, "unknown supertype"};
+            if (!KnownDeclaredType(super, model, allowed)) {
+                return {false, "unknown supertype"};
+            }
         }
     }
     return {};
+}
+#endif
+
+CheckStatus CheckDeclaredTypes(
+    std::string_view source,
+    const Model& model,
+    const DeclarationSnapshot& snapshot
+) {
+    const std::vector<NominalDeclaration> nominal_declarations =
+        CollectNominalDeclarations(snapshot);
+    const CheckStatus result = CheckDeclaredTypesFromRecords(
+        source, model,
+        snapshot.optional_functions_single_line,
+        snapshot.optional_functions_multiline_only,
+        nominal_declarations
+    );
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+    RegexShadowProfileGuard profile_guard;
+    const CheckStatus reference = CheckDeclaredTypesRegex(source, model);
+    if (result.ok != reference.ok || result.message != reference.message) {
+        throw std::logic_error("declaration snapshot declared-type check diverged from regex shadow");
+    }
+#endif
+    return result;
 }
 
 bool ContinuesAfterNewline(std::string_view statement) {
@@ -2987,12 +3780,66 @@ void CollectInterfaceRequirements(
     }
 }
 
-CheckStatus CheckInterfaces(std::string_view source, const Model& model) {
+CheckStatus CheckInterfacesFromRecords(
+    const std::vector<DeclarationRecord>& class_records,
+    const Model& model
+) {
+    for (const DeclarationRecord& record : class_records) {
+        const std::string& name = SnapshotCaptureAt(record, 1).text;
+        const auto cls = model.nominals.find(name);
+        if (cls == model.nominals.end()) continue;
+        std::unordered_map<std::string, std::vector<FunctionSig>> requirements;
+        std::unordered_set<std::string> visited_interfaces;
+        for (const std::string& super_type : cls->second.supers) {
+            CollectInterfaceRequirements(
+                super_type, model, &requirements, &visited_interfaces
+            );
+        }
+        for (const auto& [method_name, required_signatures] : requirements) {
+            const auto implementation = cls->second.methods.find(method_name);
+            if (implementation == cls->second.methods.end()) continue;
+            for (const FunctionSig& requirement : required_signatures) {
+                bool has_complete_candidate = false;
+                bool matched = false;
+                for (const FunctionSig& candidate : implementation->second) {
+                    if (!SignatureTypesAreKnown(candidate, cls->second, model)) continue;
+                    has_complete_candidate = true;
+                    if (SameInterfaceSignature(candidate, requirement)) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (has_complete_candidate && !matched) {
+                    if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
+                        std::cerr << "interface mismatch " << name << "." << method_name
+                                  << ", required=" << requirement.result << ", candidates=";
+                        for (const FunctionSig& candidate : implementation->second) {
+                            std::cerr << candidate.result << " ";
+                        }
+                        std::cerr << '\n';
+                    }
+                    return {false, "interface method signature mismatch"};
+                }
+            }
+        }
+        if (!record.close) continue;
+        for (const auto& [method_name, _] : requirements) {
+            if (!cls->second.methods.count(method_name)) {
+                return {false, "interface method not implemented"};
+            }
+        }
+    }
+    return {};
+}
+
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+CheckStatus CheckInterfacesRegex(std::string_view source, const Model& model) {
     static const std::regex class_pattern(
         R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)"
     );
     const std::string owned(source);
-    for (std::sregex_iterator it(owned.begin(), owned.end(), class_pattern), end; it != end; ++it) {
+    for (std::sregex_iterator it(owned.begin(), owned.end(), class_pattern), end;
+         it != end; ++it) {
         const std::string name = (*it)[1].str();
         const auto cls = model.nominals.find(name);
         if (cls == model.nominals.end()) continue;
@@ -3030,7 +3877,9 @@ CheckStatus CheckInterfaces(std::string_view source, const Model& model) {
                 }
             }
         }
-        const std::size_t open = static_cast<std::size_t>((*it).position() + (*it).length() - 1);
+        const std::size_t open = static_cast<std::size_t>(
+            (*it).position() + (*it).length() - 1
+        );
         if (!MatchingDelimiter(owned, open, '{', '}')) continue;
         for (const auto& [method_name, _] : requirements) {
             if (!cls->second.methods.count(method_name)) {
@@ -3039,6 +3888,25 @@ CheckStatus CheckInterfaces(std::string_view source, const Model& model) {
         }
     }
     return {};
+}
+#endif
+
+CheckStatus CheckInterfaces(
+    std::string_view source,
+    const Model& model,
+    const DeclarationSnapshot& snapshot
+) {
+    const CheckStatus result = CheckInterfacesFromRecords(snapshot.broad_classes, model);
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+    RegexShadowProfileGuard profile_guard;
+    const CheckStatus reference = CheckInterfacesRegex(source, model);
+    if (result.ok != reference.ok || result.message != reference.message) {
+        throw std::logic_error("declaration snapshot interface check diverged from regex shadow");
+    }
+#else
+    (void)source;
+#endif
+    return result;
 }
 
 CheckStatus CheckRangeSteps(std::string_view source, const Model& model) {
@@ -3103,22 +3971,22 @@ CheckStatus CheckIfBranchJoins(std::string_view source, const Model& model) {
     return {};
 }
 
-CheckStatus CheckConstructors(std::string_view source, const Model& model) {
-    static const std::regex class_pattern(R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)");
+CheckStatus CheckConstructorsFromRecords(
+    std::string_view source,
+    const Model& model,
+    const std::vector<DeclarationRecord>& class_records
+) {
     static const std::regex init_pattern(R"(\binit\s*\([^{};\n]*\)\s*\{)");
     static const std::regex return_value(R"(\breturn\s+([^;{}\n]+))");
     static const std::regex delegated(R"(\bthis\s*\(([^()]*)\))");
     static const std::regex this_member(R"(\bthis\s*\.\s*([A-Za-z_][A-Za-z0-9_]*))");
     const std::string owned(source);
-    for (std::sregex_iterator cls_it(owned.begin(), owned.end(), class_pattern), end;
-         cls_it != end; ++cls_it) {
-        const std::string class_name = (*cls_it)[1].str();
+    for (const DeclarationRecord& record : class_records) {
+        const std::string& class_name = SnapshotCaptureAt(record, 1).text;
         const auto info = model.nominals.find(class_name);
         if (info == model.nominals.end()) continue;
-        const std::size_t class_open = static_cast<std::size_t>(
-            (*cls_it).position() + (*cls_it).length() - 1
-        );
-        const auto class_close = MatchingDelimiter(owned, class_open, '{', '}');
+        const std::size_t class_open = record.open;
+        const std::optional<std::size_t>& class_close = record.close;
         const std::string body = owned.substr(
             class_open + 1,
             class_close ? *class_close - class_open - 1 : owned.size() - class_open - 1
@@ -3153,6 +4021,86 @@ CheckStatus CheckConstructors(std::string_view source, const Model& model) {
         }
     }
     return {};
+}
+
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+CheckStatus CheckConstructorsRegex(std::string_view source, const Model& model) {
+    static const std::regex class_pattern(
+        R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)"
+    );
+    static const std::regex init_pattern(R"(\binit\s*\([^{};\n]*\)\s*\{)");
+    static const std::regex return_value(R"(\breturn\s+([^;{}\n]+))");
+    static const std::regex delegated(R"(\bthis\s*\(([^()]*)\))");
+    static const std::regex this_member(
+        R"(\bthis\s*\.\s*([A-Za-z_][A-Za-z0-9_]*))"
+    );
+    const std::string owned(source);
+    for (std::sregex_iterator cls_it(owned.begin(), owned.end(), class_pattern), end;
+         cls_it != end; ++cls_it) {
+        const std::string class_name = (*cls_it)[1].str();
+        const auto info = model.nominals.find(class_name);
+        if (info == model.nominals.end()) continue;
+        const std::size_t class_open = static_cast<std::size_t>(
+            (*cls_it).position() + (*cls_it).length() - 1
+        );
+        const auto class_close = MatchingDelimiter(owned, class_open, '{', '}');
+        const std::string body = owned.substr(
+            class_open + 1,
+            class_close ? *class_close - class_open - 1 : owned.size() - class_open - 1
+        );
+        for (std::sregex_iterator init_it(body.begin(), body.end(), init_pattern), init_end;
+             init_it != init_end; ++init_it) {
+            const std::size_t init_open = static_cast<std::size_t>(
+                (*init_it).position() + (*init_it).length() - 1
+            );
+            const auto init_close = MatchingDelimiter(body, init_open, '{', '}');
+            const std::string init_body = body.substr(
+                init_open + 1,
+                init_close ? *init_close - init_open - 1 : body.size() - init_open - 1
+            );
+            if (std::regex_search(init_body, return_value)) {
+                return {false, "constructor cannot return a value"};
+            }
+            std::smatch delegation;
+            if (std::regex_search(init_body, delegation, delegated)) {
+                FunctionContext context;
+                ExpressionTyper typer(model, context, source);
+                ExprResult call = typer.Infer(
+                    class_name + "(" + delegation[1].str() + ")"
+                );
+                if (call.error) return {false, "delegated constructor mismatch"};
+            }
+            for (std::sregex_iterator member(
+                     init_body.begin(), init_body.end(), this_member), member_end;
+                 member != member_end; ++member) {
+                const std::string name = (*member)[1].str();
+                if (!info->second.fields.count(name) &&
+                    !info->second.methods.count(name)) {
+                    return {false, "unknown this member"};
+                }
+            }
+        }
+    }
+    return {};
+}
+#endif
+
+CheckStatus CheckConstructors(
+    std::string_view source,
+    const Model& model,
+    const DeclarationSnapshot& snapshot
+) {
+    const CheckStatus result = CheckConstructorsFromRecords(
+        source, model, snapshot.broad_classes
+    );
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+    RegexShadowProfileGuard profile_guard;
+    const CheckStatus reference = CheckConstructorsRegex(source, model);
+    if (result.ok != reference.ok || result.message != reference.message) {
+        throw std::logic_error("declaration snapshot constructor check diverged from regex shadow");
+    }
+#endif
+    return result;
 }
 
 #ifdef CANGJIE_ENABLE_REGEX_SHADOW
@@ -3302,14 +4250,11 @@ CheckStatus CheckMalformedGenericConstruct(std::string_view source) {
     return result;
 }
 
-FunctionContext BuildFunctionContext(std::string_view source, const Model& model) {
-    FunctionContext context;
-    {
-#ifdef CANGJIE_ENABLE_PROFILE
-        ProfileScopeTimer timer(g_profile ? &g_profile->context_current_function_ns : nullptr);
-#endif
-        context = CurrentFunctionContext(source);
-    }
+FunctionContext PopulateFunctionContext(
+    FunctionContext context,
+    std::string_view source,
+    const Model& model
+) {
     if (!context.in_function) return context;
     {
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -3373,6 +4318,45 @@ FunctionContext BuildFunctionContext(std::string_view source, const Model& model
     return context;
 }
 
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+bool SameFunctionContext(const FunctionContext& left, const FunctionContext& right) {
+    return left.in_function == right.in_function &&
+        left.is_main == right.is_main &&
+        left.result == right.result &&
+        left.body == right.body &&
+        left.body_start == right.body_start &&
+        left.body_end == right.body_end &&
+        left.variables == right.variables &&
+        left.immutable == right.immutable &&
+        left.class_name == right.class_name;
+}
+#endif
+
+FunctionContext BuildFunctionContext(
+    std::string_view source,
+    const Model& model,
+    const DeclarationSnapshot& snapshot
+) {
+    FunctionContext current;
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(g_profile ? &g_profile->context_current_function_ns : nullptr);
+#endif
+        current = CurrentFunctionContext(source, snapshot);
+    }
+    FunctionContext context = PopulateFunctionContext(std::move(current), source, model);
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+    RegexShadowProfileGuard profile_guard;
+    FunctionContext reference = PopulateFunctionContext(
+        CurrentFunctionContextRegex(source), source, model
+    );
+    if (!SameFunctionContext(context, reference)) {
+        throw std::logic_error("declaration snapshot function context diverged from regex shadow");
+    }
+#endif
+    return context;
+}
+
 #ifdef CANGJIE_ENABLE_PROFILE
 template <typename Callable>
 auto ProfileTimed(std::uint64_t* target, Callable&& callable) {
@@ -3393,6 +4377,7 @@ std::size_t EstimateContextPayloadBytes(const FunctionContext& context) {
 CheckStatus AnalyzeSource(
     std::string_view source,
     const Model& model,
+    const DeclarationSnapshot& snapshot,
     bool model_dirty,
     bool commit_dirty,
     const FunctionContext& cached_context,
@@ -3419,20 +4404,20 @@ CheckStatus AnalyzeSource(
         if (profile) ++profile->declared_type_checks;
         const CheckStatus declared = ProfileTimed(
             profile ? &profile->declared_type_ns : nullptr,
-            [&] { return CheckDeclaredTypes(source, model); }
+            [&] { return CheckDeclaredTypes(source, model, snapshot); }
         );
 #else
-        const CheckStatus declared = CheckDeclaredTypes(source, model);
+        const CheckStatus declared = CheckDeclaredTypes(source, model, snapshot);
 #endif
         if (!declared.ok) return declared;
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile) ++profile->interface_checks;
         const CheckStatus interface = ProfileTimed(
             profile ? &profile->interface_ns : nullptr,
-            [&] { return CheckInterfaces(source, model); }
+            [&] { return CheckInterfaces(source, model, snapshot); }
         );
 #else
-        const CheckStatus interface = CheckInterfaces(source, model);
+        const CheckStatus interface = CheckInterfaces(source, model, snapshot);
 #endif
         if (!interface.ok) return interface;
     }
@@ -3441,10 +4426,10 @@ CheckStatus AnalyzeSource(
         if (profile) ++profile->constructor_checks;
         const CheckStatus constructors = ProfileTimed(
             profile ? &profile->constructor_ns : nullptr,
-            [&] { return CheckConstructors(source, model); }
+            [&] { return CheckConstructors(source, model, snapshot); }
         );
 #else
-        const CheckStatus constructors = CheckConstructors(source, model);
+        const CheckStatus constructors = CheckConstructors(source, model, snapshot);
 #endif
         if (!constructors.ok) return constructors;
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -3651,6 +4636,7 @@ class IncrementalSemanticEngine::Impl {
     std::string context_path_;
     Model preload_;
     Model active_model_;
+    DeclarationSnapshot declaration_snapshot_;
     FunctionContext active_context_;
     std::vector<TokenEvent> accepted_;
     std::size_t source_bytes_ = 0;
@@ -3738,6 +4724,27 @@ CheckStatus IncrementalSemanticEngine::Probe(
 #endif
         {
 #ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(
+                profile ? &profile->declaration_snapshot_build_ns : nullptr
+            );
+            if (profile) {
+                ++profile->declaration_snapshot_rebuilds;
+                profile->declaration_snapshot_source_bytes += source.size();
+            }
+#endif
+            impl_->declaration_snapshot_ = BuildDeclarationSnapshot(source);
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+            VerifyDeclarationSnapshot(source, impl_->declaration_snapshot_);
+#endif
+#ifdef CANGJIE_ENABLE_PROFILE
+            if (profile) {
+                profile->declaration_snapshot_records +=
+                    impl_->declaration_snapshot_.RecordCount();
+            }
+#endif
+        }
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
             ProfileScopeTimer timer(profile ? &profile->model_reset_ns : nullptr);
 #endif
             impl_->active_model_ = impl_->preload_;
@@ -3752,14 +4759,28 @@ CheckStatus IncrementalSemanticEngine::Probe(
 #ifdef CANGJIE_ENABLE_PROFILE
             ProfileScopeTimer timer(profile ? &profile->collect_functions_ns : nullptr);
 #endif
-            CollectFunctions(source, &impl_->active_model_);
+            CollectFunctions(impl_->declaration_snapshot_, &impl_->active_model_);
         }
         {
 #ifdef CANGJIE_ENABLE_PROFILE
             ProfileScopeTimer timer(profile ? &profile->collect_nominals_ns : nullptr);
 #endif
-            CollectNominals(source, &impl_->active_model_);
+            CollectNominals(
+                source, impl_->declaration_snapshot_, &impl_->active_model_
+            );
         }
+#ifdef CANGJIE_ENABLE_REGEX_SHADOW
+        RegexShadowProfileGuard profile_guard;
+        Model reference_model = impl_->preload_;
+        CollectImports(source, &reference_model);
+        CollectFunctionsRegex(source, &reference_model);
+        CollectNominalsRegex(source, &reference_model);
+        if (!SameModel(impl_->active_model_, reference_model)) {
+            throw std::logic_error(
+                "declaration snapshot model diverged from regex shadow"
+            );
+        }
+#endif
         impl_->model_source_bytes_ = source.size();
     }
     const bool context_dirty = impl_->context_source_bytes_ == 0 ||
@@ -3772,7 +4793,9 @@ CheckStatus IncrementalSemanticEngine::Probe(
             profile->context_rebuild_source_bytes += source.size();
         }
 #endif
-        impl_->active_context_ = BuildFunctionContext(source, impl_->active_model_);
+        impl_->active_context_ = BuildFunctionContext(
+            source, impl_->active_model_, impl_->declaration_snapshot_
+        );
         impl_->context_source_bytes_ = source.size();
     }
     impl_->source_bytes_ = source.size();
@@ -3792,7 +4815,7 @@ CheckStatus IncrementalSemanticEngine::Probe(
     if (profile) ++profile->analyze_calls;
 #endif
     return AnalyzeSource(
-        source, impl_->active_model_, model_dirty, commit_dirty,
+        source, impl_->active_model_, impl_->declaration_snapshot_, model_dirty, commit_dirty,
         impl_->active_context_, std::move(active_statement)
 #ifdef CANGJIE_ENABLE_PROFILE
         , profile
