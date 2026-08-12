@@ -2666,6 +2666,11 @@ struct ExprResult {
     bool suffix_may_change_type = false;
 };
 
+ExprResult WithExtendablePostfix(ExprResult result) {
+    if (result.known && !result.error) result.suffix_may_change_type = true;
+    return result;
+}
+
 class ExpressionTyper {
  public:
     ExpressionTyper(
@@ -2997,6 +3002,10 @@ ExprResult ExpressionTyper::CheckSignatures(
                 BindTypeVariables(sig.param_types[parameter_index], actual.type, type_params, &substitutions);
                 const std::string want = ApplySubstitution(sig.param_types[parameter_index], substitutions);
                 if (!Compatible(actual.type, want, model_)) {
+                    if (!closed && actual.suffix_may_change_type &&
+                        argument_number + 1 == arguments.size()) {
+                        continue;
+                    }
                     if (!closed && !HasCompleteTrailingIdentifier(full_source_) &&
                         argument_number + 1 == arguments.size()) continue;
                     if (IsInteger(actual.type) && IsInteger(want) &&
@@ -3055,7 +3064,9 @@ ExprResult ExpressionTyper::InferCall(
             }
         }
         if (candidates.empty()) return {};
-        return CheckSignatures(candidates, explicit_types, args, closed, expected, depth);
+        return WithExtendablePostfix(
+            CheckSignatures(candidates, explicit_types, args, closed, expected, depth)
+        );
     }
 
     // If call discovery reached across a binary expression, the apparent
@@ -3070,12 +3081,12 @@ ExprResult ExpressionTyper::InferCall(
     const std::string receiver_type = type_receiver ? receiver.type.substr(5) : receiver.type;
     if (StartsWith(receiver_type, "namespace:")) {
         if (name == "println" || name == "print" || name == "eprintln" || name == "eprint") {
-            return {"Unit", true, false, {}};
+            return {"Unit", true, false, {}, true};
         }
         return {};
     }
     const auto nominal = model_.nominals.find(TypeHead(receiver_type));
-    if (name == "toString") return {"String", true, false, {}};
+    if (name == "toString") return {"String", true, false, {}, true};
     if (nominal == model_.nominals.end()) {
         if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
             std::cerr << "member on non-nominal type '" << receiver_type
@@ -3102,9 +3113,9 @@ ExprResult ExpressionTyper::InferCall(
          index < receiver_args.size() && index < nominal->second.type_params.size(); ++index) {
         substitutions[nominal->second.type_params[index]] = receiver_args[index];
     }
-    return CheckSignatures(
+    return WithExtendablePostfix(CheckSignatures(
         method->second, explicit_types, args, closed, expected, depth, substitutions
-    );
+    ));
 }
 
 ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string& expected, int depth) {
@@ -3398,7 +3409,7 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             }
         }
         return {"Array<" + (element_type.empty() ? std::string("?") : element_type) + ">",
-                !element_type.empty(), false, {}};
+                !element_type.empty(), false, {}, true};
     }
 
     if (!expression.empty() && expression.back() == ']') {
@@ -3418,9 +3429,11 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
                 if (subscript.known && subscript.type != "Int64") {
                     return {"?", false, true, "array index must be Int64"};
                 }
-                if (base.type == "String") return {"Rune", true, false, {}};
+                if (base.type == "String") return {"Rune", true, false, {}, true};
                 const auto args = TypeArgs(base.type);
-                return args.empty() ? ExprResult{} : ExprResult{args.front(), true, false, {}};
+                return args.empty()
+                    ? ExprResult{}
+                    : ExprResult{args.front(), true, false, {}, true};
             }
         }
     }
@@ -3428,6 +3441,8 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
     if (open_index != std::string::npos && expression.find(']', open_index) == std::string::npos) {
         ExprResult base = InferImpl(expression.substr(0, open_index), {}, depth + 1);
         ExprResult subscript = InferImpl(expression.substr(open_index + 1), {}, depth + 1);
+        if (base.error) return base;
+        if (subscript.error) return subscript;
         if (base.known && TypeHead(base.type) != "Array" && TypeHead(base.type) != "ArrayList" && base.type != "String") {
             return {"?", false, true, "cannot index non-array"};
         }
@@ -3451,7 +3466,7 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         const std::string receiver_type = type_receiver ? base.type.substr(5) : base.type;
         if (!type_receiver && StartsWith("toString", member->second)) {
             if (!HasCompleteTrailingIdentifier(full_source_)) return {};
-            if (member->second == "toString") return {"method", true, false, {}};
+            if (member->second == "toString") return {"method", true, false, {}, true};
         }
         const auto nominal = model_.nominals.find(TypeHead(receiver_type));
         if (nominal == model_.nominals.end()) return {"?", false, true, "unknown receiver type"};
@@ -3463,7 +3478,9 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
                  index < args.size() && index < nominal->second.type_params.size(); ++index) {
                 substitutions[nominal->second.type_params[index]] = args[index];
             }
-            return {ApplySubstitution(field->second, substitutions), true, false, {}};
+            return {
+                ApplySubstitution(field->second, substitutions), true, false, {}, true
+            };
         }
         const auto& methods = type_receiver ? nominal->second.static_methods : nominal->second.methods;
         if (const auto method = methods.find(member->second); method != methods.end()) {
@@ -3485,7 +3502,7 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             }
             function_type += ")->";
             function_type += ApplySubstitution(signature.result, substitutions);
-            return {function_type, true, false, {}};
+            return {function_type, true, false, {}, true};
         }
         const bool complete = HasCompleteTrailingIdentifier(full_source_);
         if (!complete) {

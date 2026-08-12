@@ -50,12 +50,46 @@ VALID_CASES = (
         " println(value)\n"
         "}\n",
     ),
+    ValidPrefixCase(
+        "constructor method and two index postfixes",
+        "class Store {\n"
+        " let rows: Array<Array<Int64>>\n"
+        " public init(values: Array<Array<Int64>>) { rows = values }\n"
+        " public func all(): Array<Array<Int64>> { rows }\n"
+        "}\n"
+        "main(): Unit {\n"
+        " let value: Int64 = Store([[1]]).all()[0][0]\n"
+        " println(value)\n"
+        "}\n",
+    ),
+    ValidPrefixCase(
+        "nested string array constructor and method postfix chain",
+        "class Catalog {\n"
+        " let groups: Array<Array<String>>\n"
+        " public init(values: Array<Array<String>>) { groups = values }\n"
+        " public func entries(flag: Bool): Array<Array<String>> { groups }\n"
+        "}\n"
+        "main(): Unit {\n"
+        ' let name: String = Catalog([["ok"]]).entries(true)[0][0]\n'
+        " println(name)\n"
+        "}\n",
+    ),
 )
 
 
 LAMBDA_PREFIX = (
     "main(): Unit {\n"
     " let value: Int64 = { item: Int64 => { item + 1 } }("
+)
+
+BOX_PREFIX = (
+    "class Box {\n"
+    " let rows: Array<Array<Int64>>\n"
+    " public init(values: Array<Array<Int64>>) { rows = values }\n"
+    " public func all(): Array<Array<Int64>> { rows }\n"
+    "}\n"
+    "main(): Unit {\n"
+    " let value: Int64 = "
 )
 
 COMMITTED_ERROR_CASES = (
@@ -75,6 +109,31 @@ COMMITTED_ERROR_CASES = (
         ' let value: Int64 = { item: Int64 => { "bad" } }(',
         "main(): Unit {\n"
         ' let value: Int64 = { item: Int64 => { "bad" } }(1)\n',
+    ),
+    CommittedErrorCase(
+        "closed constructor argument has the wrong nested element type",
+        BOX_PREFIX + "Box([[",
+        BOX_PREFIX + 'Box([["bad"]]).all()[0][0]\n',
+    ),
+    CommittedErrorCase(
+        "closed constructor has too many arguments",
+        BOX_PREFIX + "Box([[1]]",
+        BOX_PREFIX + "Box([[1]], [[2]]).all()[0][0]\n",
+    ),
+    CommittedErrorCase(
+        "closed postfix call names an unknown member",
+        BOX_PREFIX + "Box([[1]]).",
+        BOX_PREFIX + "Box([[1]]).missing()[0][0]\n",
+    ),
+    CommittedErrorCase(
+        "closed postfix method has too many arguments",
+        BOX_PREFIX + "Box([[1]]).all(",
+        BOX_PREFIX + "Box([[1]]).all(1)[0][0]\n",
+    ),
+    CommittedErrorCase(
+        "closed postfix index has a non integer subscript",
+        BOX_PREFIX + "Box([[1]]).all()[",
+        BOX_PREFIX + "Box([[1]]).all()[true][0]\n",
     ),
 )
 
@@ -175,7 +234,7 @@ class NativePrefixExpressionRegressionTests(unittest.TestCase):
         consumed = sum(len(fragment) for fragment in fragments[: reject_index + 1])
         return False, answers, consumed
 
-    def test_valid_lambda_iifes_never_reject_by_fragmentation(self) -> None:
+    def test_valid_lambda_and_postfix_chains_never_reject_by_fragmentation(self) -> None:
         for case_index, case in enumerate(VALID_CASES):
             for mode, fragments in self.fragmentations(
                 case.source, 20260813 + case_index
