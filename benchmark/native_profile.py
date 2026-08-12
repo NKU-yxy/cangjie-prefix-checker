@@ -27,8 +27,10 @@ def run_source(
     token_ids: list[int],
     expected_valid: bool,
     exact_error: int | None,
+    strict_expected: bool,
     env: dict[str, str],
-) -> dict[str, int]:
+    timeout: float,
+) -> tuple[dict[str, int], dict[str, object]]:
     proc = subprocess.run(
         [str(solution)],
         cwd=ROOT,
@@ -37,7 +39,7 @@ def run_source(
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        timeout=10,
+        timeout=timeout,
         check=False,
     )
     if proc.returncode != 0:
@@ -50,7 +52,7 @@ def run_source(
         raise RuntimeError(f"expected exact error {exact_error}, got {first_error}")
     if exact_error is None:
         actual_valid = first_error is None and len(answers) == len(token_ids)
-        if actual_valid != expected_valid:
+        if strict_expected and actual_valid != expected_valid:
             raise RuntimeError(
                 f"expected valid={expected_valid}, got first_error={first_error}, "
                 f"responses={len(answers)}/{len(token_ids)}"
@@ -76,23 +78,46 @@ def run_source(
         counters[f"phase_{key}"] = int(value)
     counters["source_bytes"] = len(source.encode("utf-8"))
     counters["token_count"] = len(token_ids)
-    return counters
+    return counters, {
+        "expected_valid": expected_valid,
+        "observed_valid": first_error is None and len(answers) == len(token_ids),
+        "first_error_token": first_error,
+        "responses": len(answers),
+        "tokens": len(token_ids),
+    }
 
 
 def add_corpus(
     corpus: str,
-    cases: Iterable[tuple[str, str, bool, int | None]],
+    cases: Iterable[tuple[str, str, bool, int | None, bool]],
     solution: Path,
     encoding: object,
     env: dict[str, str],
     output: list[dict[str, object]],
+    timeout: float,
 ) -> None:
-    for name, source, expected_valid, exact_error in cases:
+    for name, source, expected_valid, exact_error, strict_expected in cases:
         token_ids = encoding.encode(source)
-        counters = run_source(
-            solution, source, token_ids, expected_valid, exact_error, env
-        )
-        output.append({"corpus": corpus, "name": name, "counters": counters})
+        try:
+            counters, observation = run_source(
+                solution, source, token_ids, expected_valid, exact_error,
+                strict_expected, env, timeout
+            )
+        except (RuntimeError, subprocess.TimeoutExpired) as error:
+            if strict_expected:
+                raise
+            output.append({
+                "corpus": corpus,
+                "name": name,
+                "profile_error": f"{type(error).__name__}: {error}",
+            })
+            continue
+        output.append({
+            "corpus": corpus,
+            "name": name,
+            "counters": counters,
+            "observation": observation,
+        })
 
 
 def main() -> int:
@@ -101,6 +126,7 @@ def main() -> int:
     parser.add_argument("--solution", type=Path, default=ROOT / "solution")
     parser.add_argument("--seed", type=int, default=20260805)
     parser.add_argument("--cases-per-family", type=int, default=12)
+    parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -122,15 +148,16 @@ def main() -> int:
             (official / "wrong" / f"{item['name']}.cj").read_text(encoding="utf-8"),
             False,
             int(item["first_error_token_index"]),
+            True,
         )
         for item in registry
     )
     project_cases = (
-        (name, source, expected, None)
+        (name, source, expected, None, True)
         for name, source, expected in _project_programs(ROOT / "main.py")
     )
     fuzz_cases = (
-        (case.name, case.source, case.expected_valid, None)
+        (case.name, case.source, case.expected_valid, None, True)
         for case in generate_cases(args.seed, args.cases_per_family)
     )
     _, comprehensive = load_cases(
@@ -142,16 +169,22 @@ def main() -> int:
             case.source,
             case.expected != "reject",
             None,
+            case.expectation_tier == "authoritative",
         )
         for case in comprehensive
     )
 
     records: list[dict[str, object]] = []
-    add_corpus("official", official_cases, solution, encoding, env, records)
-    add_corpus("project", project_cases, solution, encoding, env, records)
-    add_corpus("fuzz", fuzz_cases, solution, encoding, env, records)
     add_corpus(
-        "comprehensive", comprehensive_cases, solution, encoding, env, records
+        "official", official_cases, solution, encoding, env, records, args.timeout
+    )
+    add_corpus(
+        "project", project_cases, solution, encoding, env, records, args.timeout
+    )
+    add_corpus("fuzz", fuzz_cases, solution, encoding, env, records, args.timeout)
+    add_corpus(
+        "comprehensive", comprehensive_cases, solution, encoding, env, records,
+        args.timeout
     )
 
     aggregate: dict[str, int] = {}
@@ -159,14 +192,22 @@ def main() -> int:
     for record in records:
         corpus = str(record["corpus"])
         counts[corpus] = counts.get(corpus, 0) + 1
-        for key, value in record["counters"].items():
+        for key, value in record.get("counters", {}).items():
             aggregate[key] = aggregate.get(key, 0) + int(value)
+
+    profile_errors = [
+        {key: record[key] for key in ("corpus", "name", "profile_error")}
+        for record in records
+        if "profile_error" in record
+    ]
 
     report = {
         "seed": args.seed,
         "cases_per_family": args.cases_per_family,
         "corpora": counts,
         "total_cases": len(records),
+        "profiled_cases": len(records) - len(profile_errors),
+        "profile_errors": profile_errors,
         "aggregate": aggregate,
         "cases": records,
     }

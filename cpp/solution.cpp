@@ -79,6 +79,7 @@ class PhaseProfiler {
             << ",\"syntax_pending_capacity_growths\":"
             << syntax_pending_capacity_growths
             << ",\"tokens_checked\":" << tokens_checked
+            << ",\"shutdown_object_destroy_ns\":" << shutdown_object_destroy_ns
             << "}\n";
     }
 
@@ -102,9 +103,30 @@ class PhaseProfiler {
     std::uint64_t syntax_stable_over_15_bytes_calls = 0;
     std::uint64_t syntax_pending_capacity_growths = 0;
     std::uint64_t tokens_checked = 0;
+    std::uint64_t shutdown_object_destroy_ns = 0;
 
  private:
     bool enabled_ = false;
+};
+
+class ShutdownObjectProfiler {
+ public:
+    explicit ShutdownObjectProfiler(std::uint64_t* target) : target_(target) {}
+
+    ~ShutdownObjectProfiler() {
+        if (target_ && armed_) *target_ += PhaseProfiler::Elapsed(started_);
+    }
+
+    void Arm() {
+        if (!target_) return;
+        started_ = PhaseProfiler::Clock::now();
+        armed_ = true;
+    }
+
+ private:
+    std::uint64_t* target_ = nullptr;
+    PhaseProfiler::Clock::time_point started_{};
+    bool armed_ = false;
 };
 #endif
 
@@ -322,6 +344,9 @@ int main(int argc, char** argv) {
     try {
 #ifdef CANGJIE_ENABLE_PROFILE
         PhaseProfiler phase_profile;
+        ShutdownObjectProfiler shutdown_profiler(
+            phase_profile.enabled() ? &phase_profile.shutdown_object_destroy_ns : nullptr
+        );
 #endif
         std::ios::sync_with_stdio(false);
         std::cin.tie(nullptr);
@@ -406,6 +431,7 @@ int main(int argc, char** argv) {
             phase_profile.syntax_pending_capacity_growths =
                 snapshot.pending_capacity_growths;
         }
+        shutdown_profiler.Arm();
 #endif
         return 0;
     } catch (const std::exception& error) {

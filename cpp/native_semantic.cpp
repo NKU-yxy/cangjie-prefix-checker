@@ -75,11 +75,33 @@ struct ProfileCounters {
     std::uint64_t constructor_ns = 0;
     std::uint64_t range_ns = 0;
     std::uint64_t branch_join_ns = 0;
+    std::uint64_t range_source_copy_ns = 0;
+    std::uint64_t range_regex_ns = 0;
+    std::uint64_t range_infer_ns = 0;
+    std::uint64_t branch_source_copy_ns = 0;
+    std::uint64_t branch_regex_ns = 0;
+    std::uint64_t branch_infer_ns = 0;
+    std::uint64_t branch_compatible_ns = 0;
     std::uint64_t malformed_generic_ns = 0;
     std::uint64_t generic_prefix_ns = 0;
     std::uint64_t brace_scan_ns = 0;
     std::uint64_t model_rebuild_ns = 0;
     std::uint64_t declaration_snapshot_build_ns = 0;
+    std::uint64_t declaration_snapshot_pattern_init_ns = 0;
+    std::uint64_t declaration_snapshot_source_copy_ns = 0;
+    std::uint64_t declaration_snapshot_multiline_probe_ns = 0;
+    std::uint64_t declaration_snapshot_strict_nominal_ns = 0;
+    std::uint64_t declaration_snapshot_broad_class_ns = 0;
+    std::uint64_t declaration_snapshot_current_single_ns = 0;
+    std::uint64_t declaration_snapshot_explicit_single_ns = 0;
+    std::uint64_t declaration_snapshot_optional_single_ns = 0;
+    std::uint64_t declaration_snapshot_current_multiline_ns = 0;
+    std::uint64_t declaration_snapshot_explicit_multiline_ns = 0;
+    std::uint64_t declaration_snapshot_optional_multiline_ns = 0;
+    std::uint64_t declaration_snapshot_capture_copy_ns = 0;
+    std::uint64_t declaration_snapshot_delimiter_ns = 0;
+    std::uint64_t declaration_snapshot_delimiter_hits = 0;
+    std::uint64_t declaration_snapshot_delimiter_misses = 0;
     std::uint64_t model_reset_ns = 0;
     std::uint64_t collect_imports_ns = 0;
     std::uint64_t collect_functions_ns = 0;
@@ -158,12 +180,49 @@ struct ProfileCounters {
             << ",\"constructor_ns\":" << constructor_ns
             << ",\"range_ns\":" << range_ns
             << ",\"branch_join_ns\":" << branch_join_ns
+            << ",\"range_source_copy_ns\":" << range_source_copy_ns
+            << ",\"range_regex_ns\":" << range_regex_ns
+            << ",\"range_infer_ns\":" << range_infer_ns
+            << ",\"branch_source_copy_ns\":" << branch_source_copy_ns
+            << ",\"branch_regex_ns\":" << branch_regex_ns
+            << ",\"branch_infer_ns\":" << branch_infer_ns
+            << ",\"branch_compatible_ns\":" << branch_compatible_ns
             << ",\"malformed_generic_ns\":" << malformed_generic_ns
             << ",\"generic_prefix_ns\":" << generic_prefix_ns
             << ",\"brace_scan_ns\":" << brace_scan_ns
             << ",\"model_rebuild_ns\":" << model_rebuild_ns
             << ",\"declaration_snapshot_build_ns\":"
             << declaration_snapshot_build_ns
+            << ",\"declaration_snapshot_pattern_init_ns\":"
+            << declaration_snapshot_pattern_init_ns
+            << ",\"declaration_snapshot_source_copy_ns\":"
+            << declaration_snapshot_source_copy_ns
+            << ",\"declaration_snapshot_multiline_probe_ns\":"
+            << declaration_snapshot_multiline_probe_ns
+            << ",\"declaration_snapshot_strict_nominal_ns\":"
+            << declaration_snapshot_strict_nominal_ns
+            << ",\"declaration_snapshot_broad_class_ns\":"
+            << declaration_snapshot_broad_class_ns
+            << ",\"declaration_snapshot_current_single_ns\":"
+            << declaration_snapshot_current_single_ns
+            << ",\"declaration_snapshot_explicit_single_ns\":"
+            << declaration_snapshot_explicit_single_ns
+            << ",\"declaration_snapshot_optional_single_ns\":"
+            << declaration_snapshot_optional_single_ns
+            << ",\"declaration_snapshot_current_multiline_ns\":"
+            << declaration_snapshot_current_multiline_ns
+            << ",\"declaration_snapshot_explicit_multiline_ns\":"
+            << declaration_snapshot_explicit_multiline_ns
+            << ",\"declaration_snapshot_optional_multiline_ns\":"
+            << declaration_snapshot_optional_multiline_ns
+            << ",\"declaration_snapshot_capture_copy_ns\":"
+            << declaration_snapshot_capture_copy_ns
+            << ",\"declaration_snapshot_delimiter_ns\":"
+            << declaration_snapshot_delimiter_ns
+            << ",\"declaration_snapshot_delimiter_hits\":"
+            << declaration_snapshot_delimiter_hits
+            << ",\"declaration_snapshot_delimiter_misses\":"
+            << declaration_snapshot_delimiter_misses
             << ",\"model_reset_ns\":" << model_reset_ns
             << ",\"collect_imports_ns\":" << collect_imports_ns
             << ",\"collect_functions_ns\":" << collect_functions_ns
@@ -1158,7 +1217,18 @@ std::optional<std::size_t> CachedDelimiterClose(
     DelimiterCloseCache* cache
 ) {
     const auto found = cache->find(open);
-    if (found != cache->end()) return found->second;
+    if (found != cache->end()) {
+#ifdef CANGJIE_ENABLE_PROFILE
+        if (g_profile) ++g_profile->declaration_snapshot_delimiter_hits;
+#endif
+        return found->second;
+    }
+#ifdef CANGJIE_ENABLE_PROFILE
+    ProfileScopeTimer timer(
+        g_profile ? &g_profile->declaration_snapshot_delimiter_ns : nullptr
+    );
+    if (g_profile) ++g_profile->declaration_snapshot_delimiter_misses;
+#endif
     const std::optional<std::size_t> close = MatchingDelimiter(source, open, '{', '}');
     cache->emplace(open, close);
     return close;
@@ -1181,16 +1251,23 @@ std::vector<DeclarationRecord> ScanDeclarationFamily(
         record.length = static_cast<std::size_t>((*it).length());
         record.open = record.offset + record.length - 1;
         record.close = CachedDelimiterClose(source, record.open, close_cache);
-        record.captures.reserve(it->size());
-        for (std::size_t index = 0; index < it->size(); ++index) {
-            SnapshotCapture capture;
-            capture.matched = (*it)[index].matched;
-            capture.length = static_cast<std::size_t>((*it).length(index));
-            if (capture.matched) {
-                capture.offset = static_cast<std::size_t>((*it).position(index));
-                capture.text = (*it)[index].str();
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(
+                g_profile ? &g_profile->declaration_snapshot_capture_copy_ns : nullptr
+            );
+#endif
+            record.captures.reserve(it->size());
+            for (std::size_t index = 0; index < it->size(); ++index) {
+                SnapshotCapture capture;
+                capture.matched = (*it)[index].matched;
+                capture.length = static_cast<std::size_t>((*it).length(index));
+                if (capture.matched) {
+                    capture.offset = static_cast<std::size_t>((*it).position(index));
+                    capture.text = (*it)[index].str();
+                }
+                record.captures.push_back(std::move(capture));
             }
-            record.captures.push_back(std::move(capture));
         }
         records.push_back(std::move(record));
     }
@@ -1198,34 +1275,122 @@ std::vector<DeclarationRecord> ScanDeclarationFamily(
 }
 
 DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
+#ifdef CANGJIE_ENABLE_PROFILE
+    {
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->declaration_snapshot_pattern_init_ns : nullptr
+        );
+        (void)StrictNominalPattern();
+        (void)BroadClassPattern();
+        (void)CurrentFunctionSingleLinePattern();
+        (void)ExplicitFunctionSingleLinePattern();
+        (void)OptionalFunctionSingleLinePattern();
+        (void)CurrentFunctionMultilinePattern();
+        (void)ExplicitFunctionMultilinePattern();
+        (void)OptionalFunctionMultilinePattern();
+    }
+    std::string owned;
+    {
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->declaration_snapshot_source_copy_ns : nullptr
+        );
+        owned.assign(source.data(), source.size());
+    }
+#else
     const std::string owned(source);
+#endif
     DelimiterCloseCache close_cache;
     DeclarationSnapshot snapshot;
-    snapshot.strict_nominals = ScanDeclarationFamily(
-        owned, StrictNominalPattern(), false, &close_cache
-    );
-    snapshot.broad_classes = ScanDeclarationFamily(
-        owned, BroadClassPattern(), false, &close_cache
-    );
-    snapshot.current_functions_single_line = ScanDeclarationFamily(
-        owned, CurrentFunctionSingleLinePattern(), false, &close_cache
-    );
-    snapshot.explicit_functions_single_line = ScanDeclarationFamily(
-        owned, ExplicitFunctionSingleLinePattern(), false, &close_cache
-    );
-    snapshot.optional_functions_single_line = ScanDeclarationFamily(
-        owned, OptionalFunctionSingleLinePattern(), false, &close_cache
-    );
-    if (HasMultilineFunctionHeader(source)) {
-        snapshot.current_functions_multiline_only = ScanDeclarationFamily(
-            owned, CurrentFunctionMultilinePattern(), true, &close_cache
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->declaration_snapshot_strict_nominal_ns : nullptr
         );
-        snapshot.explicit_functions_multiline_only = ScanDeclarationFamily(
-            owned, ExplicitFunctionMultilinePattern(), true, &close_cache
+#endif
+        snapshot.strict_nominals = ScanDeclarationFamily(
+            owned, StrictNominalPattern(), false, &close_cache
         );
-        snapshot.optional_functions_multiline_only = ScanDeclarationFamily(
-            owned, OptionalFunctionMultilinePattern(), true, &close_cache
+    }
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->declaration_snapshot_broad_class_ns : nullptr
         );
+#endif
+        snapshot.broad_classes = ScanDeclarationFamily(
+            owned, BroadClassPattern(), false, &close_cache
+        );
+    }
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->declaration_snapshot_current_single_ns : nullptr
+        );
+#endif
+        snapshot.current_functions_single_line = ScanDeclarationFamily(
+            owned, CurrentFunctionSingleLinePattern(), false, &close_cache
+        );
+    }
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->declaration_snapshot_explicit_single_ns : nullptr
+        );
+#endif
+        snapshot.explicit_functions_single_line = ScanDeclarationFamily(
+            owned, ExplicitFunctionSingleLinePattern(), false, &close_cache
+        );
+    }
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->declaration_snapshot_optional_single_ns : nullptr
+        );
+#endif
+        snapshot.optional_functions_single_line = ScanDeclarationFamily(
+            owned, OptionalFunctionSingleLinePattern(), false, &close_cache
+        );
+    }
+    bool has_multiline = false;
+    {
+#ifdef CANGJIE_ENABLE_PROFILE
+        ProfileScopeTimer timer(
+            g_profile ? &g_profile->declaration_snapshot_multiline_probe_ns : nullptr
+        );
+#endif
+        has_multiline = HasMultilineFunctionHeader(source);
+    }
+    if (has_multiline) {
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(
+                g_profile ? &g_profile->declaration_snapshot_current_multiline_ns : nullptr
+            );
+#endif
+            snapshot.current_functions_multiline_only = ScanDeclarationFamily(
+                owned, CurrentFunctionMultilinePattern(), true, &close_cache
+            );
+        }
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(
+                g_profile ? &g_profile->declaration_snapshot_explicit_multiline_ns : nullptr
+            );
+#endif
+            snapshot.explicit_functions_multiline_only = ScanDeclarationFamily(
+                owned, ExplicitFunctionMultilinePattern(), true, &close_cache
+            );
+        }
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(
+                g_profile ? &g_profile->declaration_snapshot_optional_multiline_ns : nullptr
+            );
+#endif
+            snapshot.optional_functions_multiline_only = ScanDeclarationFamily(
+                owned, OptionalFunctionMultilinePattern(), true, &close_cache
+            );
+        }
     }
     return snapshot;
 }
@@ -3948,11 +4113,39 @@ CheckStatus CheckInterfaces(
 
 CheckStatus CheckRangeSteps(std::string_view source, const Model& model) {
     static const std::regex loop_pattern(R"(\bfor\s*\([^)]*\bin\s+([^)]*)\))");
+#ifdef CANGJIE_ENABLE_PROFILE
+    std::string owned;
+    {
+        ProfileScopeTimer timer(g_profile ? &g_profile->range_source_copy_ns : nullptr);
+        owned.assign(source.data(), source.size());
+    }
+#else
     const std::string owned(source);
+#endif
     FunctionContext context;
     ExpressionTyper typer(model, context, source);
-    for (std::sregex_iterator it(owned.begin(), owned.end(), loop_pattern), end; it != end; ++it) {
-        const std::string range = (*it)[1].str();
+#ifdef CANGJIE_ENABLE_PROFILE
+    std::sregex_iterator it;
+    {
+        ProfileScopeTimer timer(g_profile ? &g_profile->range_regex_ns : nullptr);
+        it = std::sregex_iterator(owned.begin(), owned.end(), loop_pattern);
+    }
+    const std::sregex_iterator end;
+    for (; it != end;) {
+#else
+    for (std::sregex_iterator it(owned.begin(), owned.end(), loop_pattern), end;
+         it != end; ++it) {
+#endif
+#ifdef CANGJIE_ENABLE_PROFILE
+        const std::smatch match = *it;
+        {
+            ProfileScopeTimer timer(g_profile ? &g_profile->range_regex_ns : nullptr);
+            ++it;
+        }
+#else
+        const std::smatch& match = *it;
+#endif
+        const std::string range = match[1].str();
         const std::size_t dots = range.find("..");
         if (dots == std::string::npos) continue;
         const std::string left_text = Trim(std::string_view(range).substr(0, dots));
@@ -3962,9 +4155,17 @@ CheckStatus CheckRangeSteps(std::string_view source, const Model& model) {
         const std::string right_text = Trim(std::string_view(remainder).substr(0, colon));
         const std::string step_text = colon == std::string::npos
             ? "" : Trim(std::string_view(remainder).substr(colon + 1));
-        ExprResult left = typer.Infer(left_text);
-        ExprResult right = typer.Infer(right_text);
-        ExprResult step = typer.Infer(step_text);
+        ExprResult left;
+        ExprResult right;
+        ExprResult step;
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(g_profile ? &g_profile->range_infer_ns : nullptr);
+#endif
+            left = typer.Infer(left_text);
+            right = typer.Infer(right_text);
+            step = typer.Infer(step_text);
+        }
         auto integral = [](const ExprResult& value) {
             return !value.known || IsInteger(value.type) || value.type == "Rune";
         };
@@ -3985,21 +4186,63 @@ CheckStatus CheckIfBranchJoins(std::string_view source, const Model& model) {
     static const std::regex if_pattern(
         R"(\bif\s*\([^{}]*\)\s*\{\s*([^{};]+?)\s*\}\s*else\s*\{\s*([^{};]+?)\s*\})"
     );
+#ifdef CANGJIE_ENABLE_PROFILE
+    std::string owned;
+    {
+        ProfileScopeTimer timer(g_profile ? &g_profile->branch_source_copy_ns : nullptr);
+        owned.assign(source.data(), source.size());
+    }
+#else
     const std::string owned(source);
+#endif
     FunctionContext context;
     ExpressionTyper typer(model, context, source);
-    for (std::sregex_iterator it(owned.begin(), owned.end(), if_pattern), end; it != end; ++it) {
-        ExprResult left = typer.Infer((*it)[1].str());
-        ExprResult right = typer.Infer((*it)[2].str());
+#ifdef CANGJIE_ENABLE_PROFILE
+    std::sregex_iterator it;
+    {
+        ProfileScopeTimer timer(g_profile ? &g_profile->branch_regex_ns : nullptr);
+        it = std::sregex_iterator(owned.begin(), owned.end(), if_pattern);
+    }
+    const std::sregex_iterator end;
+    for (; it != end;) {
+#else
+    for (std::sregex_iterator it(owned.begin(), owned.end(), if_pattern), end;
+         it != end; ++it) {
+#endif
+#ifdef CANGJIE_ENABLE_PROFILE
+        const std::smatch match = *it;
+        {
+            ProfileScopeTimer timer(g_profile ? &g_profile->branch_regex_ns : nullptr);
+            ++it;
+        }
+#else
+        const std::smatch& match = *it;
+#endif
+        ExprResult left;
+        ExprResult right;
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(g_profile ? &g_profile->branch_infer_ns : nullptr);
+#endif
+            left = typer.Infer(match[1].str());
+            right = typer.Infer(match[2].str());
+        }
         if (!left.known || !right.known || left.error || right.error) continue;
-        bool joined = Compatible(left.type, right.type, model) ||
-            Compatible(right.type, left.type, model);
-        if (!joined) {
-            for (const auto& [name, nominal] : model.nominals) {
-                if (!nominal.is_interface) continue;
-                if (Compatible(left.type, name, model) && Compatible(right.type, name, model)) {
-                    joined = true;
-                    break;
+        bool joined = false;
+        {
+#ifdef CANGJIE_ENABLE_PROFILE
+            ProfileScopeTimer timer(g_profile ? &g_profile->branch_compatible_ns : nullptr);
+#endif
+            joined = Compatible(left.type, right.type, model) ||
+                Compatible(right.type, left.type, model);
+            if (!joined) {
+                for (const auto& [name, nominal] : model.nominals) {
+                    if (!nominal.is_interface) continue;
+                    if (Compatible(left.type, name, model) &&
+                        Compatible(right.type, name, model)) {
+                        joined = true;
+                        break;
+                    }
                 }
             }
         }
