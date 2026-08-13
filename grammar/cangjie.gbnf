@@ -207,7 +207,7 @@ assign_stmt ::= expression ws assignment_op ws expression ws ";"?
 
 # Block statement (recursive to avoid nested-brace ambiguity with *)
 block ::= "{" ws "}" | "{" ws statements ws "}"
-statements ::= statement (ws statement)*
+statements ::= statement (ws statements)?
 
 # If statement
 if_stmt ::= "if" ws_req expression ws block (ws "else" ws (block | if_stmt))?

@@ -71,8 +71,8 @@
     "dependencies": {
       "benchmark/hidden_semantic_fuzz.py": "3427d15d3e3d62fe85e07220ea1a31f64f681e33dc8869215b8afdb99677d004",
       "context.json": "8058e383390f444f56ee4ac0008493c44c8e32fa632d18ed48f998dc36623348",
-      "grammar/cangjie.gbnf": "eb4a5cd0b705407281860bd2ddf1e20b97ad48aceafd96621d55c1385c06ca90",
-      "grammar/cangjie_token.gbnf": "1cb6503b4ce8c24b6a4f12b7ff0ee1a7e8f4d09273bf4e87d254749209096cc1",
+      "grammar/cangjie.gbnf": "6131041ed52120b65ee75440c97704dfe91d1a0fda0aaf99b3e1c75e3054f989",
+      "grammar/cangjie_token.gbnf": "cbe033bea0b88c4d042e258cb4a9b79dfe0912072dc6b5468f742c5d57d6dae0",
       "third_party/cangjie_typechecker/typechecker/__init__.py": "13f8eb45d8e3f03a24abfc7ca8b6281d4eb5b119f02e4679f42a0e510c463472",
       "third_party/cangjie_typechecker/typechecker/__main__.py": "99c01a4117a60ecb738a97909f6314890de18b3c4d8bdf7913e83da0455e7c6d",
       "third_party/cangjie_typechecker/typechecker/ast.py": "5c036f2a7acd57c2b5df246a292ee272f0c9752ede389d0e49af3068c01b06d4",
