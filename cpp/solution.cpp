@@ -21,6 +21,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+#include <exception>
+#endif
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -29,6 +32,9 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+#include <typeinfo>
+#endif
 #include <utility>
 #include <vector>
 
@@ -214,6 +220,9 @@ std::string read_text_file(const fs::path& path) {
 
 class NativeSyntaxChecker {
  public:
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+    struct InMemoryGrammar {};
+#endif
 #ifdef CANGJIE_ENABLE_PROFILE
     struct ProfileSnapshot {
         std::uint64_t stable_bytes = 0;
@@ -228,6 +237,14 @@ class NativeSyntaxChecker {
           compiler_(tokenizer_, 1, false),
           compiled_(compiler_.CompileGrammar(read_text_file(grammar_path))),
           matcher_(compiled_) {}
+
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+    NativeSyntaxChecker(InMemoryGrammar, const std::string& grammar_source)
+        : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
+          compiler_(tokenizer_, 1, false),
+          compiled_(compiler_.CompileGrammar(grammar_source)),
+          matcher_(compiled_) {}
+#endif
 
     bool check(std::string_view fragment) {
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -276,9 +293,180 @@ class NativeSyntaxChecker {
 #endif
 };
 
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+struct CapturedException {
+    std::exception_ptr pointer;
+    std::string type;
+    std::string message;
+};
+
+CapturedException describe_exception(std::exception_ptr pointer) {
+    if (!pointer) return {};
+    try {
+        std::rethrow_exception(pointer);
+    } catch (const std::exception& error) {
+        return {pointer, typeid(error).name(), error.what()};
+    } catch (...) {
+        return {pointer, "non-std-exception", ""};
+    }
+}
+
+bool same_exception(const CapturedException& lhs, const CapturedException& rhs) {
+    return static_cast<bool>(lhs.pointer) == static_cast<bool>(rhs.pointer) &&
+           lhs.type == rhs.type && lhs.message == rhs.message;
+}
+
+std::string exception_summary(const CapturedException& error) {
+    if (!error.pointer) return "none";
+    return error.type + ": " + error.message;
+}
+
+std::string make_control_grammar_for_shadow(std::string candidate) {
+    static constexpr std::string_view kControlRule =
+        "statements ::= statement (ws statements)?";
+    static constexpr std::string_view kCandidateRule =
+        "statements ::= statement (ws statement)*";
+
+    const std::size_t control_pos = candidate.find(kControlRule);
+    const std::size_t candidate_pos = candidate.find(kCandidateRule);
+    const bool one_control = control_pos != std::string::npos &&
+        candidate.find(kControlRule, control_pos + kControlRule.size()) == std::string::npos;
+    const bool one_candidate = candidate_pos != std::string::npos &&
+        candidate.find(kCandidateRule, candidate_pos + kCandidateRule.size()) == std::string::npos;
+    if (one_control == one_candidate) {
+        throw std::runtime_error(
+            "grammar shadow requires exactly one control or candidate statements rule"
+        );
+    }
+    if (one_candidate) {
+        candidate.replace(candidate_pos, kCandidateRule.size(), kControlRule);
+    }
+    return candidate;
+}
+
+class GrammarShadowSyntaxChecker {
+ public:
+    explicit GrammarShadowSyntaxChecker(const fs::path& grammar_path) {
+        const std::string candidate_source = read_text_file(grammar_path);
+        const std::string control_source = make_control_grammar_for_shadow(candidate_source);
+        Creation candidate = create(candidate_source);
+        Creation control = create(control_source);
+        ensure_matching_exceptions("matcher initialization", candidate.error, control.error);
+        if (candidate.error.pointer) std::rethrow_exception(candidate.error.pointer);
+        candidate_ = std::move(candidate.checker);
+        control_ = std::move(control.checker);
+    }
+
+    bool check(std::string_view fragment) {
+        CheckResult candidate = run_check(candidate_.get(), fragment);
+        CheckResult control = run_check(control_.get(), fragment);
+        ensure_matching_exceptions("AcceptString", candidate.error, control.error);
+        if (candidate.error.pointer) std::rethrow_exception(candidate.error.pointer);
+
+        candidate_transcript_.push_back(candidate.value);
+        control_transcript_.push_back(control.value);
+        const std::size_t index = candidate_transcript_.size() - 1;
+        if (!candidate.value && candidate_first_reject_ == kNoReject) {
+            candidate_first_reject_ = index;
+        }
+        if (!control.value && control_first_reject_ == kNoReject) {
+            control_first_reject_ = index;
+        }
+        if (candidate.value != control.value ||
+            candidate_first_reject_ != control_first_reject_ ||
+            candidate_transcript_.size() != control_transcript_.size()) {
+            throw std::runtime_error(
+                "grammar shadow mismatch at fragment " + std::to_string(index)
+            );
+        }
+        return candidate.value;
+    }
+
+ private:
+    struct Creation {
+        std::unique_ptr<NativeSyntaxChecker> checker;
+        CapturedException error;
+    };
+
+    struct CheckResult {
+        bool value = false;
+        CapturedException error;
+    };
+
+    static Creation create(const std::string& source) {
+        try {
+            return {
+                std::make_unique<NativeSyntaxChecker>(
+                    NativeSyntaxChecker::InMemoryGrammar{}, source
+                ),
+                {}
+            };
+        } catch (...) {
+            return {nullptr, describe_exception(std::current_exception())};
+        }
+    }
+
+    static CheckResult run_check(NativeSyntaxChecker* checker, std::string_view fragment) {
+        try {
+            return {checker->check(fragment), {}};
+        } catch (...) {
+            return {false, describe_exception(std::current_exception())};
+        }
+    }
+
+    static void ensure_matching_exceptions(
+        std::string_view operation,
+        const CapturedException& candidate,
+        const CapturedException& control
+    ) {
+        if (same_exception(candidate, control)) return;
+        throw std::runtime_error(
+            "grammar shadow exception mismatch during " + std::string(operation) +
+            "; candidate=" + exception_summary(candidate) +
+            "; control=" + exception_summary(control)
+        );
+    }
+
+    static constexpr std::size_t kNoReject = static_cast<std::size_t>(-1);
+    std::unique_ptr<NativeSyntaxChecker> candidate_;
+    std::unique_ptr<NativeSyntaxChecker> control_;
+    std::vector<bool> candidate_transcript_;
+    std::vector<bool> control_transcript_;
+    std::size_t candidate_first_reject_ = kNoReject;
+    std::size_t control_first_reject_ = kNoReject;
+};
+
+int hex_digit_value(char digit) {
+    if (digit >= '0' && digit <= '9') return digit - '0';
+    if (digit >= 'a' && digit <= 'f') return digit - 'a' + 10;
+    if (digit >= 'A' && digit <= 'F') return digit - 'A' + 10;
+    return -1;
+}
+
+std::string decode_hex_fragment(std::string_view line) {
+    if (line.size() % 2 != 0) {
+        throw std::runtime_error("grammar shadow fragment has odd-length hex input");
+    }
+    std::string fragment;
+    fragment.reserve(line.size() / 2);
+    for (std::size_t index = 0; index < line.size(); index += 2) {
+        const int high = hex_digit_value(line[index]);
+        const int low = hex_digit_value(line[index + 1]);
+        if (high < 0 || low < 0) {
+            throw std::runtime_error("grammar shadow fragment has invalid hex input");
+        }
+        fragment.push_back(static_cast<char>((high << 4) | low));
+    }
+    return fragment;
+}
+#endif
+
 struct Args {
     std::string context_path;
     bool competition_output = false;
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+    bool grammar_shadow_fragments = false;
+#endif
 };
 
 Args parse_args(int argc, char** argv) {
@@ -291,6 +479,10 @@ Args parse_args(int argc, char** argv) {
             result.competition_output = true;
         } else if (arg == "--pure-cpp-semantic") {
             // Accepted as a no-op for experimental-package compatibility.
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+        } else if (arg == "--grammar-shadow-fragments") {
+            result.grammar_shadow_fragments = true;
+#endif
         } else if ((arg == "--grammar" || arg == "--semantic-mode" ||
                     arg == "--cangjie-file") && index + 1 < argc) {
             ++index;  // accepted for compatibility with the existing entry
@@ -352,6 +544,19 @@ int main(int argc, char** argv) {
         std::cin.tie(nullptr);
         const Args args = parse_args(argc, argv);
         const fs::path root = executable_root(argv[0]);
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+        if (args.grammar_shadow_fragments) {
+            GrammarShadowSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
+            std::string encoded_fragment;
+            while (std::getline(std::cin, encoded_fragment)) {
+                const std::string fragment = decode_hex_fragment(encoded_fragment);
+                const bool ok = syntax.check(fragment);
+                emit(ok, args.competition_output);
+                if (!ok) break;
+            }
+            return 0;
+        }
+#endif
         fs::path native_context = root / "generated" / "context.bin";
         if (!args.context_path.empty() && fs::path(args.context_path).extension() == ".bin") {
             native_context = args.context_path;
@@ -374,7 +579,11 @@ int main(int argc, char** argv) {
             phase_started = PhaseProfiler::Clock::now();
         }
 #endif
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+        GrammarShadowSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
+#else
         NativeSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
+#endif
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
             phase_profile.grammar_init_ns += PhaseProfiler::Elapsed(phase_started);
