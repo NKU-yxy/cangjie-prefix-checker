@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "records": [
+    {
+      "elapsed_s": 0.11178399999334943,
+      "timed_out": false,
+      "tokens": 5135,
+      "answers": 5135,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 17904,
+      "name": "eight-kilobyte-string",
+      "role": "candidate"
+    },
+    {
+      "elapsed_s": 0.11415904200111981,
+      "timed_out": false,
+      "tokens": 5135,
+      "answers": 5135,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 17908,
+      "name": "eight-kilobyte-string",
+      "role": "control"
+    },
+    {
+      "elapsed_s": 0.15568637500109617,
+      "timed_out": false,
+      "tokens": 1372,
+      "answers": 1372,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 20676,
+      "name": "eighty-top-level-functions",
+      "role": "candidate"
+    },
+    {
+      "elapsed_s": 0.1733761659997981,
+      "timed_out": false,
+      "tokens": 1372,
+      "answers": 1372,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 19568,
+      "name": "eighty-top-level-functions",
+      "role": "control"
+    },
+    {
+      "elapsed_s": 0.032864000007975847,
+      "timed_out": false,
+      "tokens": 201,
+      "answers": 201,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 11640,
+      "name": "ninety-six-nested-blocks",
+      "role": "candidate"
+    },
+    {
+      "elapsed_s": 0.03231479100941215,
+      "timed_out": false,
+      "tokens": 201,
+      "answers": 201,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 11652,
+      "name": "ninety-six-nested-blocks",
+      "role": "control"
+    },
+    {
+      "elapsed_s": 0.010831750012584962,
+      "timed_out": false,
+      "tokens": 133,
+      "answers": 133,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 8204,
+      "name": "sixty-four-nested-comments",
+      "role": "candidate"
+    },
+    {
+      "elapsed_s": 0.010266540994052775,
+      "timed_out": false,
+      "tokens": 133,
+      "answers": 133,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 8224,
+      "name": "sixty-four-nested-comments",
+      "role": "control"
+    },
+    {
+      "elapsed_s": 0.05952679199981503,
+      "timed_out": false,
+      "tokens": 917,
+      "answers": 917,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 16240,
+      "name": "three-hundred-element-array",
+      "role": "candidate"
+    },
+    {
+      "elapsed_s": 0.06021270800556522,
+      "timed_out": false,
+      "tokens": 917,
+      "answers": 917,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 14500,
+      "name": "three-hundred-element-array",
+      "role": "control"
+    },
+    {
+      "elapsed_s": 0.23147137499472592,
+      "timed_out": false,
+      "tokens": 2405,
+      "answers": 2405,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 51124,
+      "name": "two-hundred-crlf-lines",
+      "role": "candidate"
+    },
+    {
+      "elapsed_s": 9.543299295997713,
+      "timed_out": false,
+      "tokens": 2405,
+      "answers": 2405,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 155656,
+      "name": "two-hundred-crlf-lines",
+      "role": "control"
+    },
+    {
+      "elapsed_s": 0.3563097920123255,
+      "timed_out": false,
+      "tokens": 2771,
+      "answers": 2765,
+      "first_reject": 2764,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 67820,
+      "name": "late-error-after-250-declarations",
+      "role": "candidate"
+    },
+    {
+      "elapsed_s": 22.083312135000597,
+      "timed_out": false,
+      "tokens": 2771,
+      "answers": 2765,
+      "first_reject": 2764,
+      "returncode": 0,
+      "stderr": "",
+      "peak_rss_kib": 266636,
+      "name": "late-error-after-250-declarations",
+      "role": "control"
+    }
+  ]
+}
