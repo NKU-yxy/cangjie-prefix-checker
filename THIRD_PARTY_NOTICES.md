@@ -1,30 +1,23 @@
 # 第三方依赖与来源声明
 
-本文档记录项目使用的外部依赖，并区分第三方能力、本队适配与本队独立实现。最终提交框架包含下文明确列出的 XGrammar C++ core、DLPack/PicoJSON 单头依赖以及竞赛配套参考 Typechecker；其余外部依赖通过构建环境安装或仅在开发阶段调用。
+本文档记录项目使用的外部依赖，并区分第三方能力、本队适配与本队独立实现。除“竞赛配套参考 Typechecker”一节明确列出的开发/测试副本外，最终提交框架不包含下列项目的源码副本；其他外部依赖通过构建环境安装或在开发阶段调用。
 
 ## XGrammar
 
 - 项目：XGrammar
 - 版本：v0.2.1
-- 上游 commit：`5b4e9ce9e72524037ae24ecd831b9b6604d2eb48`
 - 来源：<https://github.com/mlc-ai/xgrammar>
 - 许可证：Apache License 2.0
-- 用途：提供 GBNF 编译和语法匹配能力。
-- 分发方式：`vendor/xgrammar-v0.2.1/` 包含生产构建所需的 20 个 `.cc`、31 个内部头、8 个公开头，以及 PicoJSON/DLPack 两个单头依赖。XGrammar 的完整 `LICENSE`、`NOTICE` 和逐文件 SHA-256 清单位于同一目录。
-- 本地修改：`cpp/earley_parser.h`、`cpp/earley_parser.cc`、`cpp/grammar_matcher.cc` 三个 vendored 文件有醒目的本队修改声明。修改把 Earley completion 关系中的 `rule_start_pos` 精确表示为不相交区间，并为已完成历史行建立通用范围汇总；其余状态字段全部保留。该机制不按 grammar 文本、identifier 名称或长度、源码、token 化、机器或测试配置启用。
-- 命名空间隔离：生产构建将 vendored core 编译到 `xgrammar_g4`；显式 debug shadow 构建才同时加载未修改的 v0.2.1 wheel，并在原 `xgrammar` 命名空间中运行 accepted-G1 旧 matcher。
-
-### XGrammar 内含的单头依赖
-
-- DLPack：锁定 submodule commit `bbd2f4d32427e548797929af08cfe2a9cbb3cf12`，Apache License 2.0；许可证位于 `vendor/xgrammar-v0.2.1/3rdparty/dlpack/LICENSE`。
-- PicoJSON：Copyright 2009–2010 Cybozu Labs, Inc.、Copyright 2011–2014 Kazuho Oku，采用其源码头所载的两条款 BSD 风格许可；完整声明同时保留在 `picojson.h` 和相邻 `LICENSE.txt`。
+- 用途：作为外部构建及运行依赖，提供 GBNF 编译和语法匹配能力。
+- 分发方式：最终提交框架不包含 XGrammar 源码。
+- 本地修改：无。
 
 ## Apache TVM FFI
 
 - 版本约束：`apache-tvm-ffi>=0.1.9`
 - 来源：<https://tvm.apache.org/ffi/>
 - 许可证：Apache License 2.0
-- 用途：仅供显式 old/new debug shadow 构建所加载的未修改 XGrammar wheel 使用；vendored 生产 core 不依赖 TVM FFI。
+- 用途：作为 XGrammar 的外部运行依赖，提供共享库和 FFI 支持。
 - 分发方式：最终提交框架不包含 TVM FFI 源码。
 - 本地修改：无。
 
@@ -70,4 +63,4 @@
 
 ## 本队独立实现范围
 
-本队独立完成 C++ 竞赛入口与语义检查器、面向赛题子集及仓颉 1.0 规范校准的 GBNF 适配、构建脚本、context/token 查表生成工具和验证工具。上述原创范围明确排除 `third_party/cangjie_typechecker/` 的上游代码及本地适配，也明确排除 `vendor/xgrammar-v0.2.1/` 的上游源码；XGrammar 三个已披露文件中的本地修改仅计为本队适配，不把其上下文实现计作原创。
+本队独立完成 C++ 竞赛入口与语义检查器、面向赛题子集及仓颉 1.0 规范校准的 GBNF 适配、构建脚本、context/token 查表生成工具和验证工具。上述原创范围明确排除 `third_party/cangjie_typechecker/` 的上游代码及本地适配。除已完整披露的该参考目录外，团队源文件仅调用其他依赖的公开 API，不包含从这些项目复制的实现源码。
