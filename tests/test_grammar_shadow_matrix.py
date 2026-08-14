@@ -8,6 +8,7 @@ from tools.run_grammar_shadow_matrix import (
     LOCAL_COUNTS,
     build_cases,
     fragment,
+    _executed_scale_values,
 )
 
 
@@ -57,7 +58,39 @@ class GrammarShadowMatrixTest(unittest.TestCase):
         required = {
             "line-comment-pseudo",
             "block-comment-pseudo",
+            "line-comment-quotes",
+            "block-comment-quotes",
             "string-pseudo",
+            "string-escaped-quote",
+            "multiline-string-identifiers",
+            "multiline-ambiguous-escape",
+            "multiline-ambiguous-unicode-escape",
+            "rune-identifier-content",
+            "identifier-rune-adjacency",
+            "numeric-decimal-exponent",
+            "numeric-signed-exponent",
+            "numeric-fraction-exponent",
+            "numeric-hexadecimal",
+            "numeric-octal",
+            "numeric-binary",
+            "numeric-integer-suffix",
+            "numeric-float-suffix",
+            "raw-keyword-identifier",
+            "keyword-prefix-identifier",
+            "primitive-prefix-identifier",
+            "adjacent-public-func",
+            "adjacent-private-func",
+            "adjacent-public-static",
+            "adjacent-public-init",
+            "adjacent-import-as",
+            "adjacent-generic-field-boundary",
+            "adjacent-generic-field-chain",
+            "adjacent-generic-field-long-gap",
+            "long-identifier-literal-prefix",
+            "long-identifier-literal-midfix",
+            "long-identifier-natural",
+            "long-identifier-mixed",
+            "multiline-before-long-identifier",
             "variable-declaration",
             "assignment",
             "compound-assignment",
@@ -74,6 +107,14 @@ class GrammarShadowMatrixTest(unittest.TestCase):
             "function-body",
             "class-body",
             "incomplete-identifier",
+            "incomplete-main-keyword",
+            "incomplete-declaration-keyword",
+            "incomplete-raw-identifier",
+            "incomplete-string-identifier",
+            "incomplete-block-comment-identifier",
+            "incomplete-numeric-exponent",
+            "incomplete-numeric-signed-exponent",
+            "incomplete-numeric-hexadecimal",
             "incomplete-statement",
             "incomplete-block",
             "late-error",
@@ -111,6 +152,16 @@ class GrammarShadowMatrixTest(unittest.TestCase):
                     expected,
                     (case.name, layout),
                 )
+
+    def test_executed_scale_metadata_reflects_filtered_cases(self) -> None:
+        filtered = [
+            case for case in self.cases
+            if (case.family != "local-count" or int(case.name.split("-", 2)[1]) <= 25)
+            and (case.family != "identifier-length" or int(case.name.split("-", 2)[1]) <= 64)
+        ]
+        locals_executed, identifiers_executed = _executed_scale_values(filtered)
+        self.assertEqual(locals_executed, [0, 1, 2, 10, 25])
+        self.assertEqual(identifiers_executed, [1, 2, 8, 16, 32, 64])
 
 
 if __name__ == "__main__":

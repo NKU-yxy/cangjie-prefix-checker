@@ -218,11 +218,103 @@ std::string read_text_file(const fs::path& path) {
     );
 }
 
+bool is_ascii_identifier_start(char ch) {
+    return (ch >= 'a' && ch <= 'z') ||
+           (ch >= 'A' && ch <= 'Z') || ch == '_';
+}
+
+bool is_ascii_identifier_continue(char ch) {
+    return is_ascii_identifier_start(ch) || (ch >= '0' && ch <= '9');
+}
+
+bool is_identifier_literal(std::string_view value) {
+    if (value.empty() || !is_ascii_identifier_start(value.front())) return false;
+    return std::all_of(value.begin() + 1, value.end(), is_ascii_identifier_continue);
+}
+
+bool starts_with(std::string_view value, std::string_view prefix) {
+    return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
+}
+
+std::vector<std::string> grammar_identifier_literals(std::string_view grammar_source) {
+    std::vector<std::string> result;
+    std::size_t cursor = 0;
+    while (cursor < grammar_source.size()) {
+        if (grammar_source[cursor] == '#') {
+            const std::size_t newline = grammar_source.find('\n', cursor + 1);
+            cursor = newline == std::string_view::npos ? grammar_source.size() : newline + 1;
+            continue;
+        }
+        if (grammar_source[cursor] == '[') {
+            bool escaped = false;
+            for (++cursor; cursor < grammar_source.size(); ++cursor) {
+                const char ch = grammar_source[cursor];
+                if (escaped) {
+                    escaped = false;
+                } else if (ch == '\\') {
+                    escaped = true;
+                } else if (ch == ']') {
+                    ++cursor;
+                    break;
+                }
+            }
+            continue;
+        }
+        if (grammar_source[cursor] != '"') {
+            ++cursor;
+            continue;
+        }
+        ++cursor;
+        std::string literal;
+        bool escaped = false;
+        bool has_escape = false;
+        while (cursor < grammar_source.size()) {
+            const char ch = grammar_source[cursor++];
+            if (escaped) {
+                literal.push_back(ch);
+                escaped = false;
+                has_escape = true;
+            } else if (ch == '\\') {
+                escaped = true;
+                has_escape = true;
+            } else if (ch == '"') {
+                break;
+            } else {
+                literal.push_back(ch);
+            }
+        }
+        if (!has_escape && is_identifier_literal(literal)) {
+            result.push_back(std::move(literal));
+        }
+    }
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+}
+
+std::string choose_canonical_identifier(const std::vector<std::string>& literals) {
+    static constexpr std::string_view kCandidates =
+        "zqjxvkbywghdpcnmfosaeutrilABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+    for (const char candidate : kCandidates) {
+        const bool overlaps_literal = std::any_of(
+            literals.begin(), literals.end(), [&](const std::string& literal) {
+                return literal.find(candidate) != std::string::npos;
+            }
+        );
+        if (!overlaps_literal) return std::string(1, candidate);
+    }
+    throw std::runtime_error("grammar has no safe canonical identifier representative");
+}
+
+std::size_t max_identifier_literal_length(const std::vector<std::string>& literals) {
+    std::size_t result = 1;
+    for (const std::string& literal : literals) result = std::max(result, literal.size());
+    return result;
+}
+
 class NativeSyntaxChecker {
  public:
-#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
     struct InMemoryGrammar {};
-#endif
 #ifdef CANGJIE_ENABLE_PROFILE
     struct ProfileSnapshot {
         std::uint64_t stable_bytes = 0;
@@ -233,18 +325,18 @@ class NativeSyntaxChecker {
 #endif
 
     explicit NativeSyntaxChecker(const fs::path& grammar_path)
-        : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
-          compiler_(tokenizer_, 1, false),
-          compiled_(compiler_.CompileGrammar(read_text_file(grammar_path))),
-          matcher_(compiled_) {}
+        : NativeSyntaxChecker(InMemoryGrammar{}, read_text_file(grammar_path)) {}
 
-#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
     NativeSyntaxChecker(InMemoryGrammar, const std::string& grammar_source)
-        : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
+        : identifier_literals_(grammar_identifier_literals(grammar_source)),
+          canonical_identifier_(choose_canonical_identifier(identifier_literals_)),
+          max_identifier_literal_length_(
+              max_identifier_literal_length(identifier_literals_)
+          ),
+          tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
           compiler_(tokenizer_, 1, false),
           compiled_(compiler_.CompileGrammar(grammar_source)),
           matcher_(compiled_) {}
-#endif
 
     bool check(std::string_view fragment) {
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -275,7 +367,7 @@ class NativeSyntaxChecker {
 #endif
         std::string stable = pending_.substr(0, stable_size);
         pending_.erase(0, stable_size);
-        return matcher_.AcceptString(stable);
+        return accept_stable(stable);
     }
 
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -283,17 +375,395 @@ class NativeSyntaxChecker {
 #endif
 
  private:
+    enum class LexicalMode {
+        Normal,
+        Identifier,
+        ExactIdentifier,
+        RawIdentifier,
+        QuoteRun,
+        String,
+        OpaqueAfterTripleQuote,
+        Rune,
+        Slash,
+        LineComment,
+        BlockComment,
+    };
+
+    bool probe(std::string_view text) const {
+        xgrammar::GrammarMatcher fork = matcher_.Fork();
+        return fork.AcceptString(std::string(text));
+    }
+
+    bool probe_identifier() const {
+        // The mutable matcher has consumed only the already-flushed quotient.
+        // Keep an unfinished suffix verbatim whenever it can still grow into a
+        // grammar literal, then test the same quotient on a fork.
+        std::vector<bool> covered = identifier_covered_;
+        for (std::size_t start = 0; start < identifier_buffer_.size(); ++start) {
+            const std::string_view suffix(identifier_buffer_.data() + start,
+                                          identifier_buffer_.size() - start);
+            const bool can_complete_literal = std::any_of(
+                identifier_literals_.begin(), identifier_literals_.end(),
+                [&](const std::string& literal) { return starts_with(literal, suffix); }
+            );
+            if (can_complete_literal) {
+                std::fill(covered.begin() + static_cast<std::ptrdiff_t>(start),
+                          covered.end(), true);
+            }
+        }
+        std::string representative;
+        std::size_t generic_gap_size = identifier_generic_gap_size_;
+        for (std::size_t index = 0; index < identifier_buffer_.size(); ++index) {
+            if (covered[index]) {
+                representative.push_back(identifier_buffer_[index]);
+                generic_gap_size = 0;
+            } else if (generic_gap_size < kGenericGapRepresentativeLength) {
+                representative.append(canonical_identifier_);
+                ++generic_gap_size;
+            }
+        }
+        return representative.empty() || probe(representative);
+    }
+
+    bool probe_raw_identifier() const {
+        return raw_identifier_valid_ && probe("`" + canonical_identifier_ + "`");
+    }
+
+    void mark_completed_identifier_literals() {
+        // Preserve every character participating in an identifier-shaped
+        // grammar terminal.  The canonical character occurs in no such
+        // terminal, so collapsing each remaining non-empty gap cannot create
+        // a new terminal or erase an existing one.
+        for (const std::string& literal : identifier_literals_) {
+            if (literal.size() <= 1 || identifier_buffer_.size() < literal.size()) continue;
+            const std::size_t start = identifier_buffer_.size() - literal.size();
+            if (identifier_buffer_.compare(start, literal.size(), literal) == 0) {
+                std::fill(
+                    identifier_covered_.begin() + static_cast<std::ptrdiff_t>(start),
+                    identifier_covered_.end(), true
+                );
+            }
+        }
+    }
+
+    void flush_identifier_prefix(std::size_t count, std::string* output) {
+        for (std::size_t index = 0; index < count; ++index) {
+            if (identifier_covered_[index]) {
+                output->push_back(identifier_buffer_[index]);
+                identifier_generic_gap_size_ = 0;
+            } else if (identifier_generic_gap_size_ < kGenericGapRepresentativeLength) {
+                output->append(canonical_identifier_);
+                ++identifier_generic_gap_size_;
+            }
+        }
+        identifier_buffer_.erase(0, count);
+        identifier_covered_.erase(
+            identifier_covered_.begin(),
+            identifier_covered_.begin() + static_cast<std::ptrdiff_t>(count)
+        );
+    }
+
+    void finish_identifier(char following, std::string* output) {
+        if (following == '\'' && !identifier_buffer_.empty() &&
+            identifier_buffer_.back() == 'r') {
+            identifier_covered_.back() = true;
+        }
+        flush_identifier_prefix(identifier_buffer_.size(), output);
+        identifier_generic_gap_size_ = 0;
+    }
+
+    void note_source_char(char ch) {
+        previous_source_char_2_ = previous_source_char_;
+        has_previous_source_char_2_ = has_previous_source_char_;
+        previous_source_char_ = ch;
+        has_previous_source_char_ = true;
+    }
+
+    bool follows_number_like_prefix() const {
+        if (!has_previous_source_char_) return false;
+        if (previous_source_char_ >= '0' && previous_source_char_ <= '9') return true;
+        return previous_source_char_ == '.' && has_previous_source_char_2_ &&
+            previous_source_char_2_ >= '0' && previous_source_char_2_ <= '9';
+    }
+
+    void append_raw_identifier(std::string* output) {
+        if (raw_identifier_valid_ && raw_identifier_content_size_ > 0) {
+            output->push_back('`');
+            output->append(canonical_identifier_);
+            output->push_back('`');
+        } else {
+            output->append(raw_identifier_buffer_);
+        }
+        raw_identifier_buffer_.clear();
+        raw_identifier_content_size_ = 0;
+        raw_identifier_valid_ = true;
+    }
+
+    bool accept_stable(std::string_view input) {
+        std::string normalized;
+        normalized.reserve(input.size());
+        std::size_t cursor = 0;
+        while (cursor < input.size()) {
+            const char ch = input[cursor];
+            const auto consume = [&]() {
+                ++cursor;
+                note_source_char(ch);
+            };
+            switch (lexical_mode_) {
+                case LexicalMode::Identifier:
+                    if (is_ascii_identifier_continue(ch)) {
+                        identifier_buffer_.push_back(ch);
+                        identifier_covered_.push_back(false);
+                        consume();
+                        mark_completed_identifier_literals();
+                        // Retaining one maximum-literal window is sufficient:
+                        // no future byte can make an older position part of a
+                        // newly completed grammar terminal.
+                        if (identifier_buffer_.size() > max_identifier_literal_length_) {
+                            flush_identifier_prefix(
+                                identifier_buffer_.size() - max_identifier_literal_length_,
+                                &normalized
+                            );
+                        }
+                    } else {
+                        finish_identifier(ch, &normalized);
+                        lexical_mode_ = LexicalMode::Normal;
+                    }
+                    break;
+
+                case LexicalMode::ExactIdentifier:
+                    if (is_ascii_identifier_continue(ch)) {
+                        normalized.push_back(ch);
+                        consume();
+                    } else {
+                        lexical_mode_ = LexicalMode::Normal;
+                    }
+                    break;
+
+                case LexicalMode::RawIdentifier:
+                    raw_identifier_buffer_.push_back(ch);
+                    consume();
+                    if (ch == '`') {
+                        append_raw_identifier(&normalized);
+                        lexical_mode_ = LexicalMode::Normal;
+                    } else {
+                        const bool valid = raw_identifier_content_size_ == 0
+                            ? is_ascii_identifier_start(ch)
+                            : is_ascii_identifier_continue(ch);
+                        raw_identifier_valid_ = raw_identifier_valid_ && valid;
+                        ++raw_identifier_content_size_;
+                        if (!valid) {
+                            normalized.append(raw_identifier_buffer_);
+                            raw_identifier_buffer_.clear();
+                            raw_identifier_content_size_ = 0;
+                            raw_identifier_valid_ = true;
+                            lexical_mode_ = LexicalMode::Normal;
+                        }
+                    }
+                    break;
+
+                case LexicalMode::QuoteRun:
+                    if (ch == '"') {
+                        normalized.push_back(ch);
+                        consume();
+                        if (++quote_run_size_ == 3) {
+                            quote_run_size_ = 0;
+                            // The GBNF multiline body can also consume quote
+                            // triples, so the first triple is not a unique close.
+                            // Preserve the remainder rather than choosing one
+                            // lexical branch and changing prefix semantics.
+                            lexical_mode_ = LexicalMode::OpaqueAfterTripleQuote;
+                        }
+                    } else if (quote_run_size_ == 1) {
+                        quote_run_size_ = 0;
+                        lexical_mode_ = LexicalMode::String;
+                        escaped_ = false;
+                    } else {
+                        quote_run_size_ = 0;
+                        lexical_mode_ = LexicalMode::Normal;
+                    }
+                    break;
+
+                case LexicalMode::String:
+                    normalized.push_back(ch);
+                    consume();
+                    if (escaped_) {
+                        escaped_ = false;
+                    } else if (ch == '\\') {
+                        escaped_ = true;
+                    } else if (ch == '"') {
+                        lexical_mode_ = LexicalMode::Normal;
+                    }
+                    break;
+
+                case LexicalMode::OpaqueAfterTripleQuote:
+                    normalized.push_back(ch);
+                    consume();
+                    break;
+
+                case LexicalMode::Rune:
+                    normalized.push_back(ch);
+                    consume();
+                    if (escaped_) {
+                        escaped_ = false;
+                    } else if (ch == '\\') {
+                        escaped_ = true;
+                    } else if (ch == '\'') {
+                        lexical_mode_ = LexicalMode::Normal;
+                    }
+                    break;
+
+                case LexicalMode::Slash:
+                    if (ch == '/') {
+                        normalized.push_back(ch);
+                        consume();
+                        lexical_mode_ = LexicalMode::LineComment;
+                    } else if (ch == '*') {
+                        normalized.push_back(ch);
+                        consume();
+                        lexical_mode_ = LexicalMode::BlockComment;
+                        block_comment_depth_ = 1;
+                        block_comment_boundary_ = '\0';
+                    } else {
+                        lexical_mode_ = LexicalMode::Normal;
+                    }
+                    break;
+
+                case LexicalMode::LineComment:
+                    normalized.push_back(ch);
+                    consume();
+                    if (ch == '\n' || ch == '\r') {
+                        lexical_mode_ = LexicalMode::Normal;
+                    }
+                    break;
+
+                case LexicalMode::BlockComment:
+                    normalized.push_back(ch);
+                    consume();
+                    if (block_comment_boundary_ == '/' && ch == '*') {
+                        ++block_comment_depth_;
+                        block_comment_boundary_ = '\0';
+                    } else if (block_comment_boundary_ == '*' && ch == '/') {
+                        --block_comment_depth_;
+                        block_comment_boundary_ = '\0';
+                        if (block_comment_depth_ == 0) {
+                            lexical_mode_ = LexicalMode::Normal;
+                        }
+                    } else if (ch == '/' || ch == '*') {
+                        block_comment_boundary_ = ch;
+                    } else {
+                        block_comment_boundary_ = '\0';
+                    }
+                    break;
+
+                case LexicalMode::Normal:
+                    if (is_ascii_identifier_start(ch)) {
+                        if (follows_number_like_prefix()) {
+                            // x/o/b/e and suffix letters are part of numeric
+                            // literals, not standalone identifiers.
+                            normalized.push_back(ch);
+                            lexical_mode_ = LexicalMode::ExactIdentifier;
+                        } else {
+                            identifier_buffer_.assign(1, ch);
+                            identifier_covered_.assign(1, false);
+                            identifier_generic_gap_size_ = 0;
+                            lexical_mode_ = LexicalMode::Identifier;
+                        }
+                        consume();
+                    } else if (ch == '`') {
+                        raw_identifier_buffer_.assign(1, ch);
+                        raw_identifier_content_size_ = 0;
+                        raw_identifier_valid_ = true;
+                        lexical_mode_ = LexicalMode::RawIdentifier;
+                        consume();
+                    } else {
+                        normalized.push_back(ch);
+                        consume();
+                        if (ch == '"') {
+                            lexical_mode_ = LexicalMode::QuoteRun;
+                            quote_run_size_ = 1;
+                        } else if (ch == '\'') {
+                            lexical_mode_ = LexicalMode::Rune;
+                            escaped_ = false;
+                        } else if (ch == '/') {
+                            lexical_mode_ = LexicalMode::Slash;
+                        }
+                    }
+                    break;
+            }
+        }
+
+        if (!normalized.empty() && !matcher_.AcceptString(normalized)) return false;
+        if (lexical_mode_ == LexicalMode::Identifier) return probe_identifier();
+        if (lexical_mode_ == LexicalMode::RawIdentifier) return probe_raw_identifier();
+        return true;
+    }
+
+    std::vector<std::string> identifier_literals_;
+    std::string canonical_identifier_;
+    std::size_t max_identifier_literal_length_;
     xgrammar::TokenizerInfo tokenizer_;
     xgrammar::GrammarCompiler compiler_;
     xgrammar::CompiledGrammar compiled_;
     xgrammar::GrammarMatcher matcher_;
     std::string pending_;
+    LexicalMode lexical_mode_ = LexicalMode::Normal;
+    std::string identifier_buffer_;
+    std::vector<bool> identifier_covered_;
+    std::size_t identifier_generic_gap_size_ = 0;
+    std::string raw_identifier_buffer_;
+    std::size_t raw_identifier_content_size_ = 0;
+    bool raw_identifier_valid_ = true;
+    bool escaped_ = false;
+    int quote_run_size_ = 0;
+    std::size_t block_comment_depth_ = 0;
+    char block_comment_boundary_ = '\0';
+    char previous_source_char_ = '\0';
+    char previous_source_char_2_ = '\0';
+    bool has_previous_source_char_ = false;
+    bool has_previous_source_char_2_ = false;
 #ifdef CANGJIE_ENABLE_PROFILE
     ProfileSnapshot profile_;
 #endif
+
+    // The locked grammar needs at most two non-pumpable adjacent generic
+    // identifiers across a nullable boundary (neighboring field declarations).
+    // Preserve that exact bound; a larger representative measurably recreates
+    // the Earley-state growth this quotient is intended to avoid.
+    static constexpr std::size_t kGenericGapRepresentativeLength = 2;
 };
 
 #ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+class LegacySyntaxChecker {
+ public:
+    explicit LegacySyntaxChecker(const std::string& grammar_source)
+        : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
+          compiler_(tokenizer_, 1, false),
+          compiled_(compiler_.CompileGrammar(grammar_source)),
+          matcher_(compiled_) {}
+
+    bool check(std::string_view fragment) {
+        pending_.append(fragment.data(), fragment.size());
+        std::size_t stable_size = pending_.size();
+        while (stable_size > 0) {
+            const char ch = pending_[stable_size - 1];
+            if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') break;
+            --stable_size;
+        }
+        if (stable_size == 0) return true;
+        std::string stable = pending_.substr(0, stable_size);
+        pending_.erase(0, stable_size);
+        return matcher_.AcceptString(stable);
+    }
+
+ private:
+    xgrammar::TokenizerInfo tokenizer_;
+    xgrammar::GrammarCompiler compiler_;
+    xgrammar::CompiledGrammar compiled_;
+    xgrammar::GrammarMatcher matcher_;
+    std::string pending_;
+};
+
 struct CapturedException {
     std::exception_ptr pointer;
     std::string type;
@@ -321,36 +791,12 @@ std::string exception_summary(const CapturedException& error) {
     return error.type + ": " + error.message;
 }
 
-std::string make_control_grammar_for_shadow(std::string candidate) {
-    static constexpr std::string_view kControlRule =
-        "statements ::= statement (ws statements)?";
-    static constexpr std::string_view kCandidateRule =
-        "statements ::= statement (ws statement)*";
-
-    const std::size_t control_pos = candidate.find(kControlRule);
-    const std::size_t candidate_pos = candidate.find(kCandidateRule);
-    const bool one_control = control_pos != std::string::npos &&
-        candidate.find(kControlRule, control_pos + kControlRule.size()) == std::string::npos;
-    const bool one_candidate = candidate_pos != std::string::npos &&
-        candidate.find(kCandidateRule, candidate_pos + kCandidateRule.size()) == std::string::npos;
-    if (one_control == one_candidate) {
-        throw std::runtime_error(
-            "grammar shadow requires exactly one control or candidate statements rule"
-        );
-    }
-    if (one_candidate) {
-        candidate.replace(candidate_pos, kCandidateRule.size(), kControlRule);
-    }
-    return candidate;
-}
-
 class GrammarShadowSyntaxChecker {
  public:
     explicit GrammarShadowSyntaxChecker(const fs::path& grammar_path) {
-        const std::string candidate_source = read_text_file(grammar_path);
-        const std::string control_source = make_control_grammar_for_shadow(candidate_source);
-        Creation candidate = create(candidate_source);
-        Creation control = create(control_source);
+        const std::string grammar_source = read_text_file(grammar_path);
+        CandidateCreation candidate = create_candidate(grammar_source);
+        ControlCreation control = create_control(grammar_source);
         ensure_matching_exceptions("matcher initialization", candidate.error, control.error);
         if (candidate.error.pointer) std::rethrow_exception(candidate.error.pointer);
         candidate_ = std::move(candidate.checker);
@@ -382,9 +828,20 @@ class GrammarShadowSyntaxChecker {
         return candidate.value;
     }
 
+#ifdef CANGJIE_ENABLE_PROFILE
+    NativeSyntaxChecker::ProfileSnapshot profile() const {
+        return candidate_->profile();
+    }
+#endif
+
  private:
-    struct Creation {
+    struct CandidateCreation {
         std::unique_ptr<NativeSyntaxChecker> checker;
+        CapturedException error;
+    };
+
+    struct ControlCreation {
+        std::unique_ptr<LegacySyntaxChecker> checker;
         CapturedException error;
     };
 
@@ -393,7 +850,7 @@ class GrammarShadowSyntaxChecker {
         CapturedException error;
     };
 
-    static Creation create(const std::string& source) {
+    static CandidateCreation create_candidate(const std::string& source) {
         try {
             return {
                 std::make_unique<NativeSyntaxChecker>(
@@ -406,7 +863,16 @@ class GrammarShadowSyntaxChecker {
         }
     }
 
-    static CheckResult run_check(NativeSyntaxChecker* checker, std::string_view fragment) {
+    static ControlCreation create_control(const std::string& source) {
+        try {
+            return {std::make_unique<LegacySyntaxChecker>(source), {}};
+        } catch (...) {
+            return {nullptr, describe_exception(std::current_exception())};
+        }
+    }
+
+    template <typename Checker>
+    static CheckResult run_check(Checker* checker, std::string_view fragment) {
         try {
             return {checker->check(fragment), {}};
         } catch (...) {
@@ -429,7 +895,7 @@ class GrammarShadowSyntaxChecker {
 
     static constexpr std::size_t kNoReject = static_cast<std::size_t>(-1);
     std::unique_ptr<NativeSyntaxChecker> candidate_;
-    std::unique_ptr<NativeSyntaxChecker> control_;
+    std::unique_ptr<LegacySyntaxChecker> control_;
     std::vector<bool> candidate_transcript_;
     std::vector<bool> control_transcript_;
     std::size_t candidate_first_reject_ = kNoReject;
