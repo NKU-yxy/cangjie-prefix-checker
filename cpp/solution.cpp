@@ -14,6 +14,7 @@
  */
 
 #include <algorithm>
+#include <cassert>
 #include <charconv>
 #ifdef CANGJIE_ENABLE_PROFILE
 #include <chrono>
@@ -389,10 +390,74 @@ class NativeSyntaxChecker {
         BlockComment,
     };
 
+    struct IdentifierGap {
+        // A gap contains only uncovered bytes older than the literal window.
+        // It stays uncommitted until a covered byte or the identifier boundary
+        // closes it, so a rolling-buffer flush does not change the live probe.
+        bool active = false;
+        bool starts_with_digit = false;
+        bool ends_with_digit = false;
+        std::uint8_t non_digit_length_cap = 0;
+    };
+
+    static bool is_ascii_digit(char ch) {
+        return ch >= '0' && ch <= '9';
+    }
+
+    static void add_identifier_gap_char(IdentifierGap* gap, char ch) {
+        const bool is_digit = is_ascii_digit(ch);
+        if (!gap->active) {
+            gap->active = true;
+            gap->starts_with_digit = is_digit;
+        }
+        gap->ends_with_digit = is_digit;
+        if (!is_digit &&
+            gap->non_digit_length_cap < kGenericGapRepresentativeLength) {
+            ++gap->non_digit_length_cap;
+        }
+    }
+
+    void append_identifier_gap(
+        const IdentifierGap& gap,
+        std::string* output
+    ) const {
+        if (!gap.active) return;
+        if (gap.non_digit_length_cap == 0) {
+            output->push_back('1');
+            return;
+        }
+        if (gap.starts_with_digit) output->push_back('1');
+        for (std::uint8_t index = 0;
+             index < gap.non_digit_length_cap;
+             ++index) {
+            output->append(canonical_identifier_);
+        }
+        if (gap.ends_with_digit) output->push_back('1');
+    }
+
+    void close_identifier_gap(IdentifierGap* gap, std::string* output) const {
+        append_identifier_gap(*gap, output);
+        *gap = IdentifierGap{};
+    }
+
+    void fold_finalized_identifier_char(
+        char ch,
+        bool covered,
+        std::string* output
+    ) {
+        if (covered) {
+            close_identifier_gap(&identifier_open_gap_, output);
+            output->push_back(ch);
+        } else {
+            add_identifier_gap_char(&identifier_open_gap_, ch);
+        }
+    }
+
     std::string identifier_probe_text() const {
         // Build the quotient for the still-buffered suffix.  Keep source bytes
         // verbatim whenever they can still grow into a multi-character grammar
         // literal; the speculative matcher step is reconciled separately.
+        assert(identifier_buffer_.size() == identifier_covered_.size());
         std::vector<bool> covered = identifier_covered_;
         for (std::size_t start = 0; start < identifier_buffer_.size(); ++start) {
             const std::string_view suffix(identifier_buffer_.data() + start,
@@ -414,27 +479,44 @@ class NativeSyntaxChecker {
             }
         }
         std::string representative;
-        std::size_t generic_gap_size = identifier_generic_gap_size_;
+        IdentifierGap gap = identifier_open_gap_;
         for (std::size_t index = 0; index < identifier_buffer_.size(); ++index) {
             if (covered[index]) {
+                close_identifier_gap(&gap, &representative);
                 representative.push_back(identifier_buffer_[index]);
-                generic_gap_size = 0;
-            } else if (generic_gap_size < kGenericGapRepresentativeLength) {
-                representative.append(canonical_identifier_);
-                ++generic_gap_size;
+            } else {
+                add_identifier_gap_char(&gap, identifier_buffer_[index]);
             }
         }
+        append_identifier_gap(gap, &representative);
         return representative;
     }
 
     bool accept_normalized_and_probe(
         std::string normalized,
         bool has_probe,
-        const std::string& probe_text
+        const std::string& probe_text,
+        bool can_defer_identifier_extension
     ) {
         if (speculative_probe_active_) {
             if (normalized.empty() && has_probe &&
                 probe_text == speculative_probe_text_) {
+                return true;
+            }
+            if (normalized.empty() && has_probe &&
+                can_defer_identifier_extension &&
+                speculative_probe_text_.size() >= canonical_identifier_.size() &&
+                speculative_probe_text_.compare(
+                    speculative_probe_text_.size() - canonical_identifier_.size(),
+                    canonical_identifier_.size(), canonical_identifier_
+                ) == 0 &&
+                starts_with(probe_text, speculative_probe_text_)) {
+                // The live suffix ends inside the generic identifier branch:
+                // the canonical byte occurs in no identifier-shaped literal.
+                // A longer quotient prefix can therefore keep that branch
+                // alive without touching the matcher.  Reconcile the one
+                // outstanding speculative step when output is next emitted
+                // or the identifier boundary is reached.
                 return true;
             }
             if (normalized.size() >= speculative_probe_text_.size() &&
@@ -478,38 +560,13 @@ class NativeSyntaxChecker {
         }
     }
 
-    void mark_identifier_literal_prefix_suffixes() {
-        for (std::size_t start = 0; start < identifier_buffer_.size(); ++start) {
-            const std::string_view suffix(
-                identifier_buffer_.data() + start,
-                identifier_buffer_.size() - start
-            );
-            const bool can_complete_literal = std::any_of(
-                identifier_literals_.begin(),
-                identifier_literals_.end(),
-                [&](const std::string& literal) {
-                    return literal.size() > 1 && starts_with(literal, suffix);
-                }
-            );
-            if (can_complete_literal) {
-                std::fill(
-                    identifier_covered_.begin() + static_cast<std::ptrdiff_t>(start),
-                    identifier_covered_.end(),
-                    true
-                );
-            }
-        }
-    }
-
     void flush_identifier_prefix(std::size_t count, std::string* output) {
+        assert(identifier_buffer_.size() == identifier_covered_.size());
+        assert(count <= identifier_buffer_.size());
         for (std::size_t index = 0; index < count; ++index) {
-            if (identifier_covered_[index]) {
-                output->push_back(identifier_buffer_[index]);
-                identifier_generic_gap_size_ = 0;
-            } else if (identifier_generic_gap_size_ < kGenericGapRepresentativeLength) {
-                output->append(canonical_identifier_);
-                ++identifier_generic_gap_size_;
-            }
+            fold_finalized_identifier_char(
+                identifier_buffer_[index], identifier_covered_[index], output
+            );
         }
         identifier_buffer_.erase(0, count);
         identifier_covered_.erase(
@@ -524,7 +581,7 @@ class NativeSyntaxChecker {
             identifier_covered_.back() = true;
         }
         flush_identifier_prefix(identifier_buffer_.size(), output);
-        identifier_generic_gap_size_ = 0;
+        close_identifier_gap(&identifier_open_gap_, output);
     }
 
     void note_source_char(char ch) {
@@ -571,21 +628,6 @@ class NativeSyntaxChecker {
                         identifier_covered_.push_back(false);
                         consume();
                         mark_completed_identifier_literals();
-                        if (!is_ascii_identifier_start(ch)) {
-                            // In the scannerless grammar, a digit inside a
-                            // maximal identifier run can also begin a numeric
-                            // rule at a nullable boundary.  Preserve the digit
-                            // and the remainder exactly instead of inventing
-                            // or deleting such branches in the quotient.
-                            mark_identifier_literal_prefix_suffixes();
-                            identifier_covered_.back() = true;
-                            flush_identifier_prefix(
-                                identifier_buffer_.size(), &normalized
-                            );
-                            identifier_generic_gap_size_ = 0;
-                            lexical_mode_ = LexicalMode::ExactIdentifier;
-                            break;
-                        }
                         // Retaining one maximum-literal window is sufficient:
                         // no future byte can make an older position part of a
                         // newly completed grammar terminal.
@@ -595,6 +637,9 @@ class NativeSyntaxChecker {
                                 &normalized
                             );
                         }
+                        assert(
+                            identifier_buffer_.size() <= max_identifier_literal_length_
+                        );
                     } else {
                         finish_identifier(ch, &normalized);
                         lexical_mode_ = LexicalMode::Normal;
@@ -734,9 +779,10 @@ class NativeSyntaxChecker {
                             normalized.push_back(ch);
                             lexical_mode_ = LexicalMode::ExactIdentifier;
                         } else {
+                            assert(!identifier_open_gap_.active);
+                            identifier_open_gap_ = IdentifierGap{};
                             identifier_buffer_.assign(1, ch);
                             identifier_covered_.assign(1, false);
-                            identifier_generic_gap_size_ = 0;
                             lexical_mode_ = LexicalMode::Identifier;
                         }
                         consume();
@@ -766,17 +812,19 @@ class NativeSyntaxChecker {
         if (lexical_mode_ == LexicalMode::Identifier) {
             std::string probe_text = identifier_probe_text();
             return accept_normalized_and_probe(
-                std::move(normalized), !probe_text.empty(), probe_text
+                std::move(normalized), !probe_text.empty(), probe_text, true
             );
         }
         if (lexical_mode_ == LexicalMode::RawIdentifier) {
             if (!raw_identifier_valid_) return false;
             const std::string probe_text = "`" + canonical_identifier_ + "`";
             return accept_normalized_and_probe(
-                std::move(normalized), true, probe_text
+                std::move(normalized), true, probe_text, false
             );
         }
-        return accept_normalized_and_probe(std::move(normalized), false, {});
+        return accept_normalized_and_probe(
+            std::move(normalized), false, {}, false
+        );
     }
 
     std::vector<std::string> identifier_literals_;
@@ -792,7 +840,7 @@ class NativeSyntaxChecker {
     LexicalMode lexical_mode_ = LexicalMode::Normal;
     std::string identifier_buffer_;
     std::vector<bool> identifier_covered_;
-    std::size_t identifier_generic_gap_size_ = 0;
+    IdentifierGap identifier_open_gap_;
     std::string raw_identifier_buffer_;
     std::size_t raw_identifier_content_size_ = 0;
     bool raw_identifier_valid_ = true;

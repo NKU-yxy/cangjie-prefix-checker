@@ -153,10 +153,46 @@ def _feature_cases() -> list[Case]:
         Case("identifier-start-after-keyword-digit", "class C { a:A = public1b:B }", valid, "identifier-digit-boundary"),
         Case("identifier-start-after-primitive-digit", "class C { a:u8123b:B }", valid, "identifier-digit-boundary"),
         Case("identifier-number-nullable-boundary", "main(): Unit { foo123.0 }", valid, "identifier-digit-boundary"),
+        Case(
+            "identifier-gap-internal-digit-array",
+            "class C { a:A = Xas1b[] }",
+            "reject",
+            "identifier-gap-quotient",
+        ),
+        Case(
+            "identifier-gap-internal-letter-array",
+            "class C { a:A = Xasb[] }",
+            valid,
+            "identifier-gap-quotient",
+        ),
+        Case(
+            "identifier-gap-no-invented-letter-capacity",
+            "class C { a:z29:B }",
+            "reject",
+            "identifier-gap-quotient",
+        ),
+        Case(
+            "identifier-gap-two-letter-capacity",
+            "class C { a:c8c_bf82srbbox_t1:B }",
+            valid,
+            "identifier-gap-quotient",
+        ),
         Case("long-identifier-literal-prefix", "main(): Unit { let public" + "x" * 122 + ": Int64 = 1 }", valid, "identifier-shapes"),
         Case("long-identifier-literal-midfix", "main(): Unit { let " + "x" * 63 + "if" + "x" * 63 + ": Int64 = 1 }", valid, "identifier-shapes"),
         Case("long-identifier-natural", "main(): Unit { let classification_" + "value" * 22 + ": Int64 = 1 }", valid, "identifier-shapes"),
         Case("long-identifier-mixed", "main(): Unit { let A1_b2C3_" + "xY9_" * 30 + ": Int64 = 1 }", valid, "identifier-shapes"),
+        Case(
+            "long-alnum-4096-early-digit",
+            "main(): Unit { let " + "a1" + "x" * 4094 + ": Int64 = 1 }",
+            valid,
+            "long-alnum-identifier-length",
+        ),
+        Case(
+            "long-alnum-4096-alternating",
+            "main(): Unit { let " + "a1" * 2048 + ": Int64 = 1 }",
+            valid,
+            "long-alnum-identifier-length",
+        ),
         Case("multiline-before-long-identifier", 'main(): Unit { let text: String = """ok"""; let ' + "x" * 128 + ": Int64 = 1 }", valid, "identifier-shapes"),
         Case("variable-declaration", "main(): Unit { var value: Int64 = 1; }", valid, "statements"),
         Case("assignment", "main(): Unit { var value: Int64 = 1; value = 2 }", valid, "statements"),
@@ -186,6 +222,21 @@ def _feature_cases() -> list[Case]:
         Case("incomplete-block", "main(): Unit { if true { let value: Int64 = 1", prefix, "incomplete"),
         Case("late-error", "main(): Unit {\n" + "\n".join(f"let value{i}: Int64 = {i}" for i in range(40)) + "\n@", "reject", "late-error"),
     ]
+    for length in (64, 128, 256):
+        cases.extend((
+            Case(
+                f"long-alnum-{length}-early-digit",
+                "main(): Unit { let " + "a1" + "x" * (length - 2) + ": Int64 = 1 }",
+                valid,
+                "long-alnum-identifier-length",
+            ),
+            Case(
+                f"long-alnum-{length}-alternating",
+                "main(): Unit { let " + ("a1" * ((length + 1) // 2))[:length] + ": Int64 = 1 }",
+                valid,
+                "long-alnum-identifier-length",
+            ),
+        ))
     for spelling in (
         "i", "if", "ifx", "in", "init", "initx", "is", "island",
         "as", "assert", "let", "letter", "Int64", "Int64x", "z", "z9",
@@ -382,6 +433,32 @@ def _executed_scale_values(cases: Sequence[Case]) -> tuple[list[int], list[int]]
     return local_counts, identifier_lengths
 
 
+def _filter_scale_cases(
+    cases: Sequence[Case],
+    max_local_count: int | None,
+    max_identifier_length: int | None,
+) -> list[Case]:
+    filtered: list[Case] = []
+    for case in cases:
+        if (
+            max_local_count is not None
+            and case.family == "local-count"
+            and int(case.name.split("-", 2)[1]) > max_local_count
+        ):
+            continue
+        if max_identifier_length is not None:
+            if case.family == "identifier-length":
+                length = int(case.name.split("-", 2)[1])
+            elif case.family == "long-alnum-identifier-length":
+                length = int(case.name.split("-")[2])
+            else:
+                length = None
+            if length is not None and length > max_identifier_length:
+                continue
+        filtered.append(case)
+    return filtered
+
+
 def run_layout_checked(
     solution: Path,
     case: Case,
@@ -455,19 +532,9 @@ def main() -> int:
         parser.error(f"JSON output already exists; refusing to overwrite: {output}")
 
     encoding = tiktoken.get_encoding("cl100k_base")
-    cases = build_cases()
-    if args.max_local_count is not None:
-        cases = [
-            case for case in cases
-            if case.family != "local-count" or
-            int(case.name.split("-", 2)[1]) <= args.max_local_count
-        ]
-    if args.max_identifier_length is not None:
-        cases = [
-            case for case in cases
-            if case.family != "identifier-length" or
-            int(case.name.split("-", 2)[1]) <= args.max_identifier_length
-        ]
+    cases = _filter_scale_cases(
+        build_cases(), args.max_local_count, args.max_identifier_length
+    )
     protocols = (False, True) if args.protocol == "both" else (args.protocol == "competition",)
     observations: list[dict[str, object]] = []
     started = time.perf_counter()

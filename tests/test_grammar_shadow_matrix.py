@@ -9,6 +9,7 @@ from tools.run_grammar_shadow_matrix import (
     build_cases,
     fragment,
     _executed_scale_values,
+    _filter_scale_cases,
 )
 
 
@@ -99,10 +100,16 @@ class GrammarShadowMatrixTest(unittest.TestCase):
             "identifier-start-after-keyword-digit",
             "identifier-start-after-primitive-digit",
             "identifier-number-nullable-boundary",
+            "identifier-gap-internal-digit-array",
+            "identifier-gap-internal-letter-array",
+            "identifier-gap-no-invented-letter-capacity",
+            "identifier-gap-two-letter-capacity",
             "long-identifier-literal-prefix",
             "long-identifier-literal-midfix",
             "long-identifier-natural",
             "long-identifier-mixed",
+            "long-alnum-4096-early-digit",
+            "long-alnum-4096-alternating",
             "multiline-before-long-identifier",
             "variable-declaration",
             "assignment",
@@ -133,6 +140,17 @@ class GrammarShadowMatrixTest(unittest.TestCase):
             "late-error",
         }
         self.assertTrue(required.issubset(self.by_name))
+
+    def test_long_alnum_shape_identifiers_are_exactly_4kib(self) -> None:
+        early_digit = self.by_name["long-alnum-4096-early-digit"].source
+        alternating = self.by_name["long-alnum-4096-alternating"].source
+        early_identifier = early_digit.split("let ", 1)[1].split(":", 1)[0]
+        alternating_identifier = alternating.split("let ", 1)[1].split(":", 1)[0]
+
+        self.assertEqual(len(early_identifier.encode("ascii")), 4096)
+        self.assertEqual(early_identifier[:2], "a1")
+        self.assertEqual(len(alternating_identifier.encode("ascii")), 4096)
+        self.assertEqual(alternating_identifier, "a1" * 2048)
 
     def test_illegal_token_is_inserted_at_every_representative_byte_boundary(self) -> None:
         base = "main(): Unit {\nlet value: Int64 = 1;\nvalue += 2;\n}\n"
@@ -175,6 +193,15 @@ class GrammarShadowMatrixTest(unittest.TestCase):
         locals_executed, identifiers_executed = _executed_scale_values(filtered)
         self.assertEqual(locals_executed, [0, 1, 2, 10, 25])
         self.assertEqual(identifiers_executed, [1, 2, 8, 16, 32, 64])
+
+    def test_identifier_length_filter_covers_alphanumeric_shapes(self) -> None:
+        filtered = _filter_scale_cases(self.cases, None, 128)
+        names = {case.name for case in filtered}
+
+        self.assertIn("long-alnum-64-early-digit", names)
+        self.assertIn("long-alnum-128-alternating", names)
+        self.assertNotIn("long-alnum-256-early-digit", names)
+        self.assertNotIn("long-alnum-4096-alternating", names)
 
 
 if __name__ == "__main__":
