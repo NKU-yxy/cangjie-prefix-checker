@@ -1,13 +1,10 @@
 /*
  * Team-authored competition entry.
  *
- * External dependencies:
- * - XGrammar v0.2.1, Apache License 2.0
- * - Apache TVM FFI, Apache License 2.0
- *
- * This file calls public APIs from the dependencies above and does not
- * contain copied implementation source from those projects.
- * See THIRD_PARTY_NOTICES.md for details.
+ * The production syntax matcher is the locally vendored XGrammar v0.2.1
+ * core with a project-maintained, language-equivalent Earley state storage
+ * change.  The unmodified v0.2.1 shared library is linked only by explicit
+ * debug shadow builds.  See THIRD_PARTY_NOTICES.md for provenance.
  *
  * Token decoding, syntax transitions, incremental lexing, and semantic
  * checking all run in this native process.
@@ -38,17 +35,18 @@
 #include <utility>
 #include <vector>
 
-#include <xgrammar/xgrammar.h>
-
+#include "g4_syntax.h"
 #include "native_semantic.h"
 
-// xgrammar 0.2.1 aarch64 wheels are built with a newer GCC than the official
-// Ubuntu 22.04 image.  Their shared library references the new, unversioned
-// iostream initialization hook while GCC 11's libstdc++ does not export it.
-// This executable already initializes the standard streams through <iostream>,
-// so the compatibility hook is intentionally empty.  Newer libstdc++ and
-// libc++ builds use their own implementation and do not compile this shim.
-#if defined(__GLIBCXX__) && defined(__GNUC__) && __GNUC__ < 12
+#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+#include <xgrammar/xgrammar.h>
+#endif
+
+// The legacy v0.2.1 AArch64 wheel used by debug shadow builds was compiled
+// with a newer GCC than the official Ubuntu 22.04 image.  It references the
+// unversioned iostream initialization hook that GCC 11 does not export.
+#if defined(CANGJIE_ENABLE_GRAMMAR_SHADOW) && defined(__GLIBCXX__) && \
+    defined(__GNUC__) && __GNUC__ < 12
 namespace std {
 void ios_base_library_init() {}
 }  // namespace std
@@ -233,17 +231,11 @@ class NativeSyntaxChecker {
 #endif
 
     explicit NativeSyntaxChecker(const fs::path& grammar_path)
-        : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
-          compiler_(tokenizer_, 1, false),
-          compiled_(compiler_.CompileGrammar(read_text_file(grammar_path))),
-          matcher_(compiled_) {}
+        : matcher_(read_text_file(grammar_path)) {}
 
 #ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
     NativeSyntaxChecker(InMemoryGrammar, const std::string& grammar_source)
-        : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
-          compiler_(tokenizer_, 1, false),
-          compiled_(compiler_.CompileGrammar(grammar_source)),
-          matcher_(compiled_) {}
+        : matcher_(grammar_source) {}
 #endif
 
     bool check(std::string_view fragment) {
@@ -283,10 +275,7 @@ class NativeSyntaxChecker {
 #endif
 
  private:
-    xgrammar::TokenizerInfo tokenizer_;
-    xgrammar::GrammarCompiler compiler_;
-    xgrammar::CompiledGrammar compiled_;
-    xgrammar::GrammarMatcher matcher_;
+    cangjie::g4::SyntaxMatcher matcher_;
     std::string pending_;
 #ifdef CANGJIE_ENABLE_PROFILE
     ProfileSnapshot profile_;
@@ -294,9 +283,43 @@ class NativeSyntaxChecker {
 };
 
 #ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+class LegacySyntaxChecker {
+ public:
+    explicit LegacySyntaxChecker(const std::string& grammar_source)
+        : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
+          compiler_(tokenizer_, 1, false),
+          compiled_(compiler_.CompileGrammar(grammar_source)),
+          matcher_(compiled_) {}
+
+    bool check(std::string_view fragment) {
+        pending_.append(fragment.data(), fragment.size());
+        std::size_t stable_size = pending_.size();
+        while (stable_size > 0) {
+            const char ch = pending_[stable_size - 1];
+            if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+                break;
+            }
+            --stable_size;
+        }
+        if (stable_size == 0) {
+            return true;
+        }
+        std::string stable = pending_.substr(0, stable_size);
+        pending_.erase(0, stable_size);
+        return matcher_.AcceptString(stable);
+    }
+
+ private:
+    xgrammar::TokenizerInfo tokenizer_;
+    xgrammar::GrammarCompiler compiler_;
+    xgrammar::CompiledGrammar compiled_;
+    xgrammar::GrammarMatcher matcher_;
+    std::string pending_;
+};
+
 struct CapturedException {
     std::exception_ptr pointer;
-    std::string type;
+    std::string kind;
     std::string message;
 };
 
@@ -304,6 +327,10 @@ CapturedException describe_exception(std::exception_ptr pointer) {
     if (!pointer) return {};
     try {
         std::rethrow_exception(pointer);
+    } catch (const cangjie::g4::UpstreamError& error) {
+        return {pointer, "xgrammar:" + error.kind(), error.what()};
+    } catch (const xgrammar::XGrammarError& error) {
+        return {pointer, "xgrammar:" + error.GetType(), error.what()};
     } catch (const std::exception& error) {
         return {pointer, typeid(error).name(), error.what()};
     } catch (...) {
@@ -313,44 +340,20 @@ CapturedException describe_exception(std::exception_ptr pointer) {
 
 bool same_exception(const CapturedException& lhs, const CapturedException& rhs) {
     return static_cast<bool>(lhs.pointer) == static_cast<bool>(rhs.pointer) &&
-           lhs.type == rhs.type && lhs.message == rhs.message;
+           lhs.kind == rhs.kind && lhs.message == rhs.message;
 }
 
 std::string exception_summary(const CapturedException& error) {
     if (!error.pointer) return "none";
-    return error.type + ": " + error.message;
-}
-
-std::string make_control_grammar_for_shadow(std::string candidate) {
-    static constexpr std::string_view kControlRule =
-        "statements ::= statement (ws statements)?";
-    static constexpr std::string_view kCandidateRule =
-        "statements ::= statement (ws statement)*";
-
-    const std::size_t control_pos = candidate.find(kControlRule);
-    const std::size_t candidate_pos = candidate.find(kCandidateRule);
-    const bool one_control = control_pos != std::string::npos &&
-        candidate.find(kControlRule, control_pos + kControlRule.size()) == std::string::npos;
-    const bool one_candidate = candidate_pos != std::string::npos &&
-        candidate.find(kCandidateRule, candidate_pos + kCandidateRule.size()) == std::string::npos;
-    if (one_control == one_candidate) {
-        throw std::runtime_error(
-            "grammar shadow requires exactly one control or candidate statements rule"
-        );
-    }
-    if (one_candidate) {
-        candidate.replace(candidate_pos, kCandidateRule.size(), kControlRule);
-    }
-    return candidate;
+    return error.kind + ": " + error.message;
 }
 
 class GrammarShadowSyntaxChecker {
  public:
     explicit GrammarShadowSyntaxChecker(const fs::path& grammar_path) {
-        const std::string candidate_source = read_text_file(grammar_path);
-        const std::string control_source = make_control_grammar_for_shadow(candidate_source);
-        Creation candidate = create(candidate_source);
-        Creation control = create(control_source);
+        const std::string grammar_source = read_text_file(grammar_path);
+        CandidateCreation candidate = create_candidate(grammar_source);
+        ControlCreation control = create_control(grammar_source);
         ensure_matching_exceptions("matcher initialization", candidate.error, control.error);
         if (candidate.error.pointer) std::rethrow_exception(candidate.error.pointer);
         candidate_ = std::move(candidate.checker);
@@ -376,15 +379,28 @@ class GrammarShadowSyntaxChecker {
             candidate_first_reject_ != control_first_reject_ ||
             candidate_transcript_.size() != control_transcript_.size()) {
             throw std::runtime_error(
-                "grammar shadow mismatch at fragment " + std::to_string(index)
+                "grammar shadow mismatch at fragment " + std::to_string(index) +
+                "; candidate=" + std::to_string(candidate.value) +
+                "; control=" + std::to_string(control.value) +
+                "; candidate_first_reject=" + std::to_string(candidate_first_reject_) +
+                "; control_first_reject=" + std::to_string(control_first_reject_)
             );
         }
         return candidate.value;
     }
 
+#ifdef CANGJIE_ENABLE_PROFILE
+    NativeSyntaxChecker::ProfileSnapshot profile() const { return candidate_->profile(); }
+#endif
+
  private:
-    struct Creation {
+    struct CandidateCreation {
         std::unique_ptr<NativeSyntaxChecker> checker;
+        CapturedException error;
+    };
+
+    struct ControlCreation {
+        std::unique_ptr<LegacySyntaxChecker> checker;
         CapturedException error;
     };
 
@@ -393,7 +409,7 @@ class GrammarShadowSyntaxChecker {
         CapturedException error;
     };
 
-    static Creation create(const std::string& source) {
+    static CandidateCreation create_candidate(const std::string& source) {
         try {
             return {
                 std::make_unique<NativeSyntaxChecker>(
@@ -406,7 +422,16 @@ class GrammarShadowSyntaxChecker {
         }
     }
 
-    static CheckResult run_check(NativeSyntaxChecker* checker, std::string_view fragment) {
+    static ControlCreation create_control(const std::string& source) {
+        try {
+            return {std::make_unique<LegacySyntaxChecker>(source), {}};
+        } catch (...) {
+            return {nullptr, describe_exception(std::current_exception())};
+        }
+    }
+
+    template <typename Checker>
+    static CheckResult run_check(Checker* checker, std::string_view fragment) {
         try {
             return {checker->check(fragment), {}};
         } catch (...) {
@@ -429,7 +454,7 @@ class GrammarShadowSyntaxChecker {
 
     static constexpr std::size_t kNoReject = static_cast<std::size_t>(-1);
     std::unique_ptr<NativeSyntaxChecker> candidate_;
-    std::unique_ptr<NativeSyntaxChecker> control_;
+    std::unique_ptr<LegacySyntaxChecker> control_;
     std::vector<bool> candidate_transcript_;
     std::vector<bool> control_transcript_;
     std::size_t candidate_first_reject_ = kNoReject;

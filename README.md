@@ -103,6 +103,7 @@ XGrammar/
 ├── context.json
 ├── cpp/
 │   ├── solution.cpp           # 竞赛协议、token 解码和 XGrammar 语法状态
+│   ├── g4_syntax.cpp/.h       # vendored matcher 的 namespace 隔离封装
 │   ├── native_semantic.cpp    # C++ 词法和语义引擎
 │   └── native_semantic.h
 ├── grammar/
@@ -121,6 +122,7 @@ XGrammar/
 │   └── production_benchmark.py
 ├── tests/
 ├── src/                      # Python oracle、历史实现和回归支持
+├── vendor/xgrammar-v0.2.1/   # 锁定并披露本地修改的 XGrammar C++ core
 └── third_party/cangjie_typechecker/
 ```
 
@@ -182,7 +184,7 @@ typing-extensions>=4.9.0
 python3 -m pip install --user -r requirements.txt
 ```
 
-`build.sh` 还会检查 XGrammar C++ 头文件和共享库；环境中缺少 XGrammar 时，脚本会安装固定版本 `xgrammar==0.2.1`。仅希望构建竞赛程序时，也可以直接执行 `build.sh`，由脚本检查并补齐生产依赖。
+常规 `build.sh` 直接编译仓库内锁定的 XGrammar C++ core，不安装或加载 XGrammar wheel/TVM FFI。`requirements.txt` 中的 TVM FFI 供开发工具及显式 old/new grammar shadow 使用；仅在设置 `CANGJIE_GRAMMAR_SHADOW_BUILD=1` 时，构建脚本才检查并按需安装固定的 `xgrammar==0.2.1` 与 TVM FFI。
 
 ## 8. 构建
 
@@ -195,11 +197,12 @@ chmod +x build.sh
 
 构建脚本会完成以下工作：
 
-1. 检查并安装必要的 Python 构建依赖；
+1. 检查并安装生成 token 表所需的 Python 构建依赖；
 2. 生成 `cl100k_base` token 二进制查表；
 3. 将 `context.json` 转换为原生上下文表；
-4. 使用 C++17 和 `-O3` 编译纯 C++ 检查器；
-5. 将项目根目录的 `solution` 更新为可执行文件。
+4. 将 vendored XGrammar core 编译到隔离的 `xgrammar_g4` namespace；
+5. 使用 C++17 和 `-O3` 静态链接纯 C++ 检查器；
+6. 将项目根目录的 `solution` 更新为可执行文件。
 
 构建产物：
 
@@ -437,9 +440,9 @@ CANGJIE_DEBUG_SEMANTIC=1 ./solution < token_ids.txt
 
 确认 `grammar/cangjie.gbnf` 存在，并从项目根目录启动程序。
 
-### XGrammar 或 TVM FFI 共享库无法加载
+### debug grammar shadow 提示 XGrammar 或 TVM FFI 共享库无法加载
 
-重新执行 `./build.sh`。构建脚本会定位 XGrammar 与 TVM FFI 的共享库并写入运行时搜索路径。Linux 环境还应确认 XGrammar 和 TVM FFI 来自当前 Python 环境。
+常规生产构建没有这两个动态依赖。仅对设置了 `CANGJIE_GRAMMAR_SHADOW_BUILD=1` 的调试构建，重新执行同一环境变量下的 `./build.sh`；脚本会定位未修改的 v0.2.1 wheel 与 TVM FFI，并写入调试二进制的运行时搜索路径。
 
 ### 应该使用哪一种输出协议
 
@@ -454,11 +457,11 @@ CANGJIE_DEBUG_SEMANTIC=1 ./solution < token_ids.txt
 
 ## 15. 第三方依赖与来源
 
-- [XGrammar v0.2.1](https://github.com/mlc-ai/xgrammar)：提供通用 GBNF 编译和字符级语法匹配能力，采用 Apache License 2.0；
-- [Apache TVM FFI](https://tvm.apache.org/ffi/index.html)：提供 XGrammar 原生共享库依赖；
+- [XGrammar v0.2.1](https://github.com/mlc-ai/xgrammar)：锁定 commit `5b4e9ce9e72524037ae24ecd831b9b6604d2eb48`，其生产 C++ core 与三文件本地修改一并 vendored，采用 Apache License 2.0；
+- [Apache TVM FFI](https://tvm.apache.org/ffi/index.html)：仅为显式 old/new debug shadow 中的未修改 XGrammar wheel 提供共享库依赖；
 - [tiktoken](https://github.com/openai/tiktoken)：用于构建期生成 `cl100k_base` token 查表数据，采用 MIT License；
 - [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker)：竞赛配套公开样例、交互测试工具和 typechecker 来源。
 
-第三方依赖、许可证、分发方式和本队原创边界统一记录在 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中。最终提交框架不包含 XGrammar、TVM FFI、tiktoken 或 Lark 的源码副本；前三者按构建或运行需要从外部环境安装，Lark 仅用于开发测试。
+第三方依赖、许可证、分发方式和本队原创边界统一记录在 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中。最终提交框架包含 `vendor/xgrammar-v0.2.1/` 的可审计 core 闭包、DLPack/PicoJSON 单头和许可证；不包含 TVM FFI、tiktoken 或 Lark 的源码副本。生产构建仅在生成 token 表时调用外部 tiktoken，不动态依赖 XGrammar/TVM FFI。
 
-最终提交框架包含 `third_party/cangjie_typechecker/`。该目录基于竞赛配套公开仓库 [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker) 中的 typechecker，由本队作少量开发期适配，仅用于完整程序解析、差分测试、随机程序合法性标注和实验复现，不参与 `solution` 的编译、链接或运行。该目录及其本地修改均不作为本队原创成果，也不计入本队原创代码量；具体来源、修改文件和边界见目录内 README 与 `THIRD_PARTY_NOTICES.md`。生产运行路径由本队编写的 C++ 检查器、面向赛题子集适配的仓颉 GBNF、构建与数据生成工具，以及外部安装的 XGrammar/TVM FFI 依赖构成。
+最终提交框架包含 `third_party/cangjie_typechecker/`。该目录基于竞赛配套公开仓库 [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker) 中的 typechecker，由本队作少量开发期适配，仅用于完整程序解析、差分测试、随机程序合法性标注和实验复现，不参与 `solution` 的编译、链接或运行。该目录及其本地修改均不作为本队原创成果，也不计入本队原创代码量；具体来源、修改文件和边界见目录内 README 与 `THIRD_PARTY_NOTICES.md`。生产运行路径由本队编写的 C++ 入口与语义检查器、面向赛题子集适配的仓颉 GBNF、构建与数据生成工具，以及静态链接的 vendored XGrammar core 构成。
