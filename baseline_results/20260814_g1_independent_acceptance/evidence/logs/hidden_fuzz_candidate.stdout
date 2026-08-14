@@ -1,0 +1,24 @@
+{
+  "seed": 20260805,
+  "cases_per_family": 12,
+  "generated_cases": 144,
+  "families": {
+    "multiline": 24,
+    "nested_lambda": 24,
+    "overload": 24,
+    "generic_inheritance": 24,
+    "valid_zero_false_positive": 24,
+    "scope_isolation": 24
+  },
+  "fragmentations": [
+    "byte",
+    "random",
+    "line",
+    "cl100k",
+    "whole"
+  ],
+  "official_labels_checked": 144,
+  "solution_checked": true,
+  "legacy_prefix_disagreements": 190,
+  "failures": 0
+}

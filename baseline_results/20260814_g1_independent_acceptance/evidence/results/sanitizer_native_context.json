@@ -1,0 +1,92 @@
+{
+  "asan_options": "detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1",
+  "ubsan_options": "halt_on_error=1:print_stacktrace=1",
+  "passed": 7,
+  "total": 7,
+  "observations": [
+    {
+      "name": "global variable",
+      "expected_valid": true,
+      "actual_valid": true,
+      "fragments": 14,
+      "answers": 14,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "protocol_ok": true,
+      "ok": true
+    },
+    {
+      "name": "overload",
+      "expected_valid": true,
+      "actual_valid": true,
+      "fragments": 16,
+      "answers": 16,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "protocol_ok": true,
+      "ok": true
+    },
+    {
+      "name": "overload mismatch",
+      "expected_valid": false,
+      "actual_valid": false,
+      "fragments": 15,
+      "answers": 14,
+      "first_reject": 13,
+      "returncode": 0,
+      "stderr": "",
+      "protocol_ok": true,
+      "ok": true
+    },
+    {
+      "name": "default parameter",
+      "expected_valid": true,
+      "actual_valid": true,
+      "fragments": 16,
+      "answers": 16,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "protocol_ok": true,
+      "ok": true
+    },
+    {
+      "name": "generic class",
+      "expected_valid": true,
+      "actual_valid": true,
+      "fragments": 27,
+      "answers": 27,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "protocol_ok": true,
+      "ok": true
+    },
+    {
+      "name": "generic constructor mismatch",
+      "expected_valid": false,
+      "actual_valid": false,
+      "fragments": 21,
+      "answers": 19,
+      "first_reject": 18,
+      "returncode": 0,
+      "stderr": "",
+      "protocol_ok": true,
+      "ok": true
+    },
+    {
+      "name": "static field",
+      "expected_valid": true,
+      "actual_valid": true,
+      "fragments": 16,
+      "answers": 16,
+      "first_reject": null,
+      "returncode": 0,
+      "stderr": "",
+      "protocol_ok": true,
+      "ok": true
+    }
+  ]
+}

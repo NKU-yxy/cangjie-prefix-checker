@@ -1,0 +1,327 @@
+ ...0813_correctness_control_arm64_profile_624.json | 69178 +++++++++++++++++++
+ .../20260813_correctness_first_followup_report.md  |   155 +
+ ...260813_snapshot_candidate_index_68d780d_A1.json |  4486 ++
+ ...260813_snapshot_candidate_index_68d780d_A2.json |  4486 ++
+ ...0260813_snapshot_candidate_index_735a52e_B.json |  4486 ++
+ .../20260813_snapshot_candidate_index_elf.txt      |    40 +
+ ...260813_snapshot_candidate_index_environment.txt |    21 +
+ ..._candidate_index_extended_official_harness.json |   714 +
+ ...hot_candidate_index_extended_r1_68d780d_A1.json |  8686 +++
+ ...hot_candidate_index_extended_r1_68d780d_A2.json |  8686 +++
+ ...shot_candidate_index_extended_r1_735a52e_B.json |  8686 +++
+ ...apshot_candidate_index_extended_r1_verdict.json |   459 +
+ ...hot_candidate_index_extended_r2_68d780d_A1.json |  8686 +++
+ ...hot_candidate_index_extended_r2_68d780d_A2.json |  8686 +++
+ ...shot_candidate_index_extended_r2_735a52e_B.json |  8686 +++
+ ...apshot_candidate_index_extended_r2_verdict.json |   459 +
+ ...ot_candidate_index_extended_solution_sha256.txt |     2 +
+ .../20260813_snapshot_candidate_index_gate.md      |    70 +
+ .../20260813_snapshot_candidate_index_verdict.json |   459 +
+ .../20260813_snapshot_candidate_index_verdict.md   |    95 +
+ baseline_results/README.md                         |    10 +
+ build.sh                                           |     3 +
+ cpp/solution.cpp                                   |   209 +
+ grammar/cangjie.gbnf                               |     2 +-
+ grammar/cangjie_token.gbnf                         |     2 +-
+ test_cases/comprehensive/manifest.json             |     4 +-
+ tests/test_grammar_shadow_matrix.py                |   117 +
+ tools/run_grammar_shadow_matrix.py                 |   379 +
+ 28 files changed, 137948 insertions(+), 4 deletions(-)
+A	baseline_results/20260813_correctness_control_arm64_profile_624.json
+A	baseline_results/20260813_correctness_first_followup_report.md
+A	baseline_results/20260813_snapshot_candidate_index_68d780d_A1.json
+A	baseline_results/20260813_snapshot_candidate_index_68d780d_A2.json
+A	baseline_results/20260813_snapshot_candidate_index_735a52e_B.json
+A	baseline_results/20260813_snapshot_candidate_index_elf.txt
+A	baseline_results/20260813_snapshot_candidate_index_environment.txt
+A	baseline_results/20260813_snapshot_candidate_index_extended_official_harness.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_r1_68d780d_A1.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_r1_68d780d_A2.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_r1_735a52e_B.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_r1_verdict.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_r2_68d780d_A1.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_r2_68d780d_A2.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_r2_735a52e_B.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_r2_verdict.json
+A	baseline_results/20260813_snapshot_candidate_index_extended_solution_sha256.txt
+A	baseline_results/20260813_snapshot_candidate_index_gate.md
+A	baseline_results/20260813_snapshot_candidate_index_verdict.json
+A	baseline_results/20260813_snapshot_candidate_index_verdict.md
+M	baseline_results/README.md
+M	build.sh
+M	cpp/solution.cpp
+M	grammar/cangjie.gbnf
+M	grammar/cangjie_token.gbnf
+M	test_cases/comprehensive/manifest.json
+A	tests/test_grammar_shadow_matrix.py
+A	tools/run_grammar_shadow_matrix.py
+diff --git a/build.sh b/build.sh
+index 2c86dba..73e7d40 100755
+--- a/build.sh
++++ b/build.sh
+@@ -63,0 +64,3 @@ fi
++if [[ "${CANGJIE_GRAMMAR_SHADOW_BUILD:-0}" == "1" ]]; then
++  native_compile_flags+=("-DCANGJIE_ENABLE_GRAMMAR_SHADOW=1")
++fi
+diff --git a/cpp/solution.cpp b/cpp/solution.cpp
+index 66447cb..fe84bec 100644
+--- a/cpp/solution.cpp
++++ b/cpp/solution.cpp
+@@ -23,0 +24,3 @@
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++#include <exception>
++#endif
+@@ -31,0 +35,3 @@
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++#include <typeinfo>
++#endif
+@@ -216,0 +223,3 @@ class NativeSyntaxChecker {
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++    struct InMemoryGrammar {};
++#endif
+@@ -231,0 +241,8 @@ class NativeSyntaxChecker {
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++    NativeSyntaxChecker(InMemoryGrammar, const std::string& grammar_source)
++        : tokenizer_(std::vector<std::string>{"x"}, xgrammar::VocabType::RAW),
++          compiler_(tokenizer_, 1, false),
++          compiled_(compiler_.CompileGrammar(grammar_source)),
++          matcher_(compiled_) {}
++#endif
++
+@@ -278,0 +296,168 @@ class NativeSyntaxChecker {
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++struct CapturedException {
++    std::exception_ptr pointer;
++    std::string type;
++    std::string message;
++};
++
++CapturedException describe_exception(std::exception_ptr pointer) {
++    if (!pointer) return {};
++    try {
++        std::rethrow_exception(pointer);
++    } catch (const std::exception& error) {
++        return {pointer, typeid(error).name(), error.what()};
++    } catch (...) {
++        return {pointer, "non-std-exception", ""};
++    }
++}
++
++bool same_exception(const CapturedException& lhs, const CapturedException& rhs) {
++    return static_cast<bool>(lhs.pointer) == static_cast<bool>(rhs.pointer) &&
++           lhs.type == rhs.type && lhs.message == rhs.message;
++}
++
++std::string exception_summary(const CapturedException& error) {
++    if (!error.pointer) return "none";
++    return error.type + ": " + error.message;
++}
++
++std::string make_control_grammar_for_shadow(std::string candidate) {
++    static constexpr std::string_view kControlRule =
++        "statements ::= statement (ws statements)?";
++    static constexpr std::string_view kCandidateRule =
++        "statements ::= statement (ws statement)*";
++
++    const std::size_t control_pos = candidate.find(kControlRule);
++    const std::size_t candidate_pos = candidate.find(kCandidateRule);
++    const bool one_control = control_pos != std::string::npos &&
++        candidate.find(kControlRule, control_pos + kControlRule.size()) == std::string::npos;
++    const bool one_candidate = candidate_pos != std::string::npos &&
++        candidate.find(kCandidateRule, candidate_pos + kCandidateRule.size()) == std::string::npos;
++    if (one_control == one_candidate) {
++        throw std::runtime_error(
++            "grammar shadow requires exactly one control or candidate statements rule"
++        );
++    }
++    if (one_candidate) {
++        candidate.replace(candidate_pos, kCandidateRule.size(), kControlRule);
++    }
++    return candidate;
++}
++
++class GrammarShadowSyntaxChecker {
++ public:
++    explicit GrammarShadowSyntaxChecker(const fs::path& grammar_path) {
++        const std::string candidate_source = read_text_file(grammar_path);
++        const std::string control_source = make_control_grammar_for_shadow(candidate_source);
++        Creation candidate = create(candidate_source);
++        Creation control = create(control_source);
++        ensure_matching_exceptions("matcher initialization", candidate.error, control.error);
++        if (candidate.error.pointer) std::rethrow_exception(candidate.error.pointer);
++        candidate_ = std::move(candidate.checker);
++        control_ = std::move(control.checker);
++    }
++
++    bool check(std::string_view fragment) {
++        CheckResult candidate = run_check(candidate_.get(), fragment);
++        CheckResult control = run_check(control_.get(), fragment);
++        ensure_matching_exceptions("AcceptString", candidate.error, control.error);
++        if (candidate.error.pointer) std::rethrow_exception(candidate.error.pointer);
++
++        candidate_transcript_.push_back(candidate.value);
++        control_transcript_.push_back(control.value);
++        const std::size_t index = candidate_transcript_.size() - 1;
++        if (!candidate.value && candidate_first_reject_ == kNoReject) {
++            candidate_first_reject_ = index;
++        }
++        if (!control.value && control_first_reject_ == kNoReject) {
++            control_first_reject_ = index;
++        }
++        if (candidate.value != control.value ||
++            candidate_first_reject_ != control_first_reject_ ||
++            candidate_transcript_.size() != control_transcript_.size()) {
++            throw std::runtime_error(
++                "grammar shadow mismatch at fragment " + std::to_string(index)
++            );
++        }
++        return candidate.value;
++    }
++
++ private:
++    struct Creation {
++        std::unique_ptr<NativeSyntaxChecker> checker;
++        CapturedException error;
++    };
++
++    struct CheckResult {
++        bool value = false;
++        CapturedException error;
++    };
++
++    static Creation create(const std::string& source) {
++        try {
++            return {
++                std::make_unique<NativeSyntaxChecker>(
++                    NativeSyntaxChecker::InMemoryGrammar{}, source
++                ),
++                {}
++            };
++        } catch (...) {
++            return {nullptr, describe_exception(std::current_exception())};
++        }
++    }
++
++    static CheckResult run_check(NativeSyntaxChecker* checker, std::string_view fragment) {
++        try {
++            return {checker->check(fragment), {}};
++        } catch (...) {
++            return {false, describe_exception(std::current_exception())};
++        }
++    }
++
++    static void ensure_matching_exceptions(
++        std::string_view operation,
++        const CapturedException& candidate,
++        const CapturedException& control
++    ) {
++        if (same_exception(candidate, control)) return;
++        throw std::runtime_error(
++            "grammar shadow exception mismatch during " + std::string(operation) +
++            "; candidate=" + exception_summary(candidate) +
++            "; control=" + exception_summary(control)
++        );
++    }
++
++    static constexpr std::size_t kNoReject = static_cast<std::size_t>(-1);
++    std::unique_ptr<NativeSyntaxChecker> candidate_;
++    std::unique_ptr<NativeSyntaxChecker> control_;
++    std::vector<bool> candidate_transcript_;
++    std::vector<bool> control_transcript_;
++    std::size_t candidate_first_reject_ = kNoReject;
++    std::size_t control_first_reject_ = kNoReject;
++};
++
++int hex_digit_value(char digit) {
++    if (digit >= '0' && digit <= '9') return digit - '0';
++    if (digit >= 'a' && digit <= 'f') return digit - 'a' + 10;
++    if (digit >= 'A' && digit <= 'F') return digit - 'A' + 10;
++    return -1;
++}
++
++std::string decode_hex_fragment(std::string_view line) {
++    if (line.size() % 2 != 0) {
++        throw std::runtime_error("grammar shadow fragment has odd-length hex input");
++    }
++    std::string fragment;
++    fragment.reserve(line.size() / 2);
++    for (std::size_t index = 0; index < line.size(); index += 2) {
++        const int high = hex_digit_value(line[index]);
++        const int low = hex_digit_value(line[index + 1]);
++        if (high < 0 || low < 0) {
++            throw std::runtime_error("grammar shadow fragment has invalid hex input");
++        }
++        fragment.push_back(static_cast<char>((high << 4) | low));
++    }
++    return fragment;
++}
++#endif
++
+@@ -281,0 +467,3 @@ struct Args {
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++    bool grammar_shadow_fragments = false;
++#endif
+@@ -293,0 +482,4 @@ Args parse_args(int argc, char** argv) {
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++        } else if (arg == "--grammar-shadow-fragments") {
++            result.grammar_shadow_fragments = true;
++#endif
+@@ -354,0 +547,13 @@ int main(int argc, char** argv) {
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++        if (args.grammar_shadow_fragments) {
++            GrammarShadowSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
++            std::string encoded_fragment;
++            while (std::getline(std::cin, encoded_fragment)) {
++                const std::string fragment = decode_hex_fragment(encoded_fragment);
++                const bool ok = syntax.check(fragment);
++                emit(ok, args.competition_output);
++                if (!ok) break;
++            }
++            return 0;
++        }
++#endif
+@@ -376,0 +582,3 @@ int main(int argc, char** argv) {
++#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
++        GrammarShadowSyntaxChecker syntax(root / "grammar" / "cangjie.gbnf");
++#else
+@@ -377,0 +586 @@ int main(int argc, char** argv) {
++#endif
+diff --git a/grammar/cangjie.gbnf b/grammar/cangjie.gbnf
+index fc3e910..1a192da 100644
+--- a/grammar/cangjie.gbnf
++++ b/grammar/cangjie.gbnf
+@@ -210 +210 @@ block ::= "{" ws "}" | "{" ws statements ws "}"
+-statements ::= statement (ws statements)?
++statements ::= statement (ws statement)*
+diff --git a/grammar/cangjie_token.gbnf b/grammar/cangjie_token.gbnf
+index 0cd93ad..936c194 100644
+--- a/grammar/cangjie_token.gbnf
++++ b/grammar/cangjie_token.gbnf
+@@ -146 +146 @@ block ::= "LBRACE" statements? "RBRACE"
+-statements ::= statement statements?
++statements ::= statement statement*
+diff --git a/test_cases/comprehensive/manifest.json b/test_cases/comprehensive/manifest.json
+index 26fc079..26722c2 100644
+--- a/test_cases/comprehensive/manifest.json
++++ b/test_cases/comprehensive/manifest.json
+@@ -74,2 +74,2 @@
+-      "grammar/cangjie.gbnf": "6131041ed52120b65ee75440c97704dfe91d1a0fda0aaf99b3e1c75e3054f989",
+-      "grammar/cangjie_token.gbnf": "cbe033bea0b88c4d042e258cb4a9b79dfe0912072dc6b5468f742c5d57d6dae0",
++      "grammar/cangjie.gbnf": "eb4a5cd0b705407281860bd2ddf1e20b97ad48aceafd96621d55c1385c06ca90",
++      "grammar/cangjie_token.gbnf": "1cb6503b4ce8c24b6a4f12b7ff0ee1a7e8f4d09273bf4e87d254749209096cc1",
+./build.sh:64:if [[ "${CANGJIE_GRAMMAR_SHADOW_BUILD:-0}" == "1" ]]; then
+./build.sh:65:  native_compile_flags+=("-DCANGJIE_ENABLE_GRAMMAR_SHADOW=1")
+./grammar/cangjie_token.gbnf:16:# The lexer maps any_identifier -> IDENT, raw_identifier -> RAW_IDENT
+./cpp/native_semantic.cpp:4406:    return IsRegexIdentifierStart(ch) || (ch >= '0' && ch <= '9');
+./cpp/native_semantic.cpp:4828:            IsIdentifierText(declaration->second) ||
+./cpp/solution.cpp:24:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./cpp/solution.cpp:35:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./cpp/solution.cpp:45:// xgrammar 0.2.1 aarch64 wheels are built with a newer GCC than the official
+./cpp/solution.cpp:223:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./cpp/solution.cpp:241:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./cpp/solution.cpp:296:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./cpp/solution.cpp:467:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./cpp/solution.cpp:482:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./cpp/solution.cpp:547:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./cpp/solution.cpp:582:#ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
+./grammar/cangjie.gbnf:6:# Where they differ, the competition specification and official checker behavior
