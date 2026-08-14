@@ -389,22 +389,24 @@ class NativeSyntaxChecker {
         BlockComment,
     };
 
-    bool probe(std::string_view text) const {
-        xgrammar::GrammarMatcher fork = matcher_.Fork();
-        return fork.AcceptString(std::string(text));
-    }
-
-    bool probe_identifier() const {
-        // The mutable matcher has consumed only the already-flushed quotient.
-        // Keep an unfinished suffix verbatim whenever it can still grow into a
-        // grammar literal, then test the same quotient on a fork.
+    std::string identifier_probe_text() const {
+        // Build the quotient for the still-buffered suffix.  Keep source bytes
+        // verbatim whenever they can still grow into a multi-character grammar
+        // literal; the speculative matcher step is reconciled separately.
         std::vector<bool> covered = identifier_covered_;
         for (std::size_t start = 0; start < identifier_buffer_.size(); ++start) {
             const std::string_view suffix(identifier_buffer_.data() + start,
                                           identifier_buffer_.size() - start);
             const bool can_complete_literal = std::any_of(
                 identifier_literals_.begin(), identifier_literals_.end(),
-                [&](const std::string& literal) { return starts_with(literal, suffix); }
+                [&](const std::string& literal) {
+                    // All one-character identifier-shaped terminals in the
+                    // locked grammar are already covered by any_identifier in
+                    // normal code.  Rune/string uses are handled by their
+                    // lexical modes, so retaining _, r, or u here only creates
+                    // a redundant speculative state.
+                    return literal.size() > 1 && starts_with(literal, suffix);
+                }
             );
             if (can_complete_literal) {
                 std::fill(covered.begin() + static_cast<std::ptrdiff_t>(start),
@@ -422,11 +424,41 @@ class NativeSyntaxChecker {
                 ++generic_gap_size;
             }
         }
-        return representative.empty() || probe(representative);
+        return representative;
     }
 
-    bool probe_raw_identifier() const {
-        return raw_identifier_valid_ && probe("`" + canonical_identifier_ + "`");
+    bool accept_normalized_and_probe(
+        std::string normalized,
+        bool has_probe,
+        const std::string& probe_text
+    ) {
+        if (speculative_probe_active_) {
+            if (normalized.empty() && has_probe &&
+                probe_text == speculative_probe_text_) {
+                return true;
+            }
+            if (normalized.size() >= speculative_probe_text_.size() &&
+                normalized.compare(
+                    0, speculative_probe_text_.size(), speculative_probe_text_
+                ) == 0) {
+                normalized.erase(0, speculative_probe_text_.size());
+            } else {
+                matcher_.Rollback(1);
+            }
+            speculative_probe_active_ = false;
+            speculative_probe_text_.clear();
+        }
+
+        if (!normalized.empty() && !matcher_.AcceptString(normalized)) return false;
+        if (!has_probe) return true;
+
+        // A successful AcceptString call is exactly one rollback step in
+        // XGrammar 0.2.1.  Keep it live until the next fragment either commits
+        // the same quotient or proves that the unfinished suffix changed.
+        if (!matcher_.AcceptString(probe_text)) return false;
+        speculative_probe_active_ = true;
+        speculative_probe_text_ = probe_text;
+        return true;
     }
 
     void mark_completed_identifier_literals() {
@@ -441,6 +473,29 @@ class NativeSyntaxChecker {
                 std::fill(
                     identifier_covered_.begin() + static_cast<std::ptrdiff_t>(start),
                     identifier_covered_.end(), true
+                );
+            }
+        }
+    }
+
+    void mark_identifier_literal_prefix_suffixes() {
+        for (std::size_t start = 0; start < identifier_buffer_.size(); ++start) {
+            const std::string_view suffix(
+                identifier_buffer_.data() + start,
+                identifier_buffer_.size() - start
+            );
+            const bool can_complete_literal = std::any_of(
+                identifier_literals_.begin(),
+                identifier_literals_.end(),
+                [&](const std::string& literal) {
+                    return literal.size() > 1 && starts_with(literal, suffix);
+                }
+            );
+            if (can_complete_literal) {
+                std::fill(
+                    identifier_covered_.begin() + static_cast<std::ptrdiff_t>(start),
+                    identifier_covered_.end(),
+                    true
                 );
             }
         }
@@ -516,6 +571,21 @@ class NativeSyntaxChecker {
                         identifier_covered_.push_back(false);
                         consume();
                         mark_completed_identifier_literals();
+                        if (!is_ascii_identifier_start(ch)) {
+                            // In the scannerless grammar, a digit inside a
+                            // maximal identifier run can also begin a numeric
+                            // rule at a nullable boundary.  Preserve the digit
+                            // and the remainder exactly instead of inventing
+                            // or deleting such branches in the quotient.
+                            mark_identifier_literal_prefix_suffixes();
+                            identifier_covered_.back() = true;
+                            flush_identifier_prefix(
+                                identifier_buffer_.size(), &normalized
+                            );
+                            identifier_generic_gap_size_ = 0;
+                            lexical_mode_ = LexicalMode::ExactIdentifier;
+                            break;
+                        }
                         // Retaining one maximum-literal window is sufficient:
                         // no future byte can make an older position part of a
                         // newly completed grammar terminal.
@@ -693,10 +763,20 @@ class NativeSyntaxChecker {
             }
         }
 
-        if (!normalized.empty() && !matcher_.AcceptString(normalized)) return false;
-        if (lexical_mode_ == LexicalMode::Identifier) return probe_identifier();
-        if (lexical_mode_ == LexicalMode::RawIdentifier) return probe_raw_identifier();
-        return true;
+        if (lexical_mode_ == LexicalMode::Identifier) {
+            std::string probe_text = identifier_probe_text();
+            return accept_normalized_and_probe(
+                std::move(normalized), !probe_text.empty(), probe_text
+            );
+        }
+        if (lexical_mode_ == LexicalMode::RawIdentifier) {
+            if (!raw_identifier_valid_) return false;
+            const std::string probe_text = "`" + canonical_identifier_ + "`";
+            return accept_normalized_and_probe(
+                std::move(normalized), true, probe_text
+            );
+        }
+        return accept_normalized_and_probe(std::move(normalized), false, {});
     }
 
     std::vector<std::string> identifier_literals_;
@@ -706,6 +786,8 @@ class NativeSyntaxChecker {
     xgrammar::GrammarCompiler compiler_;
     xgrammar::CompiledGrammar compiled_;
     xgrammar::GrammarMatcher matcher_;
+    bool speculative_probe_active_ = false;
+    std::string speculative_probe_text_;
     std::string pending_;
     LexicalMode lexical_mode_ = LexicalMode::Normal;
     std::string identifier_buffer_;
