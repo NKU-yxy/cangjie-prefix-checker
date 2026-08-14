@@ -372,6 +372,14 @@ spec-pending 样例有 40 个标签差异，仅作诊断；9 个 scale 样例有
 赛事统一硬门禁。后续先修复两个 authoritative 缺陷并建立
 `219/219` control；不要求为了恢复性能优化而把未经独立证明的诊断项做成 `373/373`。
 
+2026-08-13 后续已修复两个 authoritative 缺陷，当前正确性门禁为
+`219/219`。2026-08-14，G1 语句列表 grammar 等价改写经独立 Linux AArch64
+评委按“大型语句块规模稳健性”目标验收通过，并在本地提交
+`f5f2468c343e7ccc18d48cba0eab0a10920ee1c6` 恢复为当前 accepted control。
+300 locals 已从超过 35 秒降至约 0.45 秒；4KB identifier 仍会超时，
+它是后续独立 G4 风险项，不得表述为已由 G1 解决。完整证据见
+[`baseline_results/20260814_g1_independent_acceptance/`](baseline_results/20260814_g1_independent_acceptance/)。
+
 若已在项目同级目录准备竞赛配套的 `cangjie-fragment-checker` 仓库，可运行公开样例精确首错差分和冷进程性能测试：
 
 ```bash

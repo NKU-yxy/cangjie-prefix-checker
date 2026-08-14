@@ -49,3 +49,7 @@ claim that G1 met the ordinary `>=5%` official-50 performance gate. G1 was
 accepted under the contract's predeclared directed-optimization rule because
 300 locals improved from a 35-second timeout to about 0.45 seconds while the
 official 50 and all correctness gates remained protected.
+
+After the independent verdict, G1 was integrated into local commit
+`f5f2468c343e7ccc18d48cba0eab0a10920ee1c6`. The post-integration AArch64
+binding smoke is archived under [`integration_smoke_f5f2468/`](integration_smoke_f5f2468/).

@@ -45,6 +45,21 @@ DeclarationSnapshot 候选起点索引 `735a52e` 虽然全部正确性门禁通�
 本轮正确性修复、候选停止判定和 scale 超时根因的整体报告见
 [`20260813_correctness_first_followup_report.md`](20260813_correctness_first_followup_report.md)。
 
+2026-08-14，G1 将语句列表的右递归等价改写为迭代形式。它在最初要求同时解决
+300 locals 与 4KB identifier 的联合开发目标下被回退；随后按测试前独立锁定的
+“大型语句块规模稳健性”目标重新提名，并由独立评委在干净 clone 中判定为
+`STATEMENT-LIST SCALE ROBUSTNESS ACCEPTED`。300 locals 从对照两协议均超过 35 秒
+降至约 `448/456 ms`，500 locals 约 `1.02 s`；官方 50 例仍为 `50/50`，
+authoritative 为 `219/219`，非规模 364 例严格 reference diff、shadow、sanitizer
+和反作弊门禁全部通过。官方 50 provenance-bound A/B/A 的 SUM 改善 `3.896%`，
+这里只作为无回退保护证据，不宣称达到普通 `>=5%` 性能门槛。4KB identifier 仍会
+超时，继续作为独立 G4 问题。
+
+独立验收候选锚点为 `499c9c7`；本地通过反向 revert 恢复后的接纳提交为
+`f5f2468c343e7ccc18d48cba0eab0a10920ee1c6`，它是当前 accepted control。完整报告、
+原始 trial、环境与接入后 AArch64 复核见
+[`20260814_g1_independent_acceptance/`](20260814_g1_independent_acceptance/)。
+
 ## 复现命令
 
 必须在同一个一次性容器中先构建、再测试。`build.sh` 会在容器内安装并动态

@@ -1,0 +1,31 @@
+{
+  "manifest": "/workspace/test_cases/comprehensive/manifest.json",
+  "manifest_case_count": 373,
+  "selected_cases": 1,
+  "executed_cases": 1,
+  "aborted": false,
+  "families": {
+    "scale_stress": 1
+  },
+  "grammar_checked": 0,
+  "oracle_checked": 1,
+  "protocol_modes": 2,
+  "protocol_runs": 2,
+  "reference_protocol_runs": 0,
+  "safe_prefix_runs": 0,
+  "reference_safe_prefix_runs": 0,
+  "input_edge_runs": 26,
+  "reference_input_edge_runs": 0,
+  "passed_cases": 1,
+  "failed_cases": 0,
+  "infrastructure_failures": 0,
+  "expectation_policy": "oracle-backed",
+  "authoritative_cases": 0,
+  "authoritative_executed": 0,
+  "authoritative_passed": 0,
+  "authoritative_failed": 0,
+  "diagnostic_cases": 1,
+  "diagnostic_executed": 1,
+  "diagnostic_disagreements": 0,
+  "scale_cases": 1
+}

@@ -1,7 +1,7 @@
 # 仓颉前缀语义检查器本地优化测试条约
 
-版本：1.3
-生效日期：2026-08-13
+版本：1.4
+生效日期：2026-08-14
 适用项目：T2026100552010674 / 圆周运动
 
 ## 1. 目的与效力
@@ -179,10 +179,18 @@ python3 tools/run_comprehensive_cases.py \
 
 | 项目 | SHA-256 |
 |---|---|
-| manifest | `e0af56059f58f8f5d99fc9c1d243c75ed9df9670f2057b20421292dc48782496` |
+| manifest | `b3ac3ccfc845ac37e61ed2146fefb61b67ae6b78336b8d80338486bd0806768e` |
 | 373 例路径与源码聚合 | `764af01cd910c341662a84bcab497cfdcf003150c434684a4d0838d80fc3967d` |
 | generator | `3ba41564238358e487e72cf40678aef8606921a26da14b30a2ba4ed6ddc51c4a` |
 | runner | `d04f1df184b095996503f004598b6b99d42d414f94a410710e81ff8ac125b55e` |
+
+2026-08-14 接纳 G1 后，373 例源码与路径聚合、generator 和 runner 均未改变；manifest
+只更新了两份 grammar 的依赖哈希。新锁定 grammar SHA-256 为：
+
+- `grammar/cangjie.gbnf`:
+  `eb4a5cd0b705407281860bd2ddf1e20b97ad48aceafd96621d55c1385c06ca90`;
+- `grammar/cangjie_token.gbnf`:
+  `1cb6503b4ce8c24b6a4f12b7ff0ee1a7e8f4d09273bf4e87d254749209096cc1`.
 
 正式性能候选还必须把最近一个 authoritative `219/219` 的已接受 control 作为
 `--reference-solution`，并对全部 `364` 个非规模样例执行严格逐 token reference diff。
@@ -226,7 +234,37 @@ authoritative 正确性缺陷，允许行为相对旧 control 发生变化，但
 通过硬门禁而删例、改 authoritative 标签、放宽安全前缀或增加 oracle 豁免；同样不得
 把 diagnostic 标签当成已确认赛事规范去驱动高风险语义改写。
 
-### 4.2 并发或启动路径修改的附加门禁
+### 4.2 G1 语句块规模稳健性接纳状态
+
+G1 将 raw grammar 的 `statement (ws statements)?` 等价改写为
+`statement (ws statement)*`，并在 token grammar 中做对应改写。它没有
+改变任何语义规则、输出协议、样例或计时边界。
+
+2026-08-14，候选 `499c9c787fdbd8140307c5b5f472e9aee0c9342c` 按第 8.5 节
+事先声明的定向优化例外，在独立干净 clone 中完成 Linux AArch64 验收：
+
+- 官方 50 例精确首错 `50/50`，authoritative `219/219`，非规模 364 例
+  的 protocol/safe-prefix/edge 为 `728/238/26` 且与 control 严格一致；
+- unittest、native differential、fixed fuzz、shadow、ASan/LSan/UBSan 与反作弊
+  审计全部通过；
+- 300 locals 从对照的两协议均超过 35 秒降至约 `448/456 ms`，保守加速
+  超过 `76×`；500 locals 约 `1.02 s`；
+- 其他 7 个 scale 样例最大时间回退约 `1.25%`，最坏 RSS 比 `1.087`；
+- 官方 50 provenance-bound A/B/A 的 SUM 改善 `3.896%`，对照漂移
+  `0.982%`，无 process-total 单例回退。该数字只是定向优化的全局
+  保护门禁，不得表述为普通官方 50 例 `>=5%` 性能接纳。
+
+原先“同时解决 300 locals 与 4KB identifier”的联合开发目标仍是
+`REJECTED`；G1 只作为“大型语句块规模稳健性”优化接受。4KB identifier 仍在
+30 秒超时，必须另立 G4 候选，不得把 G1 表述为已解决该问题。
+
+为保留候选、回退和独立验收历史，主开发链以反向 revert 形式在
+`f5f2468c343e7ccc18d48cba0eab0a10920ee1c6` 恢复已验收 grammar。该提交是
+当前 accepted control；后续候选必须以它或其后最近的 accepted control 执行
+严格 reference diff。独立报告和原始证据归档在
+[`baseline_results/20260814_g1_independent_acceptance/`](baseline_results/20260814_g1_independent_acceptance/)。
+
+### 4.3 并发或启动路径修改的附加门禁
 
 任何修改线程、future、条件变量、启动初始化顺序或异常汇合方式的候选，
 还必须在正式性能计时前执行：

@@ -1,0 +1,14 @@
+measure 1/1
+{
+  "cases": 50,
+  "passed": 50,
+  "failed_trials": 0,
+  "case_total_median_ms": 30.905,
+  "case_total_p95_ms": 37.577,
+  "case_total_max_ms": 41.099,
+  "slowest_case": "err_assign_let",
+  "slowest_case_median_ms": 41.099
+}
+JSON: /workspace/integration_results/official50_smoke.json
+CSV:  /workspace/integration_results/official50_smoke.csv
+MD:   /workspace/integration_results/official50_smoke.md
