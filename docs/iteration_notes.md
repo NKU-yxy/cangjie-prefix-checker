@@ -102,3 +102,59 @@ native_fragment_differential 报 5 个 valid-片段被拒（function decl、pack
 1. 官网提交 v1，拿新的通过列表对照（预期 56 → 显著上升，重点看 err_* 容器/字符串类）。
 2. 若仍有失败：对失败类别建针对性差分（lambda 推断、泛型推断 infer_* 族 —— fuzzer 目前只覆盖 context-API 方法调用）。
 3. profile err_lambda_param_narrow（1.147s）性能侧并行项。
+
+---
+
+## v2（2026-08-18）— 尾空参 double-push 修复 + 隐式泛型 strict 延迟
+
+### 交付内容（solution 2 处修复）
+
+1. **删除 InferCall 尾空参数 re-attach 块**：SplitTopLevel 已保留尾随空槽（`SplitTopLevel("2,", ',')` = `["2",""]`），re-attach 造成 double-push（nargs=3）→ `Array<Int64>(2,` 在逗号处误报。删除后 8 个 wrong/ 用例恢复、validation 50/50。
+2. **CheckSignatures Compatible 失败分支新增 strict 延迟**：官方对隐式泛型裸调用（min/max，T 从不绑定）在 `)` 才拒绝候选（"no matching call candidate"），未闭合调用内的参数不匹配不得锁定逗号/字面量位置。
+
+### 结果
+
+| 验证集 | 结果 |
+|---|---|
+| wrong/ 50 | 50/50 |
+| context_api_differential | 538 生成，22 → 11 分歧 |
+
+### 官方锚定规则实证（wrong/ 50 例 GT 分析）
+
+官方 first_error_token_index 的锚定规则（直接证据）：
+- 超参/少参 → 调用闭合 `)`（err_arity: add(1) → 374=`)\n`）
+- 参数类型错 → 参数闭合点（err_arraylist_add_type: a.add("x") → `")\n`）
+- 不可救字面量 → 字面量本身（err_arith_non_numeric: `let bad: Int64 = true` → `true`；err_array_index_not_int64: a[true → `true`）
+- 可扩展表达式（标识符/字符串+后缀）→ 延迟到语句边界 `\n`（err_arraylist_toarray_assign: `let s: String = arr` → `\n`；err_assign_let: `n = "x"` → `"\n`）
+- 关键字错误 → token 本身（continue/break）
+
+**推论**：官方 GT 不是"main 闭合 `}`"（probe 全量 parse 假象——typecheck 只在语法完整前缀跑），而是增量检查的锚定位置；solution 的参数闭合点机制与 wrong/ 50 例一致。
+
+---
+
+## v3（2026-08-18）— min/max 超参延迟 + fuzzer 模型修正，差分归零
+
+### 交付内容（solution 2 处修复）
+
+1. **actual.error 分支加 strict 延迟**：`[1, 2]` vs Array<T>（T 未绑定，InferImpl 无法解构 Array<T>）不再锁定逗号——延迟到 `)` 候选匹配失败。
+2. **over_arity_fallback 在 strict_generic 下不提升**：`min(1, 1, [1, 2], 1)`（4 参 > min 3 参）的超参延迟到 `)`——官方 T 从不绑定，任何调用在 `)` 报 "no matching call candidate"。
+
+### fuzzer 模型修正（4 处）
+
+1. **g_arg/g_arg_mixed 非尾参去掉 +1**：字面量结束边界即逗号本身（`clamp("bad", ...)` 的 `"` 与逗号同 token）——clamp/print 4 例消除。
+2. **g_arity_long 长重载判定加 arg0 兼容性**：`print("x", 1)` 有 (String, Bool) 长重载且 arg0="x" 兼容 → GT 在 `)`；`print(1, 1)` 的 arg0=1 对长重载全错 → GT 在逗号1（arg0 在逗号1 已锁定）——print/eprint 数值重载 5 例消除。
+3. **mixed 表移除 Float64→"1"**：Int64 字面量对 Float64 是隐式转换（`abs(1)` 匹配 abs(Int64) 重载，官方报的是尾表达式 Unit 错而非参数错），不再生成假错 case。
+
+### 结果
+
+| 验证集 | 结果 |
+|---|---|
+| context_api_differential | **536 生成，0 分歧** |
+| wrong/ 50 | **50/50** |
+| hidden_semantic_fuzz | **144 标签，0 失败** |
+
+### 下一步候选
+
+1. 官网提交 v3（zip 已备好 cangjie-checker_v3_20260818.zip），对照新的通过列表。
+2. 若仍有失败：按失败类别建针对性差分（lambda 推断、泛型继承 infer_* 族、字符串/数值转换的深层救援语义）。
+3. 性能侧：err_lambda_param_narrow（1.147s）profile。
