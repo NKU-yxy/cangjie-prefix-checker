@@ -1,0 +1,46 @@
+{
+  "schema": "g4-029-final-archive-build-report-v1",
+  "status": "PASS",
+  "sealed": true,
+  "blockers": [],
+  "candidate_commit": "029531cecaea28b765455559805fe45c31011b54",
+  "candidate_tree": "cbb1d3fc1136ed622dbf3bd4612b4bbe86107e55",
+  "formal_aba_independent_lock": {
+    "manifest_sha256": "26b54737ea95cae51b14e99d88c54ad41bfc21a19ea07f4e58a0d5e0bb036c1e",
+    "tree_sha256": "59681f4500e2a6e41e59cc0e931c1c5c2285de2300d4b24111336d1bfd5b635e",
+    "file_count": 74,
+    "total_file_bytes": 50834275
+  },
+  "archive": {
+    "path": "g4-029-identifier-independent-acceptance.tar.gz",
+    "sha256": "99307f3e6b0d0300ee3b8c77c61605e8afee50c59bd60bc364f2df4c395b27bd",
+    "size_bytes": 94182816,
+    "root_name": "g4-029-identifier-independent-acceptance"
+  },
+  "content": {
+    "regular_file_count": 762,
+    "total_file_bytes": 984047957,
+    "content_manifest_sha256": "31219d380a9d0751e17dd58d08c5c4b76268edbd1991048b15f3c615e4c37da3",
+    "inventory_sha256": "457afc6b4b47e41db1197c56d91dd90bc4252e52ed252d8269627d64088cba01",
+    "formal_contributing_evidence": 10,
+    "supplemental_noncontributing_evidence": 8
+  },
+  "portable_verification": {
+    "status": "PASS",
+    "overall_manifest_entries": 761,
+    "historical_manifest_entries": 689,
+    "evidence_tree_files": 719,
+    "claim_assertions": 94,
+    "bound_artifacts": 9,
+    "source_closure_files": 24,
+    "external_dependency_manifests": 1
+  },
+  "reproducibility": {
+    "independent_atomic_stages": 2,
+    "deterministic_tar_outputs": 2,
+    "tar_outputs_byte_identical": true,
+    "independent_extractions_verified": 2,
+    "tamper_smoke_rejected": true,
+    "tamper_failure": "overall SHA-256 mismatch: FINAL_REPORT.md"
+  }
+}

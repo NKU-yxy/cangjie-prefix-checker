@@ -1,66 +1,40 @@
 # 第三方依赖与来源声明
 
-本文档记录项目使用的外部依赖，并区分第三方能力、本队适配与本队独立实现。除“竞赛配套参考 Typechecker”一节明确列出的开发/测试副本外，最终提交框架不包含下列项目的源码副本；其他外部依赖通过构建环境安装或在开发阶段调用。
+最终提交包中的 C++ 入口、增量语义检查器、仓颉 GBNF 适配、构建脚本和
+查表生成工具均由本队独立实现。以下第三方项目按其许可证随包分发或在
+生成阶段使用。
 
-## XGrammar
+## XGrammar C++ Core
 
 - 项目：XGrammar
-- 版本：v0.2.1
+- 版本：`0.2.1`，上游 tag `v0.2.1`
+- 上游 commit：`5b4e9ce9e72524037ae24ecd831b9b6604d2eb48`
 - 来源：<https://github.com/mlc-ai/xgrammar>
 - 许可证：Apache License 2.0
-- 用途：作为外部构建及运行依赖，提供 GBNF 编译和语法匹配能力。
-- 分发方式：最终提交框架不包含 XGrammar 源码。
-- 本地修改：无。
+- 用途：提供 GBNF 编译和增量语法匹配能力。
+- 随包内容：`third_party/xgrammar_core/` 中仅包含构建所需的公开 C++ core、
+  头文件、许可证及 NOTICE；不包含 Python/TVM FFI 绑定、测试和无关工具。
+- 本地修改：上游文件内容未作功能性修改，仅按提交目录布局选择性分发。
 
-## Apache TVM FFI
-
-- 版本约束：`apache-tvm-ffi>=0.1.9`
-- 来源：<https://tvm.apache.org/ffi/>
-- 许可证：Apache License 2.0
-- 用途：作为 XGrammar 的外部运行依赖，提供共享库和 FFI 支持。
-- 分发方式：最终提交框架不包含 TVM FFI 源码。
-- 本地修改：无。
+XGrammar 使用的 DLPack 头文件按 Apache License 2.0 分发，其许可证位于
+`third_party/xgrammar_core/third_party/dlpack/LICENSE`。PicoJSON 头文件
+保留了其 BSD-2-Clause 版权与许可证全文。
 
 ## tiktoken
 
-- 版本约束：`tiktoken>=0.7.0`
+- 版本：`0.13.0`（构建表生成阶段）
 - 来源：<https://github.com/openai/tiktoken>
 - 许可证：MIT License
-- 用途：构建阶段调用其公开 API，生成本地 `cl100k_base` token 查表数据。
-- 分发方式：最终提交框架不包含 tiktoken 源码。
-- 本地修改：无。
+- 用途：通过判题镜像预装的公开 API 与离线缓存生成
+  `generated/cl100k_base.bin`。
+- 分发方式：提交包不包含 tiktoken 源码或二进制；运行阶段也不导入
+  tiktoken。生成表 SHA-256 为
+  `308b0361bc24138a3ba3b3659cc09083f2d8fcd5dcd080a407b499e97cc2fd34`。
 
-## Lark
+## 竞赛官方上下文
 
-- 版本约束：`lark>=1.1.0`
-- 来源：<https://github.com/lark-parser/lark>
-- 许可证：MIT License
-- 用途：仅在开发阶段作为离线测试所需的通用解析依赖。
-- 分发方式：最终提交框架不包含 Lark 源码；随框架提供的参考 typechecker 在开发/测试时需要外部安装 Lark。
-- 本地修改：无。
-
-## 其他 Python 开发依赖
-
-- Pydantic（`pydantic>=2.0`）：<https://github.com/pydantic/pydantic>，MIT License。
-- NumPy（`numpy>=1.24`）：<https://github.com/numpy/numpy>，BSD-3-Clause License。
-- typing_extensions（`typing-extensions>=4.9.0`）：<https://github.com/python/typing_extensions>，PSF License Version 2。
-- 用途：用于当前纯 C++ 生产运行时之外的开发、测试或 Python 兼容支持。
-- 分发方式：最终提交框架不包含上述项目的源码副本。
-- 本地修改：无。
-
-## 竞赛配套参考 Typechecker
-
-- 项目：`cangjie-fragment-checker`
-- 来源：<https://gitcode.com/bhzhan/cangjie-fragment-checker>
-- 所用版本：竞赛仓库 `2026-06-07` 公开快照；现有材料未记录可进一步核验的 commit SHA，因此以来源链接、快照日期和本节修改清单共同标识。
-- 许可证状态：所使用的公开快照未包含独立的 LICENSE/NOTICE 文件；本文不据此推测其通用开源许可证。
-- 使用依据与用途：该项目属于竞赛配套公开参考实现。本队基于其中的 typechecker 作少量适配，用于完整程序解析、随机程序合法性标注、差分测试和实验复现。
-- 运行时关系：不参与 `solution` 的编译、链接或运行。
-- 提交形式：最终代码框架包含 `third_party/cangjie_typechecker/` 开发/测试副本，以便复现本文实验；它不是生产运行依赖。
-- 功能性修改：相对公开版本对 `builtin_context.py`、`checker.py`、`context.json`、`type_inference.py` 和 `type_services.py` 5 个文件作了功能性适配；扣除统一的来源注释后，原开发记录约为新增 98 行、删除 76 行。这些修改用于扩充迭代类型、字符串操作、默认构造器和接口实现等离线验证覆盖。
-- 合规性修改：所有支持注释的 vendored Python/Lark 源文件均增加了不影响逻辑的统一来源头；不支持注释的 `context.json` 由本文件和目录 README 统一归因。因此，按文件系统直接统计的修改文件数和新增行数会高于上述功能性修改统计。
-- 原创归属：该目录的上游代码、功能性适配及来源注释均不作为本队原创成果，不计入本队原创代码量。
-
-## 本队独立实现范围
-
-本队独立完成 C++ 竞赛入口与语义检查器、面向赛题子集及仓颉 1.0 规范校准的 GBNF 适配、构建脚本、context/token 查表生成工具和验证工具。上述原创范围明确排除 `third_party/cangjie_typechecker/` 的上游代码及本地适配。除已完整披露的该参考目录外，团队源文件仅调用其他依赖的公开 API，不包含从这些项目复制的实现源码。
+`generated/context.bin` 由决赛官方 `context_final.json`（提交包中按构建约定
+命名为 `context.json`）通过本队生成工具生成，SHA-256 为
+`2cf015b7f60f4d6fbb89a805e4d11daeaae0e70061f6a5813c94dcf0586ec113`。
+竞赛配套参考 Typechecker 仅用于开发期差分测试，不参与最终程序的编译、
+链接或运行，也不包含在提交包中。

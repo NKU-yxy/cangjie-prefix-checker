@@ -1,0 +1,137 @@
+{
+  "schema": 2,
+  "status": "failed",
+  "argv": [
+    "tools/run_grammar_shadow_matrix.py",
+    "--solution",
+    "./solution",
+    "--protocol",
+    "both",
+    "--jobs",
+    "2",
+    "--timeout",
+    "300",
+    "--max-local-count",
+    "50",
+    "--max-identifier-length",
+    "512",
+    "--json",
+    "baseline_results/20260814_g4_identifier_development/candidate_v4_skeleton_finalsource_shadow_through512_dev.json"
+  ],
+  "solution": "/workspace/solution",
+  "solution_sha256": "ab5ce425c33cd10a936204fc6f6545931ee37b099b0c3b0bcb05e9f2c72f40c0",
+  "solution_size_bytes": 538376,
+  "git_head": "5c3bae251b8ed2946d3509138cf0825b27e7cee0",
+  "git_status_short": [
+    " M cpp/solution.cpp",
+    " M solution",
+    " M tests/test_grammar_shadow_matrix.py",
+    " M tools/run_grammar_shadow_matrix.py",
+    "?? CURRENT_BEST_VS_INITIAL_OFFICIAL50_20260813.md",
+    "?? TEAM_OPTIMIZATION_PROGRESS_REPORT_20260813.md",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v2_inline_scale_dev_5s.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v3_fallback_non_scale_reference_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v3_fallback_scale_dev_5s.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v3_fallback_shadow_smoke_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v3_normalized_non_scale_reference_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v3_normalized_scale_dev_5s.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v3_normalized_shadow_through_identifier256_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v3_numeric_fix_shadow_smoke_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v4_skeleton_finalsource_shadow_through512_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v4_skeleton_scale_dev_5s.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v4_skeleton_shadow_shapes_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v4_skeleton_shadow_smoke_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/candidate_v4_skeleton_shadow_through256_dev.json",
+    "?? baseline_results/20260814_g4_identifier_development/control_scale_dev_5s.json",
+    "?? tests/test_g4_identifier_scale.py",
+    "?? tools/run_g4_identifier_scale.py"
+  ],
+  "asset_sha256": {
+    "cpp/solution.cpp": "3682a435f28e98f0b1229b81f2cf49b2a141860be4909788ada096331280a157",
+    "grammar/cangjie.gbnf": "eb4a5cd0b705407281860bd2ddf1e20b97ad48aceafd96621d55c1385c06ca90",
+    "context.json": "8058e383390f444f56ee4ac0008493c44c8e32fa632d18ed48f998dc36623348",
+    "test_cases/comprehensive/manifest.json": "b3ac3ccfc845ac37e61ed2146fefb61b67ae6b78336b8d80338486bd0806768e",
+    "tools/run_grammar_shadow_matrix.py": "c8cd422b9256c8e4df8aafb69e031b0543f6d1987bb331f21bfbb9fea7f92c21"
+  },
+  "environment": {
+    "platform": "Linux-6.12.76-linuxkit-aarch64-with-glibc2.35",
+    "machine": "aarch64",
+    "python": "3.10.12",
+    "cpu_count": 10,
+    "tiktoken": "0.13.0"
+  },
+  "filters": {
+    "max_local_count": 50,
+    "max_identifier_length": 512
+  },
+  "case_count": 174,
+  "layout_count": 5,
+  "protocols": [
+    "default",
+    "competition"
+  ],
+  "run_count": 0,
+  "declared_local_counts": [
+    0,
+    1,
+    2,
+    10,
+    25,
+    50,
+    100,
+    150,
+    200,
+    250,
+    300,
+    500
+  ],
+  "declared_identifier_lengths": [
+    1,
+    2,
+    8,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096,
+    8192
+  ],
+  "executed_local_counts": [
+    0,
+    1,
+    2,
+    10,
+    25,
+    50
+  ],
+  "executed_identifier_lengths": [
+    1,
+    2,
+    8,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512
+  ],
+  "layouts": [
+    "byte",
+    "random",
+    "line",
+    "cl100k",
+    "whole"
+  ],
+  "elapsed_seconds": 0.4573263339989353,
+  "failure": {
+    "case": "whitespace-space",
+    "layout": "random",
+    "kind": "RuntimeError",
+    "message": "exit=127, stderr='/workspace/solution: error while loading shared libraries: libxgrammar_bindings.so: cannot open shared object file: No such file or directory\\n'"
+  },
+  "observations": []
+}

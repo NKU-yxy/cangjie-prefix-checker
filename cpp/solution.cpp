@@ -2,11 +2,14 @@
  * Team-authored competition entry.
  *
  * External dependencies:
- * - XGrammar v0.2.1, Apache License 2.0
- * - Apache TVM FFI, Apache License 2.0
+ * - XGrammar C++ core v0.2.1, Apache License 2.0
  *
  * This file calls public APIs from the dependencies above and does not
- * contain copied implementation source from those projects.
+ * contain copied implementation source from that project. The final package
+ * includes the disclosed, unmodified XGrammar C++ core source so its build
+ * does not depend on package indexes, Python bindings, or TVM FFI.
+ * Files under third_party/xgrammar_core are third-party code and are not
+ * claimed as team-authored implementation.
  * See THIRD_PARTY_NOTICES.md for details.
  *
  * Token decoding, syntax transitions, incremental lexing, and semantic

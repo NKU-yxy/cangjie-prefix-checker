@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "description": "Typechecker import context modeled after problem-description Appendix C.2.",
+  "schema_version": 2,
+  "description": "Finals import context: preliminary context.json plus std-motivated extensions (ArrayStack, ArrayDeque, Stack/Deque interfaces, std.core min/max, std.math abs/clamp, Optional/String/ArrayList/HashMap surface).",
   "appendix_c2_example": {
     "global_variables": [
       {
@@ -134,6 +134,26 @@
           }
         ],
         "ret": "Unit"
+      },
+      {
+        "type_params": [],
+        "params": [
+          {
+            "name": "x",
+            "type": "Bool"
+          }
+        ],
+        "ret": "Unit"
+      },
+      {
+        "type_params": [],
+        "params": [
+          {
+            "name": "x",
+            "type": "Rune"
+          }
+        ],
+        "ret": "Unit"
       }
     ],
     "print": [
@@ -177,6 +197,26 @@
           {
             "name": "flush",
             "type": "Bool"
+          }
+        ],
+        "ret": "Unit"
+      },
+      {
+        "type_params": [],
+        "params": [
+          {
+            "name": "x",
+            "type": "Bool"
+          }
+        ],
+        "ret": "Unit"
+      },
+      {
+        "type_params": [],
+        "params": [
+          {
+            "name": "x",
+            "type": "Rune"
           }
         ],
         "ret": "Unit"
@@ -259,6 +299,118 @@
         ],
         "ret": "Unit"
       }
+    ],
+    "min": [
+      {
+        "type_params": [
+          "T"
+        ],
+        "params": [
+          {
+            "name": "a",
+            "type": {
+              "tparam": "T"
+            }
+          },
+          {
+            "name": "b",
+            "type": {
+              "tparam": "T"
+            }
+          },
+          {
+            "name": "rest",
+            "type": {
+              "nominal": "Array",
+              "args": [
+                {
+                  "tparam": "T"
+                }
+              ]
+            }
+          }
+        ],
+        "ret": {
+          "tparam": "T"
+        }
+      }
+    ],
+    "max": [
+      {
+        "type_params": [
+          "T"
+        ],
+        "params": [
+          {
+            "name": "a",
+            "type": {
+              "tparam": "T"
+            }
+          },
+          {
+            "name": "b",
+            "type": {
+              "tparam": "T"
+            }
+          },
+          {
+            "name": "rest",
+            "type": {
+              "nominal": "Array",
+              "args": [
+                {
+                  "tparam": "T"
+                }
+              ]
+            }
+          }
+        ],
+        "ret": {
+          "tparam": "T"
+        }
+      }
+    ],
+    "abs": [
+      {
+        "type_params": [],
+        "params": [
+          {
+            "name": "x",
+            "type": "Int64"
+          }
+        ],
+        "ret": "Int64"
+      },
+      {
+        "type_params": [],
+        "params": [
+          {
+            "name": "x",
+            "type": "Float64"
+          }
+        ],
+        "ret": "Float64"
+      }
+    ],
+    "clamp": [
+      {
+        "type_params": [],
+        "params": [
+          {
+            "name": "value",
+            "type": "Float64"
+          },
+          {
+            "name": "low",
+            "type": "Float64"
+          },
+          {
+            "name": "high",
+            "type": "Float64"
+          }
+        ],
+        "ret": "Float64"
+      }
     ]
   },
   "interfaces": {
@@ -308,6 +460,104 @@
         "T"
       ],
       "methods": {}
+    },
+    "Stack": {
+      "type_params": [
+        "T"
+      ],
+      "methods": {
+        "add": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "element",
+              "type": {
+                "tparam": "T"
+              }
+            }
+          ],
+          "ret": "Unit"
+        },
+        "peek": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        "remove": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Deque": {
+      "type_params": [
+        "T"
+      ],
+      "methods": {
+        "addFirst": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "element",
+              "type": {
+                "tparam": "T"
+              }
+            }
+          ],
+          "ret": "Unit"
+        },
+        "addLast": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "element",
+              "type": {
+                "tparam": "T"
+              }
+            }
+          ],
+          "ret": "Unit"
+        },
+        "removeFirst": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        "removeLast": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        }
+      }
     }
   },
   "nominals": {
@@ -448,6 +698,23 @@
               }
             ]
           }
+        },
+        "indexOf": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "element",
+              "type": {
+                "tparam": "T"
+              }
+            }
+          ],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              "Int64"
+            ]
+          }
         }
       },
       "static_methods": {},
@@ -517,9 +784,16 @@
           }
         }
       ],
-      "iterable_element": {
-        "tparam": "T"
-      }
+      "supers": [
+        {
+          "nominal": "Iterable",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        }
+      ]
     },
     "ArrayList": {
       "type_params": [
@@ -657,6 +931,23 @@
               }
             ]
           }
+        },
+        "get": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "index",
+              "type": "Int64"
+            }
+          ],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
         }
       },
       "static_methods": {
@@ -740,12 +1031,17 @@
           }
         }
       ],
-      "iterable_element": {
-        "tparam": "T"
-      },
       "supers": [
         {
           "nominal": "Collection",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        },
+        {
+          "nominal": "Iterable",
           "args": [
             {
               "tparam": "T"
@@ -948,6 +1244,18 @@
             }
           ],
           "ret": "Unit"
+        },
+        "contains": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "key",
+              "type": {
+                "tparam": "K"
+              }
+            }
+          ],
+          "ret": "Bool"
         }
       },
       "static_methods": {},
@@ -1051,6 +1359,23 @@
             ]
           }
         }
+      ],
+      "supers": [
+        {
+          "nominal": "Iterable",
+          "args": [
+            {
+              "tuple": [
+                {
+                  "tparam": "K"
+                },
+                {
+                  "tparam": "V"
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     "HashSet": {
@@ -1104,18 +1429,6 @@
             "ret": "Unit"
           }
         ],
-        "addIfAbsent": {
-          "type_params": [],
-          "params": [
-            {
-              "name": "x",
-              "type": {
-                "tparam": "T"
-              }
-            }
-          ],
-          "ret": "Bool"
-        },
         "contains": {
           "type_params": [],
           "params": [
@@ -1192,6 +1505,11 @@
               }
             ]
           }
+        },
+        "clear": {
+          "type_params": [],
+          "params": [],
+          "ret": "Unit"
         }
       },
       "static_methods": {},
@@ -1274,9 +1592,16 @@
           }
         }
       ],
-      "iterable_element": {
-        "tparam": "T"
-      }
+      "supers": [
+        {
+          "nominal": "Iterable",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        }
+      ]
     },
     "String": {
       "type_params": [],
@@ -1385,6 +1710,21 @@
             }
           ],
           "ret": "Int64"
+        },
+        "indexOf": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "sub",
+              "type": "String"
+            }
+          ],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              "Int64"
+            ]
+          }
         }
       },
       "static_methods": {
@@ -1445,6 +1785,30 @@
           "ret": {
             "tparam": "T"
           }
+        },
+        "isSome": {
+          "type_params": [],
+          "params": [],
+          "ret": "Bool"
+        },
+        "isNone": {
+          "type_params": [],
+          "params": [],
+          "ret": "Bool"
+        },
+        "orElse": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "default",
+              "type": {
+                "tparam": "T"
+              }
+            }
+          ],
+          "ret": {
+            "tparam": "T"
+          }
         }
       },
       "static_methods": {},
@@ -1465,9 +1829,16 @@
       },
       "static_methods": {},
       "constructors": [],
-      "iterable_element": {
-        "tparam": "K"
-      }
+      "supers": [
+        {
+          "nominal": "Iterable",
+          "args": [
+            {
+              "tparam": "K"
+            }
+          ]
+        }
+      ]
     },
     "ValuesView": {
       "type_params": [
@@ -1484,9 +1855,16 @@
       },
       "static_methods": {},
       "constructors": [],
-      "iterable_element": {
-        "tparam": "V"
-      }
+      "supers": [
+        {
+          "nominal": "Iterable",
+          "args": [
+            {
+              "tparam": "V"
+            }
+          ]
+        }
+      ]
     },
     "Range": {
       "type_params": [
@@ -1503,9 +1881,304 @@
       },
       "static_methods": {},
       "constructors": [],
-      "iterable_element": {
-        "tparam": "T"
-      }
+      "supers": [
+        {
+          "nominal": "Iterable",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        }
+      ]
+    },
+    "ArrayStack": {
+      "type_params": [
+        "T"
+      ],
+      "instance_fields": {
+        "size": "Int64",
+        "capacity": "Int64"
+      },
+      "static_fields": {},
+      "instance_methods": {
+        "isEmpty": {
+          "type_params": [],
+          "params": [],
+          "ret": "Bool"
+        },
+        "add": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "element",
+              "type": {
+                "tparam": "T"
+              }
+            }
+          ],
+          "ret": "Unit"
+        },
+        "peek": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        "remove": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        "clear": {
+          "type_params": [],
+          "params": [],
+          "ret": "Unit"
+        },
+        "reserve": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "n",
+              "type": "Int64"
+            }
+          ],
+          "ret": "Unit"
+        },
+        "toArray": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Array",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        }
+      },
+      "static_methods": {},
+      "constructors": [
+        {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "ArrayStack",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        {
+          "type_params": [],
+          "params": [
+            {
+              "name": "capacity",
+              "type": "Int64"
+            }
+          ],
+          "ret": {
+            "nominal": "ArrayStack",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        }
+      ],
+      "supers": [
+        {
+          "nominal": "Stack",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        },
+        {
+          "nominal": "Collection",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        },
+        {
+          "nominal": "Iterable",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        }
+      ]
+    },
+    "ArrayDeque": {
+      "type_params": [
+        "T"
+      ],
+      "instance_fields": {
+        "size": "Int64",
+        "capacity": "Int64"
+      },
+      "static_fields": {},
+      "instance_methods": {
+        "isEmpty": {
+          "type_params": [],
+          "params": [],
+          "ret": "Bool"
+        },
+        "addFirst": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "element",
+              "type": {
+                "tparam": "T"
+              }
+            }
+          ],
+          "ret": "Unit"
+        },
+        "addLast": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "element",
+              "type": {
+                "tparam": "T"
+              }
+            }
+          ],
+          "ret": "Unit"
+        },
+        "removeFirst": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        "removeLast": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        "clear": {
+          "type_params": [],
+          "params": [],
+          "ret": "Unit"
+        },
+        "reserve": {
+          "type_params": [],
+          "params": [
+            {
+              "name": "n",
+              "type": "Int64"
+            }
+          ],
+          "ret": "Unit"
+        },
+        "toArray": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Array",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        }
+      },
+      "static_methods": {},
+      "constructors": [
+        {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "ArrayDeque",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        {
+          "type_params": [],
+          "params": [
+            {
+              "name": "capacity",
+              "type": "Int64"
+            }
+          ],
+          "ret": {
+            "nominal": "ArrayDeque",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        }
+      ],
+      "supers": [
+        {
+          "nominal": "Deque",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        },
+        {
+          "nominal": "Collection",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        },
+        {
+          "nominal": "Iterable",
+          "args": [
+            {
+              "tparam": "T"
+            }
+          ]
+        }
+      ]
     }
   }
 }

@@ -24,6 +24,8 @@
 namespace cangjie {
 namespace {
 
+std::string MaskNonCodeText(std::string_view text);
+
 #ifdef CANGJIE_ENABLE_PROFILE
 class ProfileScopeTimer {
  public:
@@ -304,6 +306,36 @@ bool IsDecimalNumberText(std::string_view text) {
     return saw_digit && text.front() != '.';
 }
 
+bool IsBasedIntegerText(std::string_view text) {
+    if (text.size() < 3 || text.front() != '0') return false;
+    const char marker = text[1];
+    auto valid_digit = [marker](unsigned char ch) {
+        if (marker == 'x' || marker == 'X') return std::isxdigit(ch) != 0;
+        if (marker == 'o' || marker == 'O') return ch >= '0' && ch <= '7';
+        if (marker == 'b' || marker == 'B') return ch == '0' || ch == '1';
+        return false;
+    };
+    if (marker != 'x' && marker != 'X' && marker != 'o' && marker != 'O' &&
+        marker != 'b' && marker != 'B') {
+        return false;
+    }
+    std::size_t end = text.size();
+    static const std::vector<std::string_view> suffixes = {
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"
+    };
+    for (const std::string_view suffix : suffixes) {
+        if (text.size() > suffix.size() &&
+            text.substr(text.size() - suffix.size()) == suffix) {
+            end -= suffix.size();
+            break;
+        }
+    }
+    return end > 2 && std::all_of(
+        text.begin() + 2, text.begin() + static_cast<std::ptrdiff_t>(end),
+        valid_digit
+    );
+}
+
 bool StartsWith(std::string_view text, std::string_view prefix) {
     return text.size() >= prefix.size() && text.substr(0, prefix.size()) == prefix;
 }
@@ -413,6 +445,7 @@ std::optional<std::size_t> MatchingDelimiter(
     }
     int depth = 0;
     bool in_string = false;
+    bool triple_string = false;
     bool escaped = false;
     bool line_comment = false;
     int block_comment = 0;
@@ -436,7 +469,14 @@ std::optional<std::size_t> MatchingDelimiter(
             continue;
         }
         if (in_string) {
-            if (escaped) {
+            if (triple_string) {
+                if (index + 2 < text.size() &&
+                    text.substr(index, 3) == "\"\"\"") {
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) {
                 escaped = false;
             } else if (ch == '\\') {
                 escaped = true;
@@ -456,7 +496,10 @@ std::optional<std::size_t> MatchingDelimiter(
             continue;
         }
         if (ch == '"') {
+            triple_string = index + 2 < text.size() &&
+                text.substr(index, 3) == "\"\"\"";
             in_string = true;
+            if (triple_string) index += 2;
         } else if (ch == opening) {
             ++depth;
         } else if (ch == closing && --depth == 0) {
@@ -1102,8 +1145,8 @@ bool HasMultilineFunctionHeader(std::string_view source) {
     while (search_from < source.size()) {
         const std::size_t func = source.find("func ", search_from);
         const std::size_t main = source.find("main", search_from);
-        std::size_t start = std::min(func, main);
-        if (start == std::string_view::npos) start = std::max(func, main);
+        const std::size_t init = source.find("init", search_from);
+        const std::size_t start = std::min({func, main, init});
         if (start == std::string_view::npos) return false;
         const std::size_t brace = source.find('{', start);
         const std::size_t newline = source.find_first_of("\n\r", start);
@@ -1160,14 +1203,14 @@ const std::regex& OptionalFunctionMultilinePattern() {
 
 const std::regex& CurrentFunctionSingleLinePattern() {
     static const std::regex pattern(
-        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain|\binit)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
     );
     return pattern;
 }
 
 const std::regex& CurrentFunctionMultilinePattern() {
     static const std::regex pattern(
-        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain|\binit)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
     );
     return pattern;
 }
@@ -1238,7 +1281,8 @@ std::vector<DeclarationRecord> ScanDeclarationFamily(
     const std::string& source,
     const std::regex& pattern,
     bool multiline_only,
-    DelimiterCloseCache* close_cache
+    DelimiterCloseCache* close_cache,
+    const std::string* code_mask = nullptr
 ) {
     std::vector<DeclarationRecord> records;
     for (std::sregex_iterator it(source.begin(), source.end(), pattern), end;
@@ -1246,8 +1290,14 @@ std::vector<DeclarationRecord> ScanDeclarationFamily(
         if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
             continue;
         }
+        const std::size_t match_offset = static_cast<std::size_t>((*it).position());
+        if (code_mask && StartsWith(source.substr(match_offset), "init") &&
+            (match_offset >= code_mask->size() ||
+            !IsIdentStart(static_cast<unsigned char>((*code_mask)[match_offset])))) {
+            continue;
+        }
         DeclarationRecord record;
-        record.offset = static_cast<std::size_t>((*it).position());
+        record.offset = match_offset;
         record.length = static_cast<std::size_t>((*it).length());
         record.open = record.offset + record.length - 1;
         record.close = CachedDelimiterClose(source, record.open, close_cache);
@@ -1301,6 +1351,12 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
 #endif
     DelimiterCloseCache close_cache;
     DeclarationSnapshot snapshot;
+    std::string current_callable_mask;
+    const std::string* current_callable_mask_ptr = nullptr;
+    if (owned.find("init") != std::string::npos) {
+        current_callable_mask = MaskNonCodeText(owned);
+        current_callable_mask_ptr = &current_callable_mask;
+    }
     {
 #ifdef CANGJIE_ENABLE_PROFILE
         ProfileScopeTimer timer(
@@ -1328,7 +1384,8 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
         );
 #endif
         snapshot.current_functions_single_line = ScanDeclarationFamily(
-            owned, CurrentFunctionSingleLinePattern(), false, &close_cache
+            owned, CurrentFunctionSingleLinePattern(), false, &close_cache,
+            current_callable_mask_ptr
         );
     }
     {
@@ -1368,7 +1425,8 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
             );
 #endif
             snapshot.current_functions_multiline_only = ScanDeclarationFamily(
-                owned, CurrentFunctionMultilinePattern(), true, &close_cache
+                owned, CurrentFunctionMultilinePattern(), true, &close_cache,
+                current_callable_mask_ptr
             );
         }
         {
@@ -1448,7 +1506,8 @@ struct LegacyDeclarationRecord {
 std::vector<LegacyDeclarationRecord> LegacyScanDeclarationFamily(
     std::string_view source,
     const std::regex& pattern,
-    bool multiline_only
+    bool multiline_only,
+    const std::string* code_mask = nullptr
 ) {
     const std::string owned(source);
     std::vector<LegacyDeclarationRecord> records;
@@ -1457,8 +1516,14 @@ std::vector<LegacyDeclarationRecord> LegacyScanDeclarationFamily(
         if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
             continue;
         }
+        const std::size_t match_offset = static_cast<std::size_t>((*it).position());
+        if (code_mask && StartsWith(source.substr(match_offset), "init") &&
+            (match_offset >= code_mask->size() ||
+            !IsIdentStart(static_cast<unsigned char>((*code_mask)[match_offset])))) {
+            continue;
+        }
         LegacyDeclarationRecord record;
-        record.offset = static_cast<std::size_t>((*it).position());
+        record.offset = match_offset;
         record.length = static_cast<std::size_t>((*it).length());
         record.open = record.offset + record.length - 1;
         record.close = MatchingDelimiter(owned, record.open, '{', '}');
@@ -1534,17 +1599,19 @@ void VerifyDeclarationSnapshot(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
     );
     static const std::regex current_single_line_pattern(
-        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain|\binit)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
     );
     static const std::regex current_multiline_pattern(
-        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain|\binit)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
     );
+    const std::string code_mask = MaskNonCodeText(source);
     auto verify = [&](const std::vector<DeclarationRecord>& actual,
                       const std::regex& pattern,
                       bool multiline_only,
-                      const char* family) {
+                      const char* family,
+                      const std::string* match_mask = nullptr) {
         const std::vector<LegacyDeclarationRecord> expected = LegacyScanDeclarationFamily(
-            source, pattern, multiline_only
+            source, pattern, multiline_only, match_mask
         );
         if (!SameDeclarationRecords(actual, expected)) {
             throw std::logic_error(
@@ -1564,7 +1631,7 @@ void VerifyDeclarationSnapshot(
     );
     verify(
         snapshot.current_functions_single_line,
-        current_single_line_pattern, false, "current function single-line"
+        current_single_line_pattern, false, "current function single-line", &code_mask
     );
     if (HasMultilineFunctionHeader(source)) {
         verify(
@@ -1577,7 +1644,7 @@ void VerifyDeclarationSnapshot(
         );
         verify(
             snapshot.current_functions_multiline_only,
-            current_multiline_pattern, true, "current function multiline-only"
+            current_multiline_pattern, true, "current function multiline-only", &code_mask
         );
     } else if (!snapshot.explicit_functions_multiline_only.empty() ||
                !snapshot.optional_functions_multiline_only.empty() ||
@@ -1642,6 +1709,100 @@ void CollectImports(std::string_view source, Model* model) {
     }
 }
 
+struct SourceFieldInfo {
+    bool mutable_field = false;
+    bool is_static = false;
+    bool has_initializer = false;
+    std::string type;
+};
+
+std::unordered_map<std::string, SourceFieldInfo> ScanTopLevelSourceFieldsMasked(
+    std::string_view masked_body,
+    std::vector<std::string>* ordered_field_names = nullptr,
+    std::vector<std::string>* ordered_method_names = nullptr
+) {
+    static const std::regex member_pattern(
+        R"((?:^|[\s;])\s*(?:(?:public|private)\s+)?(static\s+)?(?:(?:(let|var)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:|init\s*\(|func\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<[^>{}()]*>)?\s*\())"
+    );
+    struct MemberHeader {
+        std::size_t position = 0;
+        std::size_t end = 0;
+        bool is_static = false;
+        std::string mutability;
+        std::string field_name;
+        std::string method_name;
+    };
+
+    const std::string owned(masked_body);
+    std::vector<MemberHeader> members;
+    std::size_t scan = 0;
+    int brace_depth = 0;
+    int paren_depth = 0;
+    int bracket_depth = 0;
+    for (std::sregex_iterator it(owned.begin(), owned.end(), member_pattern), end;
+         it != end; ++it) {
+        const std::size_t position = static_cast<std::size_t>((*it).position());
+        while (scan < position) {
+            const char ch = owned[scan++];
+            if (ch == '{') ++brace_depth;
+            else if (ch == '}' && brace_depth > 0) --brace_depth;
+            else if (ch == '(') ++paren_depth;
+            else if (ch == ')' && paren_depth > 0) --paren_depth;
+            else if (ch == '[') ++bracket_depth;
+            else if (ch == ']' && bracket_depth > 0) --bracket_depth;
+        }
+        if (brace_depth != 0 || paren_depth != 0 || bracket_depth != 0) continue;
+        members.push_back(MemberHeader{
+            position,
+            position + static_cast<std::size_t>((*it).length()),
+            (*it)[1].matched,
+            (*it)[2].str(),
+            (*it)[3].str(),
+            (*it)[4].str(),
+        });
+    }
+
+    std::unordered_map<std::string, SourceFieldInfo> result;
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        const MemberHeader& member = members[index];
+        if (!member.field_name.empty() && ordered_field_names) {
+            ordered_field_names->push_back(member.field_name);
+        }
+        if (!member.method_name.empty() && ordered_method_names) {
+            ordered_method_names->push_back(member.method_name);
+        }
+        if (member.field_name.empty()) continue;
+        const std::size_t boundary = index + 1 < members.size()
+            ? members[index + 1].position : owned.size();
+        if (member.end > boundary) continue;
+        const std::string_view tail = std::string_view(owned).substr(
+            member.end, boundary - member.end
+        );
+        const std::size_t initializer = FindTopLevel(tail, "=");
+        const std::size_t semicolon = FindTopLevel(tail, ";");
+        std::size_t type_end = tail.size();
+        if (initializer != std::string::npos) type_end = initializer;
+        if (semicolon != std::string::npos) type_end = std::min(type_end, semicolon);
+        result[member.field_name] = SourceFieldInfo{
+            // Bare `name: Type` fields participate in lookup and collision
+            // checks, but only an explicit `let` needs constructor definite
+            // assignment.  Preserve the legacy bare-field behavior here.
+            member.mutability != "let",
+            member.is_static,
+            initializer != std::string::npos &&
+                (semicolon == std::string::npos || initializer < semicolon),
+            CompactType(tail.substr(0, type_end)),
+        };
+    }
+    return result;
+}
+
+std::unordered_map<std::string, SourceFieldInfo> ScanTopLevelSourceFields(
+    std::string_view body
+) {
+    return ScanTopLevelSourceFieldsMasked(MaskNonCodeText(body));
+}
+
 void CollectNominalsFromRecords(
     std::string_view source,
     const std::vector<DeclarationRecord>& records,
@@ -1653,20 +1814,14 @@ void CollectNominalsFromRecords(
     static const std::regex multiline_method_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*:\s*([^{};\n]*[^\s{};\n]))"
     );
-    static const std::regex field_pattern(
-        R"(\b(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^={}\n]+))"
-    );
-    static const std::regex bare_field_pattern(
-        R"(\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()\n]+>)?))"
-    );
-    static const std::regex init_pattern(R"(\binit\s*\(([^{};\n]*)\))");
-    static const std::regex let_or_var_prefix(R"(\b(?:let|var)\s*$)");
+    static const std::regex init_pattern(R"(\binit\s*\(([^{};]*?)\))");
     const std::string owned(source);
     for (const DeclarationRecord& record : records) {
         const std::size_t open = record.open;
         const std::optional<std::size_t>& close = record.close;
         const std::size_t body_end = close.value_or(owned.size());
         const std::string body = owned.substr(open + 1, body_end - open - 1);
+        const std::string masked_body = MaskNonCodeText(body);
         NominalInfo info;
         info.is_interface = SnapshotCaptureAt(record, 1).text == "interface";
         info.name = SnapshotCaptureAt(record, 2).text;
@@ -1674,6 +1829,9 @@ void CollectNominalsFromRecords(
         info.supers = ParseSupers(SnapshotCaptureAt(record, 4).text);
 
         auto collect_methods = [&](const std::regex& pattern, bool multiline_only) {
+            static const std::regex static_modifier_suffix(
+                R"((?:^|[;{}\n\r])\s*(?:(?:public|private)\s+)?static\s*$)"
+            );
             for (std::sregex_iterator method(body.begin(), body.end(), pattern), method_end;
                  method != method_end; ++method) {
                 if (multiline_only &&
@@ -1684,12 +1842,9 @@ void CollectNominalsFromRecords(
                     (*method)[1].str(), (*method)[2].str(), (*method)[3].str(), (*method)[4].str()
                 );
                 const std::size_t method_pos = static_cast<std::size_t>((*method).position());
-                const std::size_t prefix_start = body.rfind('\n', method_pos);
-                const std::string prefix = body.substr(
-                    prefix_start == std::string::npos ? 0 : prefix_start + 1,
-                    method_pos - (prefix_start == std::string::npos ? 0 : prefix_start + 1)
+                sig.is_static = std::regex_search(
+                    masked_body.substr(0, method_pos), static_modifier_suffix
                 );
-                sig.is_static = prefix.find("static") != std::string::npos;
                 auto& methods = sig.is_static ? info.static_methods : info.methods;
                 methods[sig.name].push_back(std::move(sig));
             }
@@ -1698,39 +1853,9 @@ void CollectNominalsFromRecords(
         if (HasMultilineFunctionHeader(body)) {
             collect_methods(multiline_method_pattern, true);
         }
-        for (std::sregex_iterator field(body.begin(), body.end(), field_pattern), field_end;
-             field != field_end; ++field) {
-            const std::size_t field_pos = static_cast<std::size_t>((*field).position());
-            const std::size_t line_start = body.rfind('\n', field_pos);
-            const std::string prefix = body.substr(
-                line_start == std::string::npos ? 0 : line_start + 1,
-                field_pos - (line_start == std::string::npos ? 0 : line_start + 1)
-            );
-            auto& fields = prefix.find("static") != std::string::npos
-                ? info.static_fields : info.fields;
-            fields[(*field)[1].str()] = CompactType((*field)[2].str());
-        }
-        for (std::sregex_iterator field(body.begin(), body.end(), bare_field_pattern), field_end;
-             field != field_end; ++field) {
-            const std::size_t position = static_cast<std::size_t>((*field).position());
-            int paren_depth = 0;
-            int brace_depth = 0;
-            for (std::size_t index = 0; index < position; ++index) {
-                if (body[index] == '(') ++paren_depth;
-                else if (body[index] == ')' && paren_depth > 0) --paren_depth;
-                else if (body[index] == '{') ++brace_depth;
-                else if (body[index] == '}' && brace_depth > 0) --brace_depth;
-            }
-            if (paren_depth == 0 && brace_depth == 0) {
-                const std::size_t line_start = body.find_last_of("\n;{}", position);
-                const std::string prefix = body.substr(
-                    line_start == std::string::npos ? 0 : line_start + 1,
-                    position - (line_start == std::string::npos ? 0 : line_start + 1)
-                );
-                if (!std::regex_search(prefix, let_or_var_prefix)) {
-                    info.fields.emplace((*field)[1].str(), CompactType((*field)[2].str()));
-                }
-            }
+        for (const auto& [name, field] : ScanTopLevelSourceFieldsMasked(masked_body)) {
+            auto& fields = field.is_static ? info.static_fields : info.fields;
+            fields[name] = field.type;
         }
         for (std::sregex_iterator init(body.begin(), body.end(), init_pattern), init_end;
              init != init_end; ++init) {
@@ -1784,14 +1909,7 @@ void CollectNominalsRegex(std::string_view source, Model* model) {
     static const std::regex multiline_method_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*:\s*([^{};\n]*[^\s{};\n]))"
     );
-    static const std::regex field_pattern(
-        R"(\b(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^={}\n]+))"
-    );
-    static const std::regex bare_field_pattern(
-        R"(\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()\n]+>)?))"
-    );
-    static const std::regex init_pattern(R"(\binit\s*\(([^{};\n]*)\))");
-    static const std::regex let_or_var_prefix(R"(\b(?:let|var)\s*$)");
+    static const std::regex init_pattern(R"(\binit\s*\(([^{};]*?)\))");
     const std::string owned(source);
     for (std::sregex_iterator it(owned.begin(), owned.end(), nominal_pattern), end;
          it != end; ++it) {
@@ -1801,6 +1919,7 @@ void CollectNominalsRegex(std::string_view source, Model* model) {
         const auto close = MatchingDelimiter(owned, open, '{', '}');
         const std::size_t body_end = close.value_or(owned.size());
         const std::string body = owned.substr(open + 1, body_end - open - 1);
+        const std::string masked_body = MaskNonCodeText(body);
         NominalInfo info;
         info.is_interface = (*it)[1].str() == "interface";
         info.name = (*it)[2].str();
@@ -1808,6 +1927,9 @@ void CollectNominalsRegex(std::string_view source, Model* model) {
         info.supers = ParseSupers((*it)[4].str());
 
         auto collect_methods = [&](const std::regex& pattern, bool multiline_only) {
+            static const std::regex static_modifier_suffix(
+                R"((?:^|[;{}\n\r])\s*(?:(?:public|private)\s+)?static\s*$)"
+            );
             for (std::sregex_iterator method(body.begin(), body.end(), pattern), method_end;
                  method != method_end; ++method) {
                 if (multiline_only &&
@@ -1819,12 +1941,9 @@ void CollectNominalsRegex(std::string_view source, Model* model) {
                     (*method)[3].str(), (*method)[4].str()
                 );
                 const std::size_t method_pos = static_cast<std::size_t>((*method).position());
-                const std::size_t prefix_start = body.rfind('\n', method_pos);
-                const std::string prefix = body.substr(
-                    prefix_start == std::string::npos ? 0 : prefix_start + 1,
-                    method_pos - (prefix_start == std::string::npos ? 0 : prefix_start + 1)
+                sig.is_static = std::regex_search(
+                    masked_body.substr(0, method_pos), static_modifier_suffix
                 );
-                sig.is_static = prefix.find("static") != std::string::npos;
                 auto& methods = sig.is_static ? info.static_methods : info.methods;
                 methods[sig.name].push_back(std::move(sig));
             }
@@ -1833,41 +1952,9 @@ void CollectNominalsRegex(std::string_view source, Model* model) {
         if (HasMultilineFunctionHeader(body)) {
             collect_methods(multiline_method_pattern, true);
         }
-        for (std::sregex_iterator field(body.begin(), body.end(), field_pattern), field_end;
-             field != field_end; ++field) {
-            const std::size_t field_pos = static_cast<std::size_t>((*field).position());
-            const std::size_t line_start = body.rfind('\n', field_pos);
-            const std::string prefix = body.substr(
-                line_start == std::string::npos ? 0 : line_start + 1,
-                field_pos - (line_start == std::string::npos ? 0 : line_start + 1)
-            );
-            auto& fields = prefix.find("static") != std::string::npos
-                ? info.static_fields : info.fields;
-            fields[(*field)[1].str()] = CompactType((*field)[2].str());
-        }
-        for (std::sregex_iterator field(body.begin(), body.end(), bare_field_pattern), field_end;
-             field != field_end; ++field) {
-            const std::size_t position = static_cast<std::size_t>((*field).position());
-            int paren_depth = 0;
-            int brace_depth = 0;
-            for (std::size_t index = 0; index < position; ++index) {
-                if (body[index] == '(') ++paren_depth;
-                else if (body[index] == ')' && paren_depth > 0) --paren_depth;
-                else if (body[index] == '{') ++brace_depth;
-                else if (body[index] == '}' && brace_depth > 0) --brace_depth;
-            }
-            if (paren_depth == 0 && brace_depth == 0) {
-                const std::size_t line_start = body.find_last_of("\n;{}", position);
-                const std::string prefix = body.substr(
-                    line_start == std::string::npos ? 0 : line_start + 1,
-                    position - (line_start == std::string::npos ? 0 : line_start + 1)
-                );
-                if (!std::regex_search(prefix, let_or_var_prefix)) {
-                    info.fields.emplace(
-                        (*field)[1].str(), CompactType((*field)[2].str())
-                    );
-                }
-            }
+        for (const auto& [name, field] : ScanTopLevelSourceFieldsMasked(masked_body)) {
+            auto& fields = field.is_static ? info.static_fields : info.fields;
+            fields[name] = field.type;
         }
         for (std::sregex_iterator init(body.begin(), body.end(), init_pattern), init_end;
              init != init_end; ++init) {
@@ -1976,6 +2063,12 @@ struct FunctionContext {
     std::size_t body_end = std::string::npos;
     std::unordered_map<std::string, std::string> variables;
     std::unordered_set<std::string> immutable;
+    // Preserve the bindings that exist at function entry.  `variables` is a
+    // whole-prefix cache and intentionally contains locals collected from the
+    // complete body; loop/block validation needs the lexical entry layer so
+    // that a later or nested declaration cannot leak backwards into a scope.
+    std::unordered_map<std::string, std::string> entry_variables;
+    std::unordered_set<std::string> entry_immutable;
     std::string class_name;
 };
 
@@ -2012,6 +2105,8 @@ FunctionContext CurrentFunctionContextFromRecords(
     };
     inspect(single_line_records);
     inspect(multiline_only_records);
+    best.entry_variables = best.variables;
+    best.entry_immutable = best.immutable;
     if (best_open == std::string::npos) {
         best.body = owned;
         return best;
@@ -2045,12 +2140,13 @@ FunctionContext CurrentFunctionContext(
 #ifdef CANGJIE_ENABLE_REGEX_SHADOW
 FunctionContext CurrentFunctionContextRegex(std::string_view source) {
     static const std::regex single_line_pattern(
-        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain|\binit)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
     );
     static const std::regex multiline_pattern(
-        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
+        R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain|\binit)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
     );
     const std::string owned(source);
+    const std::string code_mask = MaskNonCodeText(source);
     FunctionContext best;
     std::size_t best_open = std::string::npos;
     std::optional<std::size_t> best_close;
@@ -2060,8 +2156,14 @@ FunctionContext CurrentFunctionContextRegex(std::string_view source) {
             if (multiline_only && (*it)[0].str().find_first_of("\n\r") == std::string::npos) {
                 continue;
             }
+            const std::size_t match_offset = static_cast<std::size_t>((*it).position());
+            if (StartsWith(std::string_view(owned).substr(match_offset), "init") &&
+                (match_offset >= code_mask.size() ||
+                 !IsIdentStart(static_cast<unsigned char>(code_mask[match_offset])))) {
+                continue;
+            }
             const std::size_t open = static_cast<std::size_t>(
-                (*it).position() + (*it).length() - 1
+                match_offset + (*it).length() - 1
             );
             if (best_open != std::string::npos && open < best_open) continue;
             best_open = open;
@@ -2082,6 +2184,8 @@ FunctionContext CurrentFunctionContextRegex(std::string_view source) {
     };
     inspect(single_line_pattern, false);
     if (HasMultilineFunctionHeader(source)) inspect(multiline_pattern, true);
+    best.entry_variables = best.variables;
+    best.entry_immutable = best.immutable;
     if (best_open == std::string::npos) {
         best.body = owned;
         return best;
@@ -2185,6 +2289,8 @@ void CollectActiveLambdaVariables(FunctionContext* context) {
                 ? "?" : CompactType(std::string_view(raw_parameter).substr(colon + 1));
             context->variables[name] = type.empty() ? "?" : type;
             context->immutable.insert(name);
+            context->entry_variables[name] = type.empty() ? "?" : type;
+            context->entry_immutable.insert(name);
         }
     }
 }
@@ -2258,8 +2364,7 @@ bool Compatible(std::string_view got, std::string_view want, const Model& model)
 bool KnownType(std::string_view type, const Model& model) {
     const std::string normalized = CompactType(type);
     static const std::unordered_set<std::string> primitives = {
-        "Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
-        "Bool", "Rune", "String", "Unit"
+        "Int64", "Float64", "Bool", "Rune", "Unit"
     };
     if (primitives.count(normalized)) return true;
     if (IsFunctionType(normalized)) return true;
@@ -2372,8 +2477,7 @@ CheckStatus CheckDeclaredTypesFromRecords(
     (void)source;
 #endif
     static const std::unordered_set<std::string> primitives = {
-        "Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
-        "Bool", "Rune", "String", "Unit"
+        "Int64", "Float64", "Bool", "Rune", "Unit"
     };
     auto check_functions = [&](const std::vector<DeclarationRecord>& records) -> CheckStatus {
         for (const DeclarationRecord& record : records) {
@@ -2544,8 +2648,8 @@ CheckStatus CheckDeclaredTypes(
         CollectNominalDeclarations(snapshot);
     const CheckStatus result = CheckDeclaredTypesFromRecords(
         source, model,
-        snapshot.optional_functions_single_line,
-        snapshot.optional_functions_multiline_only,
+        snapshot.explicit_functions_single_line,
+        snapshot.explicit_functions_multiline_only,
         nominal_declarations
     );
 #ifdef CANGJIE_ENABLE_REGEX_SHADOW
@@ -2583,6 +2687,7 @@ class ActiveStatementCache {
     struct Result {
         std::string text;
         Boundary boundary = Boundary::None;
+        std::string pending_text;
     };
 
     void Reset() {
@@ -2599,6 +2704,7 @@ class ActiveStatementCache {
         escaped_ = false;
         line_comment_ = false;
         block_comment_depth_ = 0;
+        pending_newline_ = false;
     }
 
     Result Update(
@@ -2608,11 +2714,17 @@ class ActiveStatementCache {
     ) {
         body_end = std::min(body_end, source.size());
         if (body_start_ != body_start || cursor_ > body_end) Initialize(body_start);
+        bool started_after_newline = false;
         while (cursor_ < body_end) {
             const std::size_t index = cursor_;
             const char ch = source[index];
             const bool has_next = index + 1 < body_end;
             const char next = has_next ? source[index + 1] : '\0';
+            if (pending_newline_ && index >= statement_start_ &&
+                !std::isspace(static_cast<unsigned char>(ch))) {
+                started_after_newline = true;
+                pending_newline_ = false;
+            }
             if (line_comment_) {
                 ++cursor_;
                 if (ch == '\n' || ch == '\r') {
@@ -2693,12 +2805,19 @@ class ActiveStatementCache {
                 --visible_end;
             }
         }
+        const bool function_closed = body_end < source.size() && source[body_end] == '}';
         const std::string active = Trim(source.substr(
             statement_start_, visible_end - statement_start_
         ));
+        if (started_after_newline && last_start_ != std::string_view::npos &&
+            !active.empty()) {
+            return {
+                active,
+                function_closed ? Boundary::FunctionClose : Boundary::None,
+                Trim(source.substr(last_start_, last_end_ - last_start_)),
+            };
+        }
         if (!active.empty()) {
-            const bool function_closed = body_end < source.size() &&
-                source[body_end] == '}';
             return {
                 active,
                 function_closed ? Boundary::FunctionClose : Boundary::None,
@@ -2707,7 +2826,7 @@ class ActiveStatementCache {
         if (last_start_ != std::string_view::npos) {
             return {
                 Trim(source.substr(last_start_, last_end_ - last_start_)),
-                last_boundary_,
+                function_closed ? Boundary::FunctionClose : last_boundary_,
             };
         }
         return {};
@@ -2737,8 +2856,12 @@ class ActiveStatementCache {
         if (!ContinuesAfterNewline(source.substr(
                 statement_start_, index - statement_start_
             ))) {
+            const bool nonempty = !Trim(source.substr(
+                statement_start_, index - statement_start_
+            )).empty();
             Commit(source, index, Boundary::Newline);
             statement_start_ = index + 1;
+            if (nonempty) pending_newline_ = true;
         }
     }
 
@@ -2755,6 +2878,7 @@ class ActiveStatementCache {
     bool escaped_ = false;
     bool line_comment_ = false;
     int block_comment_depth_ = 0;
+    bool pending_newline_ = false;
 };
 
 bool IsStatementPrefix(std::string_view line) {
@@ -2784,6 +2908,7 @@ bool HasCompleteTrailingIdentifier(std::string_view source) {
 
 bool HasUnclosedString(std::string_view source) {
     bool in_string = false;
+    bool triple_string = false;
     bool escaped = false;
     bool line_comment = false;
     int block_comment_depth = 0;
@@ -2805,7 +2930,14 @@ bool HasUnclosedString(std::string_view source) {
             continue;
         }
         if (in_string) {
-            if (escaped) escaped = false;
+            if (triple_string) {
+                if (index + 2 < source.size() &&
+                    source.substr(index, 3) == "\"\"\"") {
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) escaped = false;
             else if (ch == '\\') escaped = true;
             else if (ch == '"') in_string = false;
             continue;
@@ -2817,7 +2949,10 @@ bool HasUnclosedString(std::string_view source) {
             block_comment_depth = 1;
             ++index;
         } else if (ch == '"') {
+            triple_string = index + 2 < source.size() &&
+                source.substr(index, 3) == "\"\"\"";
             in_string = true;
+            if (triple_string) index += 2;
         }
     }
     return in_string;
@@ -2869,6 +3004,7 @@ class ExpressionTyper {
         const std::unordered_map<std::string, std::string>& receiver_substitutions = {}
     );
     bool HasSymbolPrefix(std::string_view prefix) const;
+    bool MayExtendTrailingIdentifier(std::string_view identifier) const;
     std::optional<std::pair<std::string, std::string>> ParseMember(std::string_view expression) const;
 
     const Model& model_;
@@ -2893,24 +3029,84 @@ std::optional<std::tuple<std::string, std::string, std::string>> TailBinary(
         {"||"}, {"&&"}, {"==", "!="}, {"<=", ">=", "<", ">"},
         {"..=", ".."}, {"+", "-"}, {"*", "/", "%"}
     };
+    std::vector<unsigned char> ignored(expression.size(), 0);
+    bool in_string = false;
+    bool triple_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    for (std::size_t index = 0; index < expression.size(); ++index) {
+        const char ch = expression[index];
+        const char next = index + 1 < expression.size()
+            ? expression[index + 1] : '\0';
+        if (line_comment) {
+            ignored[index] = 1;
+            if (ch == '\n' || ch == '\r') line_comment = false;
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            ignored[index] = 1;
+            if (ch == '/' && next == '*') {
+                ignored[index + 1] = 1;
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                ignored[index + 1] = 1;
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            ignored[index] = 1;
+            if (triple_string) {
+                if (index + 2 < expression.size() &&
+                    expression.substr(index, 3) == "\"\"\"") {
+                    ignored[index + 1] = 1;
+                    ignored[index + 2] = 1;
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            ignored[index] = ignored[index + 1] = 1;
+            line_comment = true;
+            ++index;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            ignored[index] = ignored[index + 1] = 1;
+            block_comment_depth = 1;
+            ++index;
+            continue;
+        }
+        if (ch == '"') {
+            ignored[index] = 1;
+            triple_string = index + 2 < expression.size() &&
+                expression.substr(index, 3) == "\"\"\"";
+            in_string = true;
+            if (triple_string) {
+                ignored[index + 1] = ignored[index + 2] = 1;
+                index += 2;
+            }
+        }
+    }
     for (const auto& operators : precedences) {
         int paren = 0;
         int bracket = 0;
         int brace = 0;
-        bool in_string = false;
-        bool escaped = false;
         for (std::size_t index = expression.size(); index-- > 0;) {
+            if (ignored[index]) continue;
             const char ch = expression[index];
-            if (in_string) {
-                if (escaped) escaped = false;
-                else if (ch == '\\') escaped = true;
-                else if (ch == '"') in_string = false;
-                continue;
-            }
-            if (ch == '"') {
-                in_string = true;
-                continue;
-            }
             if (ch == ')') ++paren;
             else if (ch == '(') --paren;
             else if (ch == ']') ++bracket;
@@ -2922,6 +3118,7 @@ std::optional<std::tuple<std::string, std::string, std::string>> TailBinary(
                 if (index + op.size() <= expression.size() && expression.substr(index, op.size()) == op) {
                     if ((op == "+" || op == "-") && index == 0) continue;
                     if (op == "<" && index + 1 < expression.size() && expression[index + 1] == ':') continue;
+                    if (op == ">" && index > 0 && expression[index - 1] == '=') continue;
                     return std::make_tuple(
                         Trim(expression.substr(0, index)), op,
                         Trim(expression.substr(index + op.size()))
@@ -3018,6 +3215,16 @@ bool ExpressionTyper::HasSymbolPrefix(std::string_view prefix) const {
     return false;
 }
 
+bool ExpressionTyper::MayExtendTrailingIdentifier(std::string_view identifier) const {
+    if (!IsIdentifierText(identifier) || full_source_.empty()) return false;
+    std::size_t end = full_source_.size();
+    if (std::isspace(static_cast<unsigned char>(full_source_[end - 1]))) return false;
+    std::size_t start = end;
+    while (start > 0 && IsIdentContinue(
+               static_cast<unsigned char>(full_source_[start - 1]))) --start;
+    return full_source_.substr(start, end - start) == identifier;
+}
+
 std::optional<std::pair<std::string, std::string>> ExpressionTyper::ParseMember(
     std::string_view expression
 ) const {
@@ -3054,12 +3261,6 @@ void BindTypeVariables(
         substitutions->emplace(pattern, actual);
         return;
     }
-    if (TypeHead(pattern) != TypeHead(actual)) return;
-    const auto pattern_args = TypeArgs(pattern);
-    const auto actual_args = TypeArgs(actual);
-    for (std::size_t index = 0; index < pattern_args.size() && index < actual_args.size(); ++index) {
-        BindTypeVariables(pattern_args[index], actual_args[index], type_params, substitutions);
-    }
     if (IsFunctionType(pattern) && IsFunctionType(actual)) {
         const auto pattern_fn = FunctionTypeParts(pattern);
         const auto actual_fn = FunctionTypeParts(actual);
@@ -3079,6 +3280,16 @@ void BindTypeVariables(
         for (std::size_t index = 0;
              index < pattern_parts.size() && index < actual_parts.size(); ++index) {
             BindTypeVariables(pattern_parts[index], actual_parts[index], type_params, substitutions);
+        }
+    } else {
+        if (TypeHead(pattern) != TypeHead(actual)) return;
+        const auto pattern_args = TypeArgs(pattern);
+        const auto actual_args = TypeArgs(actual);
+        for (std::size_t index = 0;
+             index < pattern_args.size() && index < actual_args.size(); ++index) {
+            BindTypeVariables(
+                pattern_args[index], actual_args[index], type_params, substitutions
+            );
         }
     }
 }
@@ -3133,7 +3344,7 @@ ExprResult ExpressionTyper::CheckSignatures(
                 argument = Trim(std::string_view(argument).substr(colon + 1));
             } else {
                 const std::string possible_name = Trim(raw_argument);
-                if (!HasCompleteTrailingIdentifier(full_source_) &&
+                if (!closed && MayExtendTrailingIdentifier(possible_name) &&
                     IsIdentifierText(possible_name) &&
                     std::any_of(
                         sig.param_names.begin(), sig.param_names.end(),
@@ -3156,7 +3367,7 @@ ExprResult ExpressionTyper::CheckSignatures(
                 if (first_error.empty()) first_error = actual.message;
                 break;
             }
-            if (!HasCompleteTrailingIdentifier(full_source_) &&
+            if (!closed && MayExtendTrailingIdentifier(trimmed_argument) &&
                 IsIdentifierText(trimmed_argument) &&
                 HasSymbolPrefix(trimmed_argument) &&
                 argument_number + 1 == arguments.size()) {
@@ -3171,7 +3382,7 @@ ExprResult ExpressionTyper::CheckSignatures(
                         argument_number + 1 == arguments.size()) {
                         continue;
                     }
-                    if (!closed && !HasCompleteTrailingIdentifier(full_source_) &&
+                    if (!closed && MayExtendTrailingIdentifier(trimmed_argument) &&
                         argument_number + 1 == arguments.size()) continue;
                     if (IsInteger(actual.type) && IsInteger(want) &&
                         IsDecimalIntegerText(Trim(argument))) {
@@ -3262,7 +3473,7 @@ ExprResult ExpressionTyper::InferCall(
     const auto& methods = type_receiver ? nominal->second.static_methods : nominal->second.methods;
     const auto method = methods.find(name);
     if (method == methods.end()) {
-        const bool partial = !HasCompleteTrailingIdentifier(full_source_);
+        const bool partial = MayExtendTrailingIdentifier(name);
         if (partial) {
             for (const auto& [candidate, _] : methods) if (StartsWith(candidate, name)) return {};
         }
@@ -3283,6 +3494,28 @@ ExprResult ExpressionTyper::InferCall(
     ));
 }
 
+std::optional<std::size_t> FirstStringLiteralEnd(std::string_view expression) {
+    if (expression.empty() || expression.front() != '"') return std::nullopt;
+    if (StartsWith(expression, "\"\"\"")) {
+        for (std::size_t index = 3; index + 2 < expression.size(); ++index) {
+            if (expression.substr(index, 3) == "\"\"\"") return index + 2;
+        }
+        return std::nullopt;
+    }
+    bool escaped = false;
+    for (std::size_t index = 1; index < expression.size(); ++index) {
+        const char ch = expression[index];
+        if (escaped) {
+            escaped = false;
+        } else if (ch == '\\') {
+            escaped = true;
+        } else if (ch == '"') {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
 ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string& expected, int depth) {
     if (depth > 64) return {};
     expression = Trim(expression);
@@ -3293,11 +3526,27 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             const std::string inner = expression.substr(1, expression.size() - 2);
             const auto tuple_parts = SplitTopLevel(inner, ',');
             if (tuple_parts.size() > 1) {
+                std::vector<std::string> expected_parts;
+                if (expected.size() >= 2 && expected.front() == '(' &&
+                    expected.back() == ')') {
+                    expected_parts = SplitTopLevel(
+                        std::string_view(expected).substr(1, expected.size() - 2), ','
+                    );
+                }
                 std::string tuple = "(";
                 bool known = true;
                 for (std::size_t index = 0; index < tuple_parts.size(); ++index) {
-                    ExprResult item = InferImpl(tuple_parts[index], {}, depth + 1);
+                    const std::string item_expected = index < expected_parts.size()
+                        ? expected_parts[index] : std::string{};
+                    ExprResult item = InferImpl(
+                        tuple_parts[index], item_expected, depth + 1
+                    );
                     if (item.error) return item;
+                    if (!item_expected.empty() &&
+                        KnownType(TypeHead(item_expected), model_) && item.known &&
+                        !Compatible(item.type, item_expected, model_)) {
+                        return {"?", false, true, "tuple element type mismatch"};
+                    }
                     if (index) tuple += ",";
                     tuple += item.type;
                     known = known && item.known;
@@ -3382,6 +3631,14 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         if (!expected_fn.second.empty() && params.size() != expected_fn.first.size()) {
             return {"?", false, true, "lambda parameter arity mismatch"};
         }
+        if (expected_fn.second.empty()) {
+            for (const std::string& parameter : params) {
+                if (FindTopLevel(parameter, ":") == std::string::npos) {
+                    return {"?", false, true,
+                            "lambda synthesis requires parameter annotations"};
+                }
+            }
+        }
         FunctionContext lambda_context = context_;
         std::vector<std::string> param_types;
         for (std::size_t index = 0; index < params.size(); ++index) {
@@ -3404,7 +3661,12 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         }
         ExpressionTyper lambda_typer(model_, lambda_context, full_source_);
         ExprResult result_body = lambda_typer.Infer(body, expected_fn.second);
-        if (result_body.error) return result_body;
+        if (result_body.error) {
+            if (!lambda_closed && result_body.message == "argument type mismatch") {
+                return {};
+            }
+            return result_body;
+        }
         if (!expected_fn.second.empty() && result_body.known &&
             !Compatible(result_body.type, expected_fn.second, model_)) {
             if (!lambda_closed) {
@@ -3419,11 +3681,21 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             type += param_types[index];
         }
         type += ")->" + (result_body.known ? result_body.type : expected_fn.second);
-        return {type, !type.empty() && type.back() != '>', false, {}, true};
+        return {type, lambda_closed && result_body.known, false, {}, true};
     }
 
-    if (expression.front() == '"') {
-        if (expected == "Rune" && expression.size() >= 3 && expression.back() == '"') {
+    const bool multiline_string = StartsWith(expression, "\"\"\"");
+    const auto string_literal_end = FirstStringLiteralEnd(expression);
+    if (multiline_string && !string_literal_end) {
+        // A newline is content inside a multiline literal, not a statement
+        // boundary.  Keep the expression unknown until the closing triple
+        // quote rather than committing a premature String type mismatch.
+        return {};
+    }
+    if (expression.front() == '"' &&
+        (!string_literal_end || *string_literal_end == expression.size() - 1)) {
+        if (!multiline_string && expected == "Rune" && string_literal_end &&
+            expression.size() >= 3) {
             const std::string_view content(expression.data() + 1, expression.size() - 2);
             std::size_t scalars = 0;
             for (std::size_t index = 0; index < content.size();) {
@@ -3439,7 +3711,9 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         return {"String", true, false, {}};
     }
     if (expression == "true" || expression == "false") return {"Bool", true, false, {}};
-    static const std::regex integer_pattern(R"([0-9]+(?:i(?:8|16|32|64))?)");
+    static const std::regex integer_pattern(
+        R"((?:[0-9]+|0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+)(?:i(?:8|16|32|64))?)"
+    );
     static const std::regex floating_pattern(R"([0-9]+\.[0-9]*(?:f(?:32|64))?)");
     if (std::regex_match(expression, floating_pattern)) {
         return {expression.find("f32") != std::string::npos ? "Float32" : "Float64", true, false, {}};
@@ -3465,7 +3739,9 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
     bool call_closed = false;
     if (const auto call_open = FindCallOpen(expression, &call_closed)) {
         std::string callee = Trim(std::string_view(expression).substr(0, *call_open));
-        if (!callee.empty()) {
+        const auto parsed_callee = ParseExplicitTypes(callee);
+        const bool call_crosses_binary = TailBinary(parsed_callee.first).has_value();
+        if (!callee.empty() && !call_crosses_binary) {
             std::string arguments = expression.substr(
                 *call_open + 1,
                 expression.size() - *call_open - 1 - (call_closed ? 1 : 0)
@@ -3483,13 +3759,21 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
     }
     if (const auto binary = TailBinary(expression)) {
         const auto& [left_text, op, right_text] = *binary;
+        const bool range_operator = op == ".." || op == "..=";
+        const std::size_t range_step_colon = range_operator
+            ? FindTopLevel(right_text, ":") : std::string::npos;
+        const std::string range_endpoint_text = range_step_colon == std::string::npos
+            ? right_text
+            : Trim(std::string_view(right_text).substr(0, range_step_colon));
         ExprResult left = InferImpl(left_text, {}, depth + 1);
-        ExprResult right = InferImpl(right_text, {}, depth + 1);
+        ExprResult right = InferImpl(range_endpoint_text, {}, depth + 1);
         if (left.error) return left;
         if (right.error) return right;
-        const bool partial_right_identifier = !HasCompleteTrailingIdentifier(full_source_) &&
-            IsIdentifierText(right_text) &&
-            right_text != "true" && right_text != "false";
+        const bool partial_right_identifier =
+            range_step_colon == std::string::npos &&
+            MayExtendTrailingIdentifier(range_endpoint_text) &&
+            IsIdentifierText(range_endpoint_text) &&
+            range_endpoint_text != "true" && range_endpoint_text != "false";
         if (op == "&&" || op == "||") {
             if (left.known && left.type != "Bool") {
                 return {"?", false, true, "logical operands require Bool"};
@@ -3522,7 +3806,35 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
                  !partial_right_identifier)) {
                 return {"?", false, true, "range endpoints must be integral"};
             }
+            if (left.known && right.known && left.type != right.type &&
+                !partial_right_identifier) {
+                return {"?", false, true, "range endpoints must share type"};
+            }
             const std::string element = left.known ? left.type : (right.known ? right.type : "Int64");
+            if (range_step_colon != std::string::npos) {
+                const std::string step_text = Trim(
+                    std::string_view(right_text).substr(range_step_colon + 1)
+                );
+                if (!step_text.empty()) {
+                    ExprResult step = InferImpl(step_text, element, depth + 1);
+                    if (step.error) return step;
+                    const bool partial_step_identifier =
+                        MayExtendTrailingIdentifier(step_text) &&
+                        IsIdentifierText(step_text) &&
+                        step_text != "true" && step_text != "false";
+                    if (step.known &&
+                        !(IsInteger(step.type) || step.type == "Rune") &&
+                        !partial_step_identifier) {
+                        return {"?", false, true,
+                                "range step must be integral"};
+                    }
+                    if ((left.known || right.known) && step.known &&
+                        step.type != element && !partial_step_identifier) {
+                        return {"?", false, true,
+                                "range step must share endpoint type"};
+                    }
+                }
+            }
             return {"Range<" + element + ">", left.known || right.known, false, {}};
         }
         if (op == "%") {
@@ -3558,18 +3870,39 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
     }
 
     if (expression.front() == '[') {
+        const bool array_closed = expression.back() == ']';
         std::string inner = expression.substr(1);
-        if (!inner.empty() && inner.back() == ']') inner.pop_back();
+        if (array_closed && !inner.empty()) inner.pop_back();
+        const auto expected_args = TypeHead(expected) == "Array"
+            ? TypeArgs(expected) : std::vector<std::string>{};
+        const bool concrete_expected_element = expected_args.size() == 1 &&
+            KnownType(TypeHead(expected_args.front()), model_);
+        if (Trim(inner).empty()) {
+            if (array_closed && !concrete_expected_element) {
+                return {"?", false, true, "empty array requires a concrete expected type"};
+            }
+            if (concrete_expected_element) return {expected, true, false, {}, true};
+            return {};
+        }
         const auto elements = SplitTopLevel(inner, ',');
         std::string element_type;
         for (std::size_t index = 0; index < elements.size(); ++index) {
             const std::string& item = elements[index];
-            ExprResult element = InferImpl(item, {}, depth + 1);
+            ExprResult element = InferImpl(
+                item,
+                concrete_expected_element ? expected_args.front() : std::string{},
+                depth + 1
+            );
             if (element.error) return element;
+            if (concrete_expected_element && element.known &&
+                !Compatible(element.type, expected_args.front(), model_)) {
+                return {"?", false, true, "array element type mismatch"};
+            }
             if (!element.known) continue;
             if (element_type.empty()) element_type = element.type;
             else if (!Compatible(element.type, element_type, model_) &&
-                     !(index + 1 == elements.size() && !HasCompleteTrailingIdentifier(full_source_))) {
+                     !(index + 1 == elements.size() &&
+                       MayExtendTrailingIdentifier(Trim(item)))) {
                 return {"?", false, true, "array element type mismatch"};
             }
         }
@@ -3614,7 +3947,7 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         const std::string subscript_text = Trim(
             std::string_view(expression).substr(open_index + 1)
         );
-        const bool partial_subscript = !HasCompleteTrailingIdentifier(full_source_) &&
+        const bool partial_subscript = MayExtendTrailingIdentifier(subscript_text) &&
             IsIdentifierText(subscript_text) &&
             subscript_text != "true" && subscript_text != "false";
         if (subscript.known && subscript.type != "Int64" && !partial_subscript) {
@@ -3624,13 +3957,16 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
     }
 
     if (const auto member = ParseMember(expression)) {
-        if (member->second.empty()) return {};
+        if (member->second.empty()) {
+            ExprResult base = InferImpl(member->first, {}, depth + 1);
+            return base.error ? base : ExprResult{};
+        }
         ExprResult base = InferImpl(member->first, {}, depth + 1);
         if (base.error || !base.known) return base;
         const bool type_receiver = StartsWith(base.type, "type:");
         const std::string receiver_type = type_receiver ? base.type.substr(5) : base.type;
         if (!type_receiver && StartsWith("toString", member->second)) {
-            if (!HasCompleteTrailingIdentifier(full_source_)) return {};
+            if (MayExtendTrailingIdentifier(member->second)) return {};
             if (member->second == "toString") return {"method", true, false, {}, true};
         }
         const auto nominal = model_.nominals.find(TypeHead(receiver_type));
@@ -3649,28 +3985,35 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         }
         const auto& methods = type_receiver ? nominal->second.static_methods : nominal->second.methods;
         if (const auto method = methods.find(member->second); method != methods.end()) {
-            if (!HasCompleteTrailingIdentifier(full_source_)) return {};
-            if (method->second.size() != 1) {
-                return {"?", false, true, "ambiguous overloaded member reference"};
-            }
-            const FunctionSig& signature = method->second.front();
+            if (MayExtendTrailingIdentifier(member->second)) return {};
             std::unordered_map<std::string, std::string> substitutions;
             const auto receiver_args = TypeArgs(receiver_type);
             for (std::size_t index = 0;
                  index < receiver_args.size() && index < nominal->second.type_params.size(); ++index) {
                 substitutions[nominal->second.type_params[index]] = receiver_args[index];
             }
-            std::string function_type = "(";
-            for (std::size_t index = 0; index < signature.param_types.size(); ++index) {
-                if (index) function_type += ",";
-                function_type += ApplySubstitution(signature.param_types[index], substitutions);
+            std::vector<std::string> candidates;
+            for (const FunctionSig& signature : method->second) {
+                std::string function_type = "(";
+                for (std::size_t index = 0; index < signature.param_types.size(); ++index) {
+                    if (index) function_type += ",";
+                    function_type += ApplySubstitution(
+                        signature.param_types[index], substitutions
+                    );
+                }
+                function_type += ")->";
+                function_type += ApplySubstitution(signature.result, substitutions);
+                if (expected.empty() || Compatible(function_type, expected, model_)) {
+                    candidates.push_back(std::move(function_type));
+                }
             }
-            function_type += ")->";
-            function_type += ApplySubstitution(signature.result, substitutions);
-            return {function_type, true, false, {}, true};
+            if (candidates.size() == 1) {
+                return {candidates.front(), true, false, {}, true};
+            }
+            return {"?", false, true, "ambiguous overloaded member reference"};
         }
-        const bool complete = HasCompleteTrailingIdentifier(full_source_);
-        if (!complete) {
+        const bool partial = MayExtendTrailingIdentifier(member->second);
+        if (partial) {
             for (const auto& [name, _] : fields) if (StartsWith(name, member->second)) return {};
             for (const auto& [name, _] : methods) if (StartsWith(name, member->second)) return {};
         }
@@ -3689,16 +4032,48 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         if (const auto global = model_.globals.find(expression); global != model_.globals.end()) {
             return {global->second, true, false, {}};
         }
+        if (const auto functions = model_.functions.find(expression);
+            functions != model_.functions.end()) {
+            if (MayExtendTrailingIdentifier(expression)) return {};
+            std::vector<std::string> candidates;
+            for (const FunctionSig& signature : functions->second) {
+                std::string pattern = "(";
+                for (std::size_t index = 0; index < signature.param_types.size(); ++index) {
+                    if (index) pattern += ",";
+                    pattern += signature.param_types[index];
+                }
+                pattern += ")->" + signature.result;
+                std::unordered_set<std::string> type_parameters(
+                    signature.type_params.begin(), signature.type_params.end()
+                );
+                std::unordered_map<std::string, std::string> substitutions;
+                if (!expected.empty()) {
+                    BindTypeVariables(
+                        pattern, expected, type_parameters, &substitutions
+                    );
+                }
+                const std::string function_type = ApplySubstitution(
+                    pattern, substitutions
+                );
+                if (expected.empty() || Compatible(function_type, expected, model_)) {
+                    candidates.push_back(function_type);
+                }
+            }
+            if (candidates.size() == 1) {
+                return {candidates.front(), true, false, {}, true};
+            }
+            return {"?", false, true, "ambiguous function reference"};
+        }
         if (const auto nominal = model_.nominals.find(expression); nominal != model_.nominals.end()) {
             if (nominal->second.is_interface) return {"?", false, true, "interface used as value"};
-            if (!HasCompleteTrailingIdentifier(full_source_)) return {};
+            if (MayExtendTrailingIdentifier(expression)) return {};
             return {"type:" + expression, true, false, {}};
         }
-        if (!HasCompleteTrailingIdentifier(full_source_) &&
+        if (MayExtendTrailingIdentifier(expression) &&
             (StartsWith("true", expression) || StartsWith("false", expression))) {
             return {};
         }
-        if (!HasCompleteTrailingIdentifier(full_source_) && HasSymbolPrefix(expression)) return {};
+        if (MayExtendTrailingIdentifier(expression) && HasSymbolPrefix(expression)) return {};
         if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
             std::cerr << "undefined expression identifier '" << expression << "'\n";
         }
@@ -3805,12 +4180,59 @@ std::optional<std::pair<std::string, std::string>> ParseVariableDeclaration(
 
 std::optional<std::pair<std::string, std::string>> ParseReassignment(std::string_view line) {
     static const std::regex pattern(
-        R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)\s*(.*)$)"
+        R"(^\s*(?:this\s*\.\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)\s*(.*)$)"
     );
     std::smatch match;
     const std::string owned(line);
     if (!std::regex_match(owned, match, pattern)) return std::nullopt;
     return std::make_pair(match[1].str(), Trim(match[2].str()));
+}
+
+bool HasExplicitThisReceiver(std::string_view line) {
+    static const std::regex pattern(R"(^\s*this\s*\.)");
+    return std::regex_search(line.begin(), line.end(), pattern);
+}
+
+bool HasInvalidAssignmentTarget(std::string_view line) {
+    const std::string owned = Trim(MaskNonCodeText(line));
+    if (StartsWith(owned, "let ") || StartsWith(owned, "var ")) return false;
+    int paren = 0;
+    int bracket = 0;
+    int brace = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (std::size_t index = 0; index < owned.size(); ++index) {
+        const char ch = owned[index];
+        if (in_string) {
+            if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '"') in_string = true;
+        else if (ch == '(') ++paren;
+        else if (ch == ')' && paren > 0) --paren;
+        else if (ch == '[') ++bracket;
+        else if (ch == ']' && bracket > 0) --bracket;
+        else if (ch == '{') ++brace;
+        else if (ch == '}' && brace > 0) --brace;
+        else if (ch == '=' && paren == 0 && bracket == 0 && brace == 0) {
+            const char previous = index > 0 ? owned[index - 1] : '\0';
+            const char next = index + 1 < owned.size() ? owned[index + 1] : '\0';
+            if (next == '=' || next == '>' || previous == '=' || previous == '!' ||
+                previous == '<' || previous == '>') {
+                continue;
+            }
+            const std::string lhs = Trim(std::string_view(owned).substr(0, index));
+            const std::string rhs = Trim(std::string_view(owned).substr(index + 1));
+            if (rhs.empty()) return false;
+            static const std::regex assignable(
+                R"((?:this\.)?[A-Za-z_][A-Za-z0-9_]*(?:(?:\.[A-Za-z_][A-Za-z0-9_]*)|(?:\[[^\]]+\]))*)"
+            );
+            return !std::regex_match(lhs, assignable);
+        }
+    }
+    return false;
 }
 
 std::optional<std::string> LastCondition(std::string_view source, std::string_view keyword) {
@@ -3840,6 +4262,7 @@ bool InsideLoop(std::string_view body) {
 bool IsIterable(std::string_view type) {
     const std::string head = TypeHead(type);
     return head == "Array" || head == "ArrayList" || head == "HashSet" ||
+           head == "ArrayStack" || head == "ArrayDeque" ||
            head == "KeysView" || head == "ValuesView" || head == "Range" ||
            type == "String";
 }
@@ -3848,6 +4271,754 @@ std::string IterableElement(std::string_view type) {
     if (type == "String") return "Rune";
     const auto args = TypeArgs(type);
     return args.empty() ? "?" : args.front();
+}
+
+struct CompletedLoop {
+    bool is_for = false;
+    std::size_t keyword_start = 0;
+    std::size_t condition_open = 0;
+    std::size_t condition_close = 0;
+    std::size_t body_open = 0;
+    std::size_t body_close = 0;
+};
+
+std::size_t SkipLoopLineTrivia(std::string_view source, std::size_t cursor) {
+    while (cursor < source.size()) {
+        while (cursor < source.size() &&
+               std::isspace(static_cast<unsigned char>(source[cursor]))) {
+            ++cursor;
+        }
+        if (cursor + 1 >= source.size()) break;
+        if (source.substr(cursor, 2) == "/*") {
+            int depth = 1;
+            cursor += 2;
+            while (cursor < source.size() && depth > 0) {
+                if (cursor + 1 < source.size() &&
+                    source.substr(cursor, 2) == "/*") {
+                    ++depth;
+                    cursor += 2;
+                } else if (cursor + 1 < source.size() &&
+                           source.substr(cursor, 2) == "*/") {
+                    --depth;
+                    cursor += 2;
+                } else {
+                    ++cursor;
+                }
+            }
+            continue;
+        }
+        if (source.substr(cursor, 2) != "//") break;
+        cursor += 2;
+        while (cursor < source.size() && source[cursor] != '\n' &&
+               source[cursor] != '\r') {
+            ++cursor;
+        }
+    }
+    return cursor;
+}
+
+std::vector<CompletedLoop> FindCompletedLoops(std::string_view source) {
+    std::vector<CompletedLoop> loops;
+    bool in_string = false;
+    bool triple_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    for (std::size_t index = 0; index < source.size(); ++index) {
+        const char ch = source[index];
+        const char next = index + 1 < source.size() ? source[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') line_comment = false;
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (triple_string) {
+                if (index + 2 < source.size() &&
+                    source.substr(index, 3) == "\"\"\"") {
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+            continue;
+        }
+        if (ch == '"') {
+            triple_string = index + 2 < source.size() &&
+                source.substr(index, 3) == "\"\"\"";
+            in_string = true;
+            if (triple_string) index += 2;
+            continue;
+        }
+        if (!IsIdentStart(static_cast<unsigned char>(ch))) continue;
+        std::size_t word_end = index + 1;
+        while (word_end < source.size() &&
+               IsIdentContinue(static_cast<unsigned char>(source[word_end]))) {
+            ++word_end;
+        }
+        const std::string_view keyword = source.substr(index, word_end - index);
+        if (keyword != "for" && keyword != "while") {
+            index = word_end - 1;
+            continue;
+        }
+        const std::size_t condition_open = SkipLoopLineTrivia(source, word_end);
+        if (condition_open >= source.size() || source[condition_open] != '(') {
+            index = word_end - 1;
+            continue;
+        }
+        const auto condition_close = MatchingDelimiter(source, condition_open, '(', ')');
+        if (!condition_close) continue;
+        const std::size_t body_open = SkipLoopLineTrivia(source, *condition_close + 1);
+        if (body_open >= source.size() || source[body_open] != '{') continue;
+        const auto body_close = MatchingDelimiter(source, body_open, '{', '}');
+        if (!body_close) continue;
+        loops.push_back(CompletedLoop{
+            keyword == "for", index, condition_open, *condition_close,
+            body_open, *body_close
+        });
+        index = word_end - 1;
+    }
+    return loops;
+}
+
+std::string RemoveLoopComments(std::string_view text) {
+    std::string result;
+    result.reserve(text.size());
+    bool in_string = false;
+    bool triple_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        const char ch = text[index];
+        const char next = index + 1 < text.size() ? text[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') {
+                line_comment = false;
+                result.push_back(ch);
+            }
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+                if (block_comment_depth == 0) result.push_back(' ');
+            }
+            continue;
+        }
+        if (in_string) {
+            result.push_back(ch);
+            if (triple_string) {
+                if (index + 2 < text.size() &&
+                    text.substr(index, 3) == "\"\"\"") {
+                    result.append("\"\"");
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+            continue;
+        }
+        result.push_back(ch);
+        if (ch == '"') {
+            triple_string = index + 2 < text.size() &&
+                text.substr(index, 3) == "\"\"\"";
+            in_string = true;
+            if (triple_string) {
+                result.append("\"\"");
+                index += 2;
+            }
+        }
+    }
+    return result;
+}
+
+bool FollowedByElse(std::string_view body, std::size_t cursor) {
+    cursor = SkipLoopLineTrivia(body, cursor);
+    return cursor < body.size() && StartsWithKeyword(body.substr(cursor), "else");
+}
+
+bool FollowedByLoopPostfix(std::string_view body, std::size_t cursor) {
+    cursor = SkipLoopLineTrivia(body, cursor);
+    return cursor < body.size() && body[cursor] == '.';
+}
+
+bool FollowedByLoopBraceContinuation(std::string_view body, std::size_t cursor) {
+    cursor = SkipLoopLineTrivia(body, cursor);
+    if (cursor >= body.size()) return false;
+    const char ch = body[cursor];
+    if (std::string_view(".([,+-*/%<>=&|?").find(ch) != std::string_view::npos) {
+        return true;
+    }
+    return StartsWithKeyword(body.substr(cursor), "else") ||
+        StartsWithKeyword(body.substr(cursor), "catch") ||
+        StartsWithKeyword(body.substr(cursor), "finally");
+}
+
+std::vector<std::string> TopLevelLoopStatements(std::string_view body) {
+    std::size_t start = 0;
+    std::vector<std::string> statements;
+    int paren = 0;
+    int bracket = 0;
+    int brace = 0;
+    bool in_string = false;
+    bool triple_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    auto commit = [&](std::size_t end) {
+        const std::string candidate = Trim(RemoveLoopComments(
+            body.substr(start, end - start)
+        ));
+        if (!candidate.empty()) statements.push_back(candidate);
+        start = end + 1;
+    };
+    auto commit_through = [&](std::size_t end_inclusive) {
+        const std::string candidate = Trim(RemoveLoopComments(
+            body.substr(start, end_inclusive - start + 1)
+        ));
+        if (!candidate.empty()) statements.push_back(candidate);
+        start = end_inclusive + 1;
+    };
+    for (std::size_t index = 0; index < body.size(); ++index) {
+        const char ch = body[index];
+        const char next = index + 1 < body.size() ? body[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') {
+                line_comment = false;
+                if (paren == 0 && bracket == 0 && brace == 0 &&
+                    !FollowedByElse(body, index + 1) &&
+                    !FollowedByLoopPostfix(body, index + 1)) {
+                    commit(index);
+                }
+            }
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (triple_string) {
+                if (index + 2 < body.size() &&
+                    body.substr(index, 3) == "\"\"\"") {
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+            continue;
+        }
+        if (ch == '"') {
+            triple_string = index + 2 < body.size() &&
+                body.substr(index, 3) == "\"\"\"";
+            in_string = true;
+            if (triple_string) index += 2;
+        }
+        else if (ch == '(') ++paren;
+        else if (ch == ')' && paren > 0) --paren;
+        else if (ch == '[') ++bracket;
+        else if (ch == ']' && bracket > 0) --bracket;
+        else if (ch == '{') ++brace;
+        else if (ch == '}' && brace > 0) {
+            --brace;
+            const std::size_t next_statement = SkipLoopLineTrivia(body, index + 1);
+            if (brace == 0 && paren == 0 && bracket == 0 &&
+                next_statement < body.size() && body[next_statement] != '}' &&
+                !FollowedByLoopBraceContinuation(body, index + 1)) {
+                commit_through(index);
+            }
+        }
+        else if (ch == ';' && paren == 0 && bracket == 0 && brace == 0) commit(index);
+        else if ((ch == '\n' || ch == '\r') && paren == 0 && bracket == 0 &&
+                 brace == 0 && !FollowedByElse(body, index + 1) &&
+                 !FollowedByLoopPostfix(body, index + 1) &&
+                 !ContinuesAfterNewline(body.substr(start, index - start))) {
+            commit(index);
+        }
+    }
+    const std::string tail = Trim(RemoveLoopComments(body.substr(start)));
+    if (!tail.empty()) statements.push_back(tail);
+    return statements;
+}
+
+bool IsExplicitBlockStatement(std::string_view statement) {
+    const std::string owned = Trim(statement);
+    if (owned.empty() || owned.front() != '{') return false;
+    const auto close = MatchingDelimiter(owned, 0, '{', '}');
+    if (!close || *close != owned.size() - 1) return false;
+    const std::string_view inner(owned.data() + 1, owned.size() - 2);
+    // A top-level arrow distinguishes a lambda literal from an explicit
+    // block.  Nested lambdas inside the block remain below brace depth one.
+    return FindTopLevel(inner, "=>") == std::string::npos;
+}
+
+void CollectTopLevelDeclarationsBefore(
+    std::string_view region,
+    std::size_t end,
+    const Model& model,
+    FunctionContext* context,
+    std::string_view full_source
+) {
+    end = std::min(end, region.size());
+    for (const std::string& statement :
+         TopLevelLoopStatements(region.substr(0, end))) {
+        const auto declaration = ParseAnyVariableDeclaration(statement);
+        if (!declaration) continue;
+        ExpressionTyper typer(model, *context, full_source);
+        ExprResult actual = typer.Infer(
+            declaration->expression, declaration->annotated_type
+        );
+        if (!declaration->annotated_type.empty()) {
+            context->variables[declaration->name] = declaration->annotated_type;
+        } else if (actual.known && !actual.error) {
+            context->variables[declaration->name] = actual.type;
+        }
+        if (StartsWithKeyword(statement, "let")) {
+            context->immutable.insert(declaration->name);
+        }
+    }
+}
+
+CheckStatus CheckCompletedLoopsRecursive(
+    std::string_view region,
+    const Model& model,
+    const FunctionContext& inherited_context,
+    std::string_view full_source
+);
+
+CheckStatus CheckLoopStatementSequence(
+    std::string_view body,
+    const Model& model,
+    FunctionContext loop_context,
+    std::string_view full_source,
+    bool require_unit_tail,
+    ExprResult* tail_result
+);
+
+ExprResult JoinLoopIfBranchTypes(
+    const ExprResult& left,
+    const ExprResult& right,
+    const Model& model
+) {
+    if (!left.known || !right.known) return {};
+    if (Compatible(left.type, right.type, model)) return right;
+    if (Compatible(right.type, left.type, model)) return left;
+    for (const auto& [name, nominal] : model.nominals) {
+        if (!nominal.is_interface) continue;
+        if (Compatible(left.type, name, model) &&
+            Compatible(right.type, name, model)) {
+            return {name, true, false, {}};
+        }
+    }
+    return {"?", false, true, "if branch types cannot be joined"};
+}
+
+CheckStatus CheckLoopIfExpression(
+    std::string_view statement,
+    const Model& model,
+    const FunctionContext& context,
+    std::string_view full_source,
+    bool require_unit,
+    ExprResult* expression_result
+) {
+    const std::string owned = Trim(statement);
+    if (!StartsWithKeyword(owned, "if")) return {};
+    std::size_t condition_open = owned.find('(', 2);
+    if (condition_open == std::string::npos) return {};
+    const auto condition_close = MatchingDelimiter(owned, condition_open, '(', ')');
+    if (!condition_close) return {};
+    ExpressionTyper condition_typer(model, context, full_source);
+    ExprResult condition = condition_typer.Infer(
+        std::string(std::string_view(owned).substr(
+            condition_open + 1, *condition_close - condition_open - 1
+        )),
+        "Bool"
+    );
+    if (condition.error) return {false, condition.message};
+    if (condition.known && !Compatible(condition.type, "Bool", model)) {
+        return {false, "if condition must be Bool"};
+    }
+
+    const std::size_t then_open = SkipLoopLineTrivia(owned, *condition_close + 1);
+    if (then_open >= owned.size() || owned[then_open] != '{') return {};
+    const auto then_close = MatchingDelimiter(owned, then_open, '{', '}');
+    if (!then_close) return {};
+    ExprResult then_result;
+    CheckStatus status = CheckLoopStatementSequence(
+        std::string_view(owned).substr(
+            then_open + 1, *then_close - then_open - 1
+        ),
+        model, context, full_source, require_unit, &then_result
+    );
+    if (!status.ok) return status;
+
+    std::size_t cursor = SkipLoopLineTrivia(owned, *then_close + 1);
+    if (cursor >= owned.size() ||
+        !StartsWithKeyword(std::string_view(owned).substr(cursor), "else")) {
+        if (expression_result) {
+            *expression_result = {"Unit", true, false, {}};
+        }
+        return {};
+    }
+    cursor += 4;
+    cursor = SkipLoopLineTrivia(owned, cursor);
+    ExprResult else_result;
+    if (cursor < owned.size() &&
+        StartsWithKeyword(std::string_view(owned).substr(cursor), "if")) {
+        status = CheckLoopIfExpression(
+            std::string_view(owned).substr(cursor), model, context, full_source,
+            require_unit, &else_result
+        );
+        if (!status.ok) return status;
+    } else {
+        if (cursor >= owned.size() || owned[cursor] != '{') return {};
+        const auto else_close = MatchingDelimiter(owned, cursor, '{', '}');
+        if (!else_close) return {};
+        status = CheckLoopStatementSequence(
+            std::string_view(owned).substr(cursor + 1, *else_close - cursor - 1),
+            model, context, full_source, require_unit, &else_result
+        );
+        if (!status.ok) return status;
+    }
+    if (require_unit) {
+        if (expression_result) {
+            *expression_result = {"Unit", true, false, {}};
+        }
+        return {};
+    }
+    ExprResult joined = JoinLoopIfBranchTypes(then_result, else_result, model);
+    if (joined.error) return {false, joined.message};
+    if (expression_result) *expression_result = std::move(joined);
+    return {};
+}
+
+CheckStatus CheckLoopStatementSequence(
+    std::string_view body,
+    const Model& model,
+    FunctionContext loop_context,
+    std::string_view full_source,
+    bool require_unit_tail,
+    ExprResult* tail_result
+) {
+    const std::vector<std::string> statements = TopLevelLoopStatements(body);
+    ExprResult synthesized_tail{"Unit", true, false, {}};
+    for (std::size_t index = 0; index < statements.size(); ++index) {
+        const std::string& statement = statements[index];
+        const bool is_last = index + 1 == statements.size();
+        ExpressionTyper typer(model, loop_context, full_source);
+        if (const auto declaration = ParseAnyVariableDeclaration(statement)) {
+            ExprResult actual = typer.Infer(
+                declaration->expression, declaration->annotated_type
+            );
+            if (actual.error) return {false, actual.message};
+            if (!declaration->annotated_type.empty() && actual.known &&
+                !Compatible(actual.type, declaration->annotated_type, model)) {
+                return {false, "loop local initializer type mismatch"};
+            }
+            if (!declaration->annotated_type.empty()) {
+                loop_context.variables[declaration->name] = declaration->annotated_type;
+            } else if (actual.known) {
+                loop_context.variables[declaration->name] = actual.type;
+            }
+            if (StartsWithKeyword(statement, "let")) {
+                loop_context.immutable.insert(declaration->name);
+            }
+            synthesized_tail = {"Unit", true, false, {}};
+            continue;
+        }
+        if (const auto assignment = ParseReassignment(statement)) {
+            const auto expected = loop_context.variables.find(assignment->first);
+            if (expected != loop_context.variables.end()) {
+                ExprResult actual = typer.Infer(assignment->second, expected->second);
+                if (actual.error) return {false, actual.message};
+                if (actual.known && !Compatible(actual.type, expected->second, model)) {
+                    return {false, "loop assignment type mismatch"};
+                }
+            }
+            synthesized_tail = {"Unit", true, false, {}};
+            continue;
+        }
+
+        if (StartsWithKeyword(statement, "if")) {
+            CheckStatus branch = CheckLoopIfExpression(
+                statement, model, loop_context, full_source,
+                require_unit_tail && is_last, &synthesized_tail
+            );
+            if (!branch.ok) return branch;
+            continue;
+        }
+        if (IsExplicitBlockStatement(statement)) {
+            const std::string owned = Trim(statement);
+            ExprResult block_result;
+            CheckStatus block = CheckLoopStatementSequence(
+                std::string_view(owned).substr(1, owned.size() - 2),
+                model, loop_context, full_source,
+                require_unit_tail && is_last, &block_result
+            );
+            if (!block.ok) return block;
+            synthesized_tail = std::move(block_result);
+            continue;
+        }
+        if (StartsWithKeyword(statement, "while") ||
+            StartsWithKeyword(statement, "for")) {
+            CheckStatus nested = CheckCompletedLoopsRecursive(
+                statement, model, loop_context, full_source
+            );
+            if (!nested.ok) return nested;
+            synthesized_tail = {"Unit", true, false, {}};
+            continue;
+        }
+        if (statement == "break" || statement == "continue" ||
+            statement == "return" || StartsWith(statement, "return ") ||
+            IsStatementPrefix(statement)) {
+            synthesized_tail = {"Unit", true, false, {}};
+            continue;
+        }
+
+        CheckStatus nested = CheckCompletedLoopsRecursive(
+            statement, model, loop_context, full_source
+        );
+        if (!nested.ok) return nested;
+        const std::string expected = require_unit_tail && is_last
+            ? "Unit" : std::string{};
+        ExprResult result = typer.Infer(statement, expected);
+        if (result.error) return {false, result.message};
+        if (require_unit_tail && is_last && result.known &&
+            !Compatible(result.type, "Unit", model)) {
+            return {false, "loop body must end with Unit"};
+        }
+        synthesized_tail = std::move(result);
+    }
+    if (tail_result) *tail_result = std::move(synthesized_tail);
+    return {};
+}
+
+std::optional<std::pair<std::size_t, std::size_t>> FindTopLevelInKeyword(
+    std::string_view condition
+) {
+    int paren = 0;
+    int bracket = 0;
+    int brace = 0;
+    int angle = 0;
+    bool in_string = false;
+    bool triple_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    for (std::size_t index = 0; index < condition.size(); ++index) {
+        const char ch = condition[index];
+        const char next = index + 1 < condition.size() ? condition[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') line_comment = false;
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (triple_string) {
+                if (index + 2 < condition.size() &&
+                    condition.substr(index, 3) == "\"\"\"") {
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+            continue;
+        }
+        if (ch == '"') {
+            triple_string = index + 2 < condition.size() &&
+                condition.substr(index, 3) == "\"\"\"";
+            in_string = true;
+            if (triple_string) index += 2;
+            continue;
+        }
+        if (ch == '(') ++paren;
+        else if (ch == ')' && paren > 0) --paren;
+        else if (ch == '[') ++bracket;
+        else if (ch == ']' && bracket > 0) --bracket;
+        else if (ch == '{') ++brace;
+        else if (ch == '}' && brace > 0) --brace;
+        else if (ch == '<') ++angle;
+        else if (ch == '>' && angle > 0) --angle;
+        if (paren != 0 || bracket != 0 || brace != 0 || angle != 0 ||
+            !IsIdentStart(static_cast<unsigned char>(ch))) {
+            continue;
+        }
+        std::size_t word_end = index + 1;
+        while (word_end < condition.size() &&
+               IsIdentContinue(static_cast<unsigned char>(condition[word_end]))) {
+            ++word_end;
+        }
+        if (condition.substr(index, word_end - index) == "in") {
+            return std::make_pair(index, word_end);
+        }
+        index = word_end - 1;
+    }
+    return std::nullopt;
+}
+
+CheckStatus CheckCompletedLoopsRecursive(
+    std::string_view region,
+    const Model& model,
+    const FunctionContext& inherited_context,
+    std::string_view full_source
+) {
+    const std::vector<CompletedLoop> loops = FindCompletedLoops(region);
+    for (std::size_t index = 0; index < loops.size(); ++index) {
+        const CompletedLoop& loop = loops[index];
+        bool nested_in_another_loop = false;
+        for (std::size_t outer_index = 0; outer_index < loops.size(); ++outer_index) {
+            if (outer_index == index) continue;
+            const CompletedLoop& outer = loops[outer_index];
+            if (outer.body_open < loop.condition_open &&
+                loop.body_close < outer.body_close) {
+                nested_in_another_loop = true;
+                break;
+            }
+        }
+        if (nested_in_another_loop) continue;
+
+        FunctionContext loop_context = inherited_context;
+        CollectTopLevelDeclarationsBefore(
+            region, loop.keyword_start, model, &loop_context, full_source
+        );
+        if (loop.is_for) {
+            const std::string condition = std::string(region.substr(
+                loop.condition_open + 1,
+                loop.condition_close - loop.condition_open - 1
+            ));
+            const auto in_keyword = FindTopLevelInKeyword(condition);
+            if (in_keyword) {
+                const std::string binding = Trim(RemoveLoopComments(
+                    std::string_view(condition).substr(0, in_keyword->first)
+                ));
+                const std::string iterable_text = Trim(RemoveLoopComments(
+                    std::string_view(condition).substr(in_keyword->second)
+                ));
+                ExpressionTyper outer_typer(model, loop_context, full_source);
+                ExprResult iterable = outer_typer.Infer(iterable_text);
+                if (iterable.error) return {false, iterable.message};
+                if (IsIdentifierText(binding)) {
+                    if (iterable.known && TypeHead(iterable.type) == "HashMap") {
+                        const auto args = TypeArgs(iterable.type);
+                        loop_context.variables[binding] = args.size() >= 2
+                            ? "(" + args[0] + "," + args[1] + ")" : "?";
+                    } else if (iterable.known) {
+                        loop_context.variables[binding] = IterableElement(iterable.type);
+                    } else {
+                        // The grammar admits literal families and iterable
+                        // forms not all modeled by this fast typer.  A valid
+                        // binder remains in scope with an unknown type; an
+                        // actually unknown iterable name was rejected above.
+                        loop_context.variables[binding] = "?";
+                    }
+                    loop_context.immutable.insert(binding);
+                }
+            }
+        }
+        const std::string_view loop_body = region.substr(
+            loop.body_open + 1, loop.body_close - loop.body_open - 1
+        );
+        CheckStatus status = CheckLoopStatementSequence(
+            loop_body, model, std::move(loop_context), full_source, true, nullptr
+        );
+        if (!status.ok) return status;
+    }
+    return {};
+}
+
+CheckStatus CheckCompletedLoopBodies(
+    std::string_view function_body,
+    const Model& model,
+    const FunctionContext& function_context,
+    std::string_view full_source
+) {
+    FunctionContext lexical_context = function_context;
+    lexical_context.variables = function_context.entry_variables;
+    lexical_context.immutable = function_context.entry_immutable;
+    return CheckCompletedLoopsRecursive(
+        function_body, model, lexical_context, full_source
+    );
 }
 
 CheckStatus CheckDuplicateParameter(std::string_view source) {
@@ -3872,6 +5043,1729 @@ CheckStatus CheckDuplicateParameter(std::string_view source) {
         if (!name.empty() && !seen.insert(name).second) {
             return {false, "duplicate parameter"};
         }
+    }
+    return {};
+}
+
+bool HasKnownTypePrefix(
+    std::string_view prefix,
+    const Model& model,
+    const std::unordered_set<std::string>& type_parameters
+) {
+    static const std::vector<std::string> primitive_types = {
+        "Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
+        "Bool", "Rune", "Unit"
+    };
+    if (prefix.empty()) return true;
+    for (const std::string& name : primitive_types) {
+        if (StartsWith(name, prefix)) return true;
+    }
+    for (const std::string& name : type_parameters) {
+        if (StartsWith(name, prefix)) return true;
+    }
+    for (const auto& [name, _] : model.nominals) {
+        if (StartsWith(name, prefix)) return true;
+    }
+    return false;
+}
+
+int BraceDepthBefore(std::string_view text, std::size_t end) {
+    int depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    end = std::min(end, text.size());
+    for (std::size_t index = 0; index < end; ++index) {
+        const char ch = text[index];
+        const char next = index + 1 < end ? text[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') line_comment = false;
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+        } else if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+        } else if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            ++depth;
+        } else if (ch == '}' && depth > 0) {
+            --depth;
+        }
+    }
+    return depth;
+}
+
+std::string MaskNonCodeText(std::string_view text) {
+    std::string masked(text);
+    bool in_string = false;
+    bool in_multi_line_string = false;
+    char quote = '\0';
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    for (std::size_t index = 0; index < masked.size(); ++index) {
+        const char ch = text[index];
+        const char next = index + 1 < text.size() ? text[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') {
+                line_comment = false;
+            } else {
+                masked[index] = ' ';
+            }
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                masked[index] = masked[index + 1] = ' ';
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                masked[index] = masked[index + 1] = ' ';
+                --block_comment_depth;
+                ++index;
+            } else if (ch != '\n' && ch != '\r') {
+                masked[index] = ' ';
+            }
+            continue;
+        }
+        if (in_string) {
+            if (in_multi_line_string) {
+                if (ch != '\n' && ch != '\r') masked[index] = ' ';
+                if (escaped) {
+                    escaped = false;
+                } else if (ch == '\\') {
+                    escaped = true;
+                } else if (ch == '"' && next == '"' &&
+                           index + 2 < text.size() && text[index + 2] == '"') {
+                    masked[index] = masked[index + 1] = masked[index + 2] = ' ';
+                    index += 2;
+                    in_string = false;
+                    in_multi_line_string = false;
+                }
+                continue;
+            }
+            if (ch != '\n' && ch != '\r') masked[index] = ' ';
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == quote) {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            masked[index] = masked[index + 1] = ' ';
+            line_comment = true;
+            ++index;
+        } else if (ch == '/' && next == '*') {
+            masked[index] = masked[index + 1] = ' ';
+            block_comment_depth = 1;
+            ++index;
+        } else if (ch == '"' && next == '"' && index + 2 < text.size() &&
+                   text[index + 2] == '"') {
+            masked[index] = masked[index + 1] = masked[index + 2] = ' ';
+            index += 2;
+            in_string = true;
+            in_multi_line_string = true;
+            quote = '"';
+            escaped = false;
+        } else if (ch == '"' || ch == '\'') {
+            masked[index] = ' ';
+            in_string = true;
+            in_multi_line_string = false;
+            quote = ch;
+            escaped = false;
+        }
+    }
+    return masked;
+}
+
+CheckStatus CheckClassMemberNameCollisions(std::string_view source) {
+    static const std::regex class_pattern(
+        R"(\bclass\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()]*>)?[^{}]*\{)"
+    );
+    const std::string owned = MaskNonCodeText(source);
+    for (std::sregex_iterator cls(owned.begin(), owned.end(), class_pattern), end;
+         cls != end; ++cls) {
+        const std::size_t open = static_cast<std::size_t>(
+            (*cls).position() + (*cls).length() - 1
+        );
+        const auto close = MatchingDelimiter(owned, open, '{', '}');
+        const std::string body = owned.substr(
+            open + 1,
+            close ? *close - open - 1 : owned.size() - open - 1
+        );
+        std::vector<std::string> ordered_fields;
+        std::vector<std::string> ordered_methods;
+        (void)ScanTopLevelSourceFieldsMasked(
+            body, &ordered_fields, &ordered_methods
+        );
+        std::unordered_set<std::string> fields;
+        for (const std::string& field : ordered_fields) {
+            if (!fields.insert(field).second) {
+                return {false, "duplicate class field"};
+            }
+        }
+        for (const std::string& method : ordered_methods) {
+            if (fields.count(method)) {
+                return {false, "class member name collision"};
+            }
+        }
+    }
+    return {};
+}
+
+std::string TopLevelSourceFieldType(
+    std::string_view source,
+    const DeclarationSnapshot& snapshot,
+    std::string_view class_name,
+    std::string_view field_name
+) {
+    for (const DeclarationRecord& cls : snapshot.broad_classes) {
+        if (SnapshotCaptureAt(cls, 1).text != class_name) continue;
+        const std::size_t class_end = cls.close.value_or(source.size());
+        if (cls.open >= class_end || class_end > source.size()) continue;
+        const std::string body = std::string(source.substr(
+            cls.open + 1, class_end - cls.open - 1
+        ));
+        const auto fields = ScanTopLevelSourceFields(body);
+        const auto field = fields.find(std::string(field_name));
+        if (field != fields.end() && !field->second.is_static) {
+            return field->second.type;
+        }
+    }
+    return {};
+}
+
+std::vector<std::string> SplitAdjacentSimpleAssignments(
+    std::string_view statement
+) {
+    const std::string masked = MaskNonCodeText(statement);
+    std::vector<std::size_t> starts;
+    int paren = 0;
+    int bracket = 0;
+    int brace = 0;
+    for (std::size_t index = 0; index < masked.size(); ++index) {
+        const char ch = masked[index];
+        if (paren == 0 && bracket == 0 && brace == 0 &&
+            IsIdentStart(static_cast<unsigned char>(ch)) &&
+            (index == 0 || !IsIdentContinue(
+                static_cast<unsigned char>(masked[index - 1])))) {
+            std::size_t word_end = index + 1;
+            while (word_end < masked.size() && IsIdentContinue(
+                    static_cast<unsigned char>(masked[word_end]))) {
+                ++word_end;
+            }
+            std::size_t previous = index;
+            while (previous > 0 && std::isspace(
+                    static_cast<unsigned char>(masked[previous - 1]))) {
+                --previous;
+            }
+            const bool member_suffix = previous > 0 && masked[previous - 1] == '.';
+            std::size_t cursor = word_end;
+            if (!member_suffix && masked.substr(index, word_end - index) == "this") {
+                while (cursor < masked.size() &&
+                       std::isspace(static_cast<unsigned char>(masked[cursor]))) {
+                    ++cursor;
+                }
+                if (cursor < masked.size() && masked[cursor] == '.') {
+                    ++cursor;
+                    while (cursor < masked.size() && std::isspace(
+                            static_cast<unsigned char>(masked[cursor]))) {
+                        ++cursor;
+                    }
+                    if (cursor < masked.size() && IsIdentStart(
+                            static_cast<unsigned char>(masked[cursor]))) {
+                        ++cursor;
+                        while (cursor < masked.size() && IsIdentContinue(
+                                static_cast<unsigned char>(masked[cursor]))) {
+                            ++cursor;
+                        }
+                    }
+                }
+            }
+            while (cursor < masked.size() && std::isspace(
+                    static_cast<unsigned char>(masked[cursor]))) {
+                ++cursor;
+            }
+            if (!member_suffix && cursor < masked.size() && masked[cursor] == '=' &&
+                (cursor + 1 == masked.size() ||
+                 (masked[cursor + 1] != '=' && masked[cursor + 1] != '>'))) {
+                starts.push_back(index);
+            }
+        }
+        if (ch == '(') ++paren;
+        else if (ch == ')' && paren > 0) --paren;
+        else if (ch == '[') ++bracket;
+        else if (ch == ']' && bracket > 0) --bracket;
+        else if (ch == '{') ++brace;
+        else if (ch == '}' && brace > 0) --brace;
+    }
+    if (starts.size() < 2 || !Trim(std::string_view(masked).substr(
+            0, starts.front())).empty()) {
+        return {};
+    }
+    std::vector<std::string> assignments;
+    assignments.reserve(starts.size());
+    for (std::size_t index = 0; index < starts.size(); ++index) {
+        const std::size_t end = index + 1 < starts.size()
+            ? starts[index + 1] : statement.size();
+        assignments.push_back(Trim(statement.substr(starts[index], end - starts[index])));
+    }
+    return assignments;
+}
+
+CheckStatus CheckCompletedSimpleAssignmentSequence(
+    std::string_view statement,
+    std::string_view source,
+    const Model& model,
+    const DeclarationSnapshot& snapshot,
+    const FunctionContext& context
+) {
+    if (context.class_name.empty()) return {};
+    const std::vector<std::string> assignments =
+        SplitAdjacentSimpleAssignments(statement);
+    if (assignments.empty()) return {};
+    ExpressionTyper typer(model, context, source);
+    for (const std::string& text : assignments) {
+        const auto assignment = ParseReassignment(text);
+        if (!assignment) continue;
+        const bool explicit_this = HasExplicitThisReceiver(text);
+        if (!explicit_this && context.immutable.count(assignment->first)) {
+            return {false, "assignment to let"};
+        }
+        std::string expected;
+        if (explicit_this) {
+            expected = TopLevelSourceFieldType(
+                source, snapshot, context.class_name, assignment->first
+            );
+        } else if (const auto found = context.variables.find(assignment->first);
+                   found != context.variables.end()) {
+            expected = found->second;
+        }
+        if (expected.empty()) continue;
+        ExprResult actual = typer.Infer(assignment->second, expected);
+        if (actual.error) return {false, actual.message};
+        if (actual.known && !Compatible(actual.type, expected, model)) {
+            return {false, "assignment type mismatch"};
+        }
+    }
+    return {};
+}
+
+struct FieldFlowToken {
+    enum class Kind { Identifier, Symbol, Newline, Opaque };
+    Kind kind = Kind::Symbol;
+    std::string text;
+};
+
+std::vector<FieldFlowToken> TokenizeFieldFlow(std::string_view source) {
+    std::vector<FieldFlowToken> tokens;
+    std::size_t index = 0;
+    while (index < source.size()) {
+        const unsigned char ch = static_cast<unsigned char>(source[index]);
+        if (source[index] == '\n' || source[index] == '\r') {
+            if (source[index] == '\r' && index + 1 < source.size() &&
+                source[index + 1] == '\n') {
+                ++index;
+            }
+            tokens.push_back({FieldFlowToken::Kind::Newline, "\n"});
+            ++index;
+            continue;
+        }
+        if (std::isspace(ch)) {
+            ++index;
+            continue;
+        }
+        if (index + 1 < source.size() && source.substr(index, 2) == "//") {
+            index += 2;
+            while (index < source.size() && source[index] != '\n' &&
+                   source[index] != '\r') {
+                ++index;
+            }
+            continue;
+        }
+        if (index + 1 < source.size() && source.substr(index, 2) == "/*") {
+            int depth = 1;
+            index += 2;
+            while (index < source.size() && depth > 0) {
+                if (index + 1 < source.size() && source.substr(index, 2) == "/*") {
+                    ++depth;
+                    index += 2;
+                } else if (index + 1 < source.size() && source.substr(index, 2) == "*/") {
+                    --depth;
+                    index += 2;
+                } else {
+                    ++index;
+                }
+            }
+            continue;
+        }
+        if (index + 3 <= source.size() && source.substr(index, 3) == "\"\"\"") {
+            index += 3;
+            bool escaped = false;
+            while (index < source.size()) {
+                if (!escaped && index + 3 <= source.size() &&
+                    source.substr(index, 3) == "\"\"\"") {
+                    index += 3;
+                    break;
+                }
+                if (escaped) escaped = false;
+                else if (source[index] == '\\') escaped = true;
+                ++index;
+            }
+            tokens.push_back({FieldFlowToken::Kind::Opaque, "literal"});
+            continue;
+        }
+        if (source[index] == '`') {
+            const std::size_t close = source.find('`', index + 1);
+            if (close != std::string_view::npos) {
+                const std::string name(source.substr(index + 1, close - index - 1));
+                if (IsIdentifierText(name)) {
+                    tokens.push_back({FieldFlowToken::Kind::Identifier, name});
+                    index = close + 1;
+                    continue;
+                }
+            }
+        }
+        if (source[index] == 'r' && index + 1 < source.size() &&
+            source[index + 1] == '\'') {
+            index += 2;
+            bool escaped = false;
+            while (index < source.size()) {
+                const char current = source[index++];
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == '\'') break;
+            }
+            tokens.push_back({FieldFlowToken::Kind::Opaque, "literal"});
+            continue;
+        }
+        if (source[index] == '"' || source[index] == '\'') {
+            const char quote = source[index++];
+            bool escaped = false;
+            while (index < source.size()) {
+                const char current = source[index++];
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == quote) break;
+            }
+            tokens.push_back({FieldFlowToken::Kind::Opaque, "literal"});
+            continue;
+        }
+        if (std::isdigit(ch)) {
+            const std::size_t start = index;
+            if (source[index] == '0' && index + 1 < source.size() &&
+                (source[index + 1] == 'x' || source[index + 1] == 'X')) {
+                index += 2;
+                while (index < source.size() && std::isxdigit(
+                           static_cast<unsigned char>(source[index]))) ++index;
+            } else if (source[index] == '0' && index + 1 < source.size() &&
+                       (source[index + 1] == 'o' || source[index + 1] == 'O' ||
+                        source[index + 1] == 'b' || source[index + 1] == 'B')) {
+                index += 2;
+                while (index < source.size() && std::isdigit(
+                           static_cast<unsigned char>(source[index]))) ++index;
+            } else {
+                while (index < source.size() && std::isdigit(
+                           static_cast<unsigned char>(source[index]))) ++index;
+                if (index < source.size() && source[index] == '.' &&
+                    (index + 1 >= source.size() || source[index + 1] != '.')) {
+                    ++index;
+                    while (index < source.size() && std::isdigit(
+                               static_cast<unsigned char>(source[index]))) ++index;
+                }
+                if (index < source.size() &&
+                    (source[index] == 'e' || source[index] == 'E')) {
+                    ++index;
+                    if (index < source.size() &&
+                        (source[index] == '+' || source[index] == '-')) ++index;
+                    while (index < source.size() && std::isdigit(
+                               static_cast<unsigned char>(source[index]))) ++index;
+                }
+            }
+            if (index < source.size() &&
+                (source[index] == 'i' || source[index] == 'u' ||
+                 source[index] == 'f')) {
+                ++index;
+                while (index < source.size() && std::isdigit(
+                           static_cast<unsigned char>(source[index]))) ++index;
+            }
+            tokens.push_back({
+                FieldFlowToken::Kind::Opaque,
+                std::string(source.substr(start, index - start)),
+            });
+            continue;
+        }
+        if (IsIdentStart(ch)) {
+            const std::size_t start = index++;
+            while (index < source.size() && IsIdentContinue(
+                       static_cast<unsigned char>(source[index]))) {
+                ++index;
+            }
+            tokens.push_back({
+                FieldFlowToken::Kind::Identifier,
+                std::string(source.substr(start, index - start)),
+            });
+            continue;
+        }
+        static const std::unordered_set<std::string> three_character_operators = {
+            "<<=", ">>=", "**=", "&&=", "||=",
+        };
+        static const std::unordered_set<std::string> two_character_operators = {
+            "==", "!=", "<=", ">=", "=>", "+=", "-=", "*=", "/=", "%=",
+            "&=", "|=", "^=", "&&", "||", "**", "<<", ">>", "..",
+        };
+        if (index + 3 <= source.size()) {
+            const std::string candidate(source.substr(index, 3));
+            if (three_character_operators.count(candidate)) {
+                tokens.push_back({FieldFlowToken::Kind::Symbol, candidate});
+                index += 3;
+                continue;
+            }
+        }
+        if (index + 2 <= source.size()) {
+            const std::string candidate(source.substr(index, 2));
+            if (two_character_operators.count(candidate)) {
+                tokens.push_back({FieldFlowToken::Kind::Symbol, candidate});
+                index += 2;
+                continue;
+            }
+        }
+        tokens.push_back({
+            FieldFlowToken::Kind::Symbol,
+            std::string(1, source[index++]),
+        });
+    }
+    return tokens;
+}
+
+class ConstructorFieldFlowAnalyzer {
+ public:
+    struct State {
+        std::unordered_set<std::string> assigned;
+        std::unordered_set<std::string> locals;
+        bool reachable = true;
+        bool uncertain_control_flow = false;
+    };
+
+    ConstructorFieldFlowAnalyzer(
+        std::string_view body,
+        std::unordered_set<std::string> uninitialized,
+        std::unordered_set<std::string> parameters
+    ) : tokens_(TokenizeFieldFlow(body)), uninitialized_(std::move(uninitialized)) {
+        initial_.locals = std::move(parameters);
+    }
+
+    CheckStatus Analyze(bool constructor_closed, State* result) const {
+        State state = initial_;
+        CheckStatus status = AnalyzeBlock(
+            0, tokens_.size(), constructor_closed, &state
+        );
+        if (status.ok && result) *result = std::move(state);
+        return status;
+    }
+
+ private:
+    std::size_t Next(std::size_t index, std::size_t end) const {
+        while (index < end && tokens_[index].kind == FieldFlowToken::Kind::Newline) {
+            ++index;
+        }
+        return index;
+    }
+
+    std::size_t Previous(std::size_t index, std::size_t begin) const {
+        while (index > begin) {
+            --index;
+            if (tokens_[index].kind != FieldFlowToken::Kind::Newline) return index;
+        }
+        return std::string::npos;
+    }
+
+    std::optional<std::size_t> MatchingToken(
+        std::size_t open,
+        std::size_t end,
+        std::string_view opening,
+        std::string_view closing
+    ) const {
+        if (open >= end || tokens_[open].text != opening) return std::nullopt;
+        int depth = 0;
+        for (std::size_t index = open; index < end; ++index) {
+            if (tokens_[index].text == opening) ++depth;
+            else if (tokens_[index].text == closing && --depth == 0) return index;
+        }
+        return std::nullopt;
+    }
+
+    std::size_t StatementEnd(std::size_t begin, std::size_t end) const {
+        static const std::unordered_set<std::string> trailing_continuations = {
+            "=", "+", "-", "*", "/", "%", "&&", "||", "&", "|", "^",
+            "==", "!=", "<", ">", "<=", ">=", "=>", ".", ",", ":",
+        };
+        static const std::unordered_set<std::string> leading_continuations = {
+            "=", "+", "-", "*", "/", "%", "&&", "||", "&", "|", "^",
+            "==", "!=", "<", ">", "<=", ">=", ".", ",",
+        };
+        int paren = 0;
+        int bracket = 0;
+        int brace = 0;
+        bool saw_assignment = false;
+        bool saw_assignment_value = false;
+        for (std::size_t index = begin; index < end; ++index) {
+            const std::string& token = tokens_[index].text;
+            if (paren == 0 && bracket == 0 && brace == 0 &&
+                saw_assignment && saw_assignment_value &&
+                IsAssignmentStart(index, end)) {
+                // The grammar permits adjacent statements separated only by
+                // whitespace.  Return the first token of the next assignment
+                // as a non-consuming boundary; AnalyzeBlock will revisit it.
+                return index;
+            }
+            if (token == "(") ++paren;
+            else if (token == ")" && paren > 0) --paren;
+            else if (token == "[") ++bracket;
+            else if (token == "]" && bracket > 0) --bracket;
+            else if (token == "{") ++brace;
+            else if (token == "}" && brace > 0) --brace;
+            else if (token == "=" && paren == 0 && bracket == 0 && brace == 0 &&
+                     !saw_assignment) {
+                saw_assignment = true;
+                saw_assignment_value = false;
+            }
+            else if ((tokens_[index].kind == FieldFlowToken::Kind::Newline ||
+                      token == ";") && paren == 0 && bracket == 0 && brace == 0) {
+                if (tokens_[index].kind == FieldFlowToken::Kind::Newline) {
+                    const std::size_t previous = Previous(index, begin);
+                    const std::size_t next = Next(index + 1, end);
+                    if ((previous != std::string::npos &&
+                         trailing_continuations.count(tokens_[previous].text)) ||
+                        (next < end && leading_continuations.count(tokens_[next].text))) {
+                        continue;
+                    }
+                }
+                return index;
+            }
+            if (saw_assignment && token != "=" && token != ";" &&
+                tokens_[index].kind != FieldFlowToken::Kind::Newline) {
+                saw_assignment_value = true;
+            }
+        }
+        return end;
+    }
+
+    bool IsAssignmentStart(std::size_t index, std::size_t end) const {
+        if (index >= end ||
+            tokens_[index].kind != FieldFlowToken::Kind::Identifier) {
+            return false;
+        }
+        std::size_t cursor = Next(index + 1, end);
+        if (tokens_[index].text == "this" && cursor < end &&
+            tokens_[cursor].text == ".") {
+            cursor = Next(cursor + 1, end);
+            if (cursor >= end ||
+                tokens_[cursor].kind != FieldFlowToken::Kind::Identifier) {
+                return false;
+            }
+            cursor = Next(cursor + 1, end);
+        }
+        return cursor < end && tokens_[cursor].text == "=";
+    }
+
+    bool ConsumesStatementBoundary(std::size_t index, std::size_t end) const {
+        return index < end &&
+            (tokens_[index].kind == FieldFlowToken::Kind::Newline ||
+             tokens_[index].text == ";");
+    }
+
+    bool IsUninitializedRead(
+        const std::string& name,
+        const State& state,
+        bool explicit_this
+    ) const {
+        if (!uninitialized_.count(name) || state.assigned.count(name)) return false;
+        return explicit_this || !state.locals.count(name);
+    }
+
+    CheckStatus AnalyzeExpression(
+        std::size_t begin,
+        std::size_t end,
+        bool statement_complete,
+        State* state
+    ) const {
+        const std::size_t first = Next(begin, end);
+        for (std::size_t index = first; index < end; ++index) {
+            if (tokens_[index].text == "{") {
+                const auto close = MatchingToken(index, end, "{", "}");
+                const std::size_t lambda_end = close.value_or(end);
+                const std::size_t before_brace = Previous(index, begin);
+                const bool may_be_lambda = index == first ||
+                    (before_brace != std::string::npos &&
+                     (tokens_[before_brace].text == "=" ||
+                      tokens_[before_brace].text == "(" ||
+                      tokens_[before_brace].text == "[" ||
+                      tokens_[before_brace].text == ","));
+                int brace_depth = 0;
+                std::size_t arrow = lambda_end;
+                for (std::size_t cursor = index + 1;
+                     may_be_lambda && cursor < lambda_end; ++cursor) {
+                    if (tokens_[cursor].text == "{") ++brace_depth;
+                    else if (tokens_[cursor].text == "}" && brace_depth > 0) --brace_depth;
+                    else if (tokens_[cursor].text == "=>" && brace_depth == 0) {
+                        arrow = cursor;
+                        break;
+                    }
+                }
+                if (arrow < lambda_end) {
+                    State lambda_state = *state;
+                    const std::size_t first_parameter = Next(index + 1, arrow);
+                    for (std::size_t cursor = first_parameter; cursor < arrow; ++cursor) {
+                        if (tokens_[cursor].kind != FieldFlowToken::Kind::Identifier) continue;
+                        const std::size_t previous = Previous(cursor, index + 1);
+                        const std::size_t next = Next(cursor + 1, arrow);
+                        const bool parameter_start = cursor == first_parameter ||
+                            (previous != std::string::npos && tokens_[previous].text == ",");
+                        const bool parameter_end = next == arrow ||
+                            tokens_[next].text == ":" || tokens_[next].text == ",";
+                        if (parameter_start && parameter_end) {
+                            lambda_state.locals.insert(tokens_[cursor].text);
+                        }
+                    }
+                    CheckStatus lambda = AnalyzeBlock(
+                        arrow + 1, lambda_end, close.has_value(), &lambda_state
+                    );
+                    if (!lambda.ok) return lambda;
+                    if (!close) return {};
+                    index = *close;
+                    continue;
+                }
+                if (!close) return {};
+                index = *close;
+                continue;
+            }
+            if (tokens_[index].kind != FieldFlowToken::Kind::Identifier) continue;
+            const std::string& name = tokens_[index].text;
+            const std::size_t next = Next(index + 1, end);
+            const std::size_t previous = Previous(index, begin);
+            const bool explicit_this = previous != std::string::npos &&
+                tokens_[previous].text == "." &&
+                Previous(previous, begin) != std::string::npos &&
+                tokens_[Previous(previous, begin)].text == "this";
+            if (previous != std::string::npos && tokens_[previous].text == "." &&
+                !explicit_this) {
+                continue;
+            }
+            if (next < end && tokens_[next].text == ":") continue;
+            if (next < end && tokens_[next].text == "=") {
+                CheckStatus rhs = AnalyzeExpression(next + 1, end, statement_complete, state);
+                if (!rhs.ok) return rhs;
+                if (IsUninitializedRead(name, *state, explicit_this)) {
+                    state->assigned.insert(name);
+                }
+                return {};
+            }
+            if (!IsUninitializedRead(name, *state, explicit_this)) continue;
+
+            if (next == end && !statement_complete) {
+                const std::size_t target_start = explicit_this
+                    ? Previous(previous, begin) : index;
+                const std::size_t before_target = target_start == std::string::npos
+                    ? std::string::npos : Previous(target_start, begin);
+                if (before_target != std::string::npos &&
+                    (tokens_[before_target].kind == FieldFlowToken::Kind::Identifier ||
+                     tokens_[before_target].kind == FieldFlowToken::Kind::Opaque ||
+                     tokens_[before_target].text == ")" ||
+                     tokens_[before_target].text == "]" ||
+                     tokens_[before_target].text == "}")) {
+                    // `value field` / `value this.field` can still become two
+                    // whitespace-separated assignments when the next token is
+                    // `=`.  Do not report the prospective LHS as a read yet.
+                    continue;
+                }
+            }
+            bool ambiguous_assignment_lhs = index == first;
+            if (explicit_this) {
+                const std::size_t dot = previous;
+                const std::size_t receiver = Previous(dot, begin);
+                ambiguous_assignment_lhs = receiver == first;
+            }
+            if (ambiguous_assignment_lhs && next == end && !statement_complete) {
+                continue;
+            }
+            if (next == end && !statement_complete) {
+                if (!explicit_this && name == "r") continue;
+                const auto may_extend = [&](const std::string& candidate) {
+                    return candidate.size() > name.size() && StartsWith(candidate, name);
+                };
+                if ((!explicit_this && std::any_of(
+                         state->locals.begin(), state->locals.end(), may_extend)) ||
+                    std::any_of(
+                        uninitialized_.begin(), uninitialized_.end(), may_extend)) {
+                    continue;
+                }
+            }
+            return {false, "field read before initialization"};
+        }
+        return {};
+    }
+
+    State MergeConditionalStates(
+        const State& before,
+        const State& left,
+        const State& right
+    ) const {
+        State result = before;
+        result.reachable = left.reachable || right.reachable;
+        result.uncertain_control_flow = before.uncertain_control_flow ||
+            (left.reachable && left.uncertain_control_flow) ||
+            (right.reachable && right.uncertain_control_flow);
+        if (left.reachable && right.reachable) {
+            result.assigned.clear();
+            for (const std::string& field : left.assigned) {
+                if (right.assigned.count(field)) result.assigned.insert(field);
+            }
+        } else if (left.reachable) {
+            result.assigned = left.assigned;
+        } else if (right.reachable) {
+            result.assigned = right.assigned;
+        }
+        return result;
+    }
+
+    CheckStatus AnalyzeIf(
+        std::size_t start,
+        std::size_t end,
+        bool enclosing_closed,
+        const State& before,
+        State* after,
+        std::size_t* next_index
+    ) const {
+        std::size_t cursor = Next(start + 1, end);
+        std::size_t condition_end = cursor;
+        if (cursor < end && tokens_[cursor].text == "(") {
+            const auto close = MatchingToken(cursor, end, "(", ")");
+            condition_end = close.value_or(end);
+            State condition_state = before;
+            CheckStatus condition = AnalyzeExpression(
+                cursor + 1, condition_end, close.has_value(), &condition_state
+            );
+            if (!condition.ok) return condition;
+            if (!close) {
+                *after = before;
+                *next_index = end;
+                return {};
+            }
+            cursor = Next(*close + 1, end);
+        } else {
+            while (condition_end < end && tokens_[condition_end].text != "{") {
+                ++condition_end;
+            }
+            State condition_state = before;
+            CheckStatus condition = AnalyzeExpression(
+                cursor, condition_end, condition_end < end, &condition_state
+            );
+            if (!condition.ok) return condition;
+            cursor = condition_end;
+        }
+        if (cursor >= end || tokens_[cursor].text != "{") {
+            *after = before;
+            *next_index = end;
+            return {};
+        }
+        const auto then_close = MatchingToken(cursor, end, "{", "}");
+        State then_state = before;
+        CheckStatus then_status = AnalyzeBlock(
+            cursor + 1, then_close.value_or(end), then_close.has_value(), &then_state
+        );
+        if (!then_status.ok) return then_status;
+        if (!then_close) {
+            *after = before;
+            *next_index = end;
+            return {};
+        }
+
+        cursor = Next(*then_close + 1, end);
+        if (cursor >= end || tokens_[cursor].text != "else") {
+            *after = MergeConditionalStates(before, then_state, before);
+            *next_index = cursor;
+            return {};
+        }
+        cursor = Next(cursor + 1, end);
+        State else_state = before;
+        std::size_t else_end = cursor;
+        if (cursor < end && tokens_[cursor].text == "if") {
+            CheckStatus nested = AnalyzeIf(
+                cursor, end, enclosing_closed, before, &else_state, &else_end
+            );
+            if (!nested.ok) return nested;
+        } else if (cursor < end && tokens_[cursor].text == "{") {
+            const auto else_close = MatchingToken(cursor, end, "{", "}");
+            CheckStatus else_status = AnalyzeBlock(
+                cursor + 1, else_close.value_or(end), else_close.has_value(), &else_state
+            );
+            if (!else_status.ok) return else_status;
+            if (!else_close) {
+                *after = before;
+                *next_index = end;
+                return {};
+            }
+            else_end = *else_close + 1;
+        } else {
+            *after = before;
+            *next_index = end;
+            return {};
+        }
+        *after = MergeConditionalStates(before, then_state, else_state);
+        *next_index = else_end;
+        return {};
+    }
+
+    CheckStatus AnalyzeLoop(
+        std::size_t start,
+        std::size_t end,
+        const State& before,
+        std::size_t* next_index
+    ) const {
+        std::size_t cursor = Next(start + 1, end);
+        std::size_t body_open = cursor;
+        int paren = 0;
+        while (body_open < end) {
+            if (tokens_[body_open].text == "(") ++paren;
+            else if (tokens_[body_open].text == ")" && paren > 0) --paren;
+            else if (tokens_[body_open].text == "{" && paren == 0) break;
+            ++body_open;
+        }
+        std::unordered_set<std::string> loop_locals;
+        std::size_t expression_begin = cursor;
+        if (tokens_[start].text == "for") {
+            std::size_t in_token = cursor;
+            for (; in_token < body_open; ++in_token) {
+                if (tokens_[in_token].text == "in") break;
+            }
+            if (in_token >= body_open) {
+                *next_index = end;
+                return {};
+            }
+            for (std::size_t index = cursor; index < in_token; ++index) {
+                if (tokens_[index].kind == FieldFlowToken::Kind::Identifier) {
+                    loop_locals.insert(tokens_[index].text);
+                }
+            }
+            expression_begin = in_token + 1;
+        }
+        State condition_state = before;
+        CheckStatus condition = AnalyzeExpression(
+            expression_begin, body_open, body_open < end, &condition_state
+        );
+        if (!condition.ok) return condition;
+        if (body_open >= end) {
+            *next_index = end;
+            return {};
+        }
+        const auto body_close = MatchingToken(body_open, end, "{", "}");
+        State body_state = before;
+        body_state.locals.insert(loop_locals.begin(), loop_locals.end());
+        CheckStatus body_status = AnalyzeBlock(
+            body_open + 1, body_close.value_or(end), body_close.has_value(), &body_state
+        );
+        if (!body_status.ok) return body_status;
+        *next_index = body_close ? *body_close + 1 : end;
+        return {};
+    }
+
+    CheckStatus AnalyzeDoLoop(
+        std::size_t start,
+        std::size_t end,
+        const State& before,
+        State* after,
+        std::size_t* next_index
+    ) const {
+        const std::size_t body_open = Next(start + 1, end);
+        if (body_open >= end || tokens_[body_open].text != "{") {
+            *after = before;
+            *next_index = end;
+            return {};
+        }
+        const auto body_close = MatchingToken(body_open, end, "{", "}");
+        State body_state = before;
+        CheckStatus body_status = AnalyzeBlock(
+            body_open + 1, body_close.value_or(end), body_close.has_value(),
+            &body_state
+        );
+        if (!body_status.ok) return body_status;
+        if (!body_close) {
+            *after = before;
+            *next_index = end;
+            return {};
+        }
+        if (!body_state.reachable) {
+            *after = body_state;
+            *next_index = *body_close + 1;
+            return {};
+        }
+
+        std::size_t cursor = Next(*body_close + 1, end);
+        if (cursor >= end || tokens_[cursor].text != "while") {
+            *after = before;
+            *next_index = cursor;
+            return {};
+        }
+        const std::size_t condition_begin = Next(cursor + 1, end);
+        const std::size_t statement_end = StatementEnd(condition_begin, end);
+        CheckStatus condition;
+        if (condition_begin < statement_end &&
+            tokens_[condition_begin].text == "(") {
+            const auto condition_close = MatchingToken(
+                condition_begin, statement_end, "(", ")"
+            );
+            condition = AnalyzeExpression(
+                condition_begin + 1, condition_close.value_or(statement_end),
+                condition_close.has_value(), &body_state
+            );
+        } else {
+            condition = AnalyzeExpression(
+                condition_begin, statement_end,
+                statement_end < end, &body_state
+            );
+        }
+        if (!condition.ok) return condition;
+        *after = before;
+        after->assigned = std::move(body_state.assigned);
+        after->reachable = body_state.reachable;
+        after->uncertain_control_flow = body_state.uncertain_control_flow;
+        *next_index = statement_end < end
+            ? statement_end + (ConsumesStatementBoundary(statement_end, end) ? 1 : 0)
+            : end;
+        return {};
+    }
+
+    CheckStatus AnalyzeOpaqueMatch(
+        std::size_t start,
+        std::size_t end,
+        State* state,
+        std::size_t* next_index
+    ) const {
+        std::size_t body_open = Next(start + 1, end);
+        int paren = 0;
+        int bracket = 0;
+        while (body_open < end) {
+            if (tokens_[body_open].text == "(") ++paren;
+            else if (tokens_[body_open].text == ")" && paren > 0) --paren;
+            else if (tokens_[body_open].text == "[") ++bracket;
+            else if (tokens_[body_open].text == "]" && bracket > 0) --bracket;
+            else if (tokens_[body_open].text == "{" && paren == 0 && bracket == 0) break;
+            ++body_open;
+        }
+        CheckStatus subject = AnalyzeExpression(
+            start + 1, body_open, body_open < end, state
+        );
+        if (!subject.ok) return subject;
+        state->uncertain_control_flow = true;
+        if (body_open >= end) {
+            *next_index = end;
+            return {};
+        }
+        const auto body_close = MatchingToken(body_open, end, "{", "}");
+        *next_index = body_close ? *body_close + 1 : end;
+        return {};
+    }
+
+    CheckStatus AnalyzeOpaqueTry(
+        std::size_t start,
+        std::size_t end,
+        State* state,
+        std::size_t* next_index
+    ) const {
+        state->uncertain_control_flow = true;
+        std::size_t cursor = Next(start + 1, end);
+        if (cursor >= end || tokens_[cursor].text != "{") {
+            *next_index = end;
+            return {};
+        }
+        auto close = MatchingToken(cursor, end, "{", "}");
+        if (!close) {
+            *next_index = end;
+            return {};
+        }
+        cursor = Next(*close + 1, end);
+        while (cursor < end &&
+               (tokens_[cursor].text == "catch" || tokens_[cursor].text == "finally")) {
+            const bool is_catch = tokens_[cursor].text == "catch";
+            cursor = Next(cursor + 1, end);
+            if (is_catch && cursor < end && tokens_[cursor].text == "(") {
+                const auto parameters_close = MatchingToken(cursor, end, "(", ")");
+                if (!parameters_close) {
+                    *next_index = end;
+                    return {};
+                }
+                cursor = Next(*parameters_close + 1, end);
+            }
+            if (cursor >= end || tokens_[cursor].text != "{") break;
+            close = MatchingToken(cursor, end, "{", "}");
+            if (!close) {
+                *next_index = end;
+                return {};
+            }
+            cursor = Next(*close + 1, end);
+        }
+        *next_index = cursor;
+        return {};
+    }
+
+    CheckStatus AnalyzeStatement(
+        std::size_t begin,
+        std::size_t end,
+        bool statement_complete,
+        State* state
+    ) const {
+        const std::size_t first = Next(begin, end);
+        if (first >= end) return {};
+        if (tokens_[first].text == "return" || tokens_[first].text == "throw") {
+            CheckStatus value = AnalyzeExpression(
+                first + 1, end, statement_complete, state
+            );
+            if (!value.ok) return value;
+            if (!statement_complete) return {};
+            if (tokens_[first].text == "return") {
+                for (const std::string& field : uninitialized_) {
+                    if (!state->assigned.count(field)) {
+                        return {false, "constructor returns before initializing field"};
+                    }
+                }
+            }
+            state->reachable = false;
+            return {};
+        }
+        if (tokens_[first].text == "let" || tokens_[first].text == "var") {
+            const std::size_t name_index = Next(first + 1, end);
+            if (name_index >= end ||
+                tokens_[name_index].kind != FieldFlowToken::Kind::Identifier) {
+                return {};
+            }
+            std::size_t equal = name_index + 1;
+            int paren = 0;
+            int bracket = 0;
+            for (; equal < end; ++equal) {
+                if (tokens_[equal].text == "(") ++paren;
+                else if (tokens_[equal].text == ")" && paren > 0) --paren;
+                else if (tokens_[equal].text == "[") ++bracket;
+                else if (tokens_[equal].text == "]" && bracket > 0) --bracket;
+                else if (tokens_[equal].text == "=" && paren == 0 && bracket == 0) break;
+            }
+            if (equal < end) {
+                CheckStatus initializer = AnalyzeExpression(
+                    equal + 1, end, true, state
+                );
+                if (!initializer.ok) return initializer;
+            }
+            state->locals.insert(tokens_[name_index].text);
+            return {};
+        }
+
+        // A successful `this(...)` delegation runs another constructor before
+        // control returns to the current body, so all of its instance fields
+        // are initialized for subsequent reads.  The existing constructor
+        // checker validates overload resolution; the class-level pass below
+        // additionally requires at least one non-delegating constructor to
+        // establish a real initialization path and rejects pure cycles.
+        const std::size_t delegation_open = Next(first + 1, end);
+        if (tokens_[first].text == "this" && delegation_open < end &&
+            tokens_[delegation_open].text == "(") {
+            const auto delegation_close = MatchingToken(
+                delegation_open, end, "(", ")"
+            );
+            CheckStatus arguments = AnalyzeExpression(
+                delegation_open + 1, delegation_close.value_or(end),
+                delegation_close.has_value(), state
+            );
+            if (!arguments.ok) return arguments;
+            if (delegation_close) {
+                state->assigned.insert(
+                    uninitialized_.begin(), uninitialized_.end()
+                );
+            }
+            return {};
+        }
+
+        std::size_t field_index = first;
+        bool explicit_this = false;
+        std::size_t equal = Next(field_index + 1, end);
+        if (tokens_[field_index].text == "this" && equal < end &&
+            tokens_[equal].text == ".") {
+            field_index = Next(equal + 1, end);
+            equal = field_index < end ? Next(field_index + 1, end) : end;
+            explicit_this = true;
+        }
+        if (field_index < end &&
+            tokens_[field_index].kind == FieldFlowToken::Kind::Identifier &&
+            equal < end && tokens_[equal].text == "=" &&
+            IsUninitializedRead(tokens_[field_index].text, *state, explicit_this)) {
+            CheckStatus rhs = AnalyzeExpression(equal + 1, end, statement_complete, state);
+            if (!rhs.ok) return rhs;
+            if (Next(equal + 1, end) < end) {
+                state->assigned.insert(tokens_[field_index].text);
+            }
+            return {};
+        }
+        return AnalyzeExpression(begin, end, statement_complete, state);
+    }
+
+    CheckStatus AnalyzeBlock(
+        std::size_t begin,
+        std::size_t end,
+        bool block_closed,
+        State* state
+    ) const {
+        const auto outer_locals = state->locals;
+        std::size_t cursor = begin;
+        while ((cursor = Next(cursor, end)) < end) {
+            if (!state->reachable) break;
+            if (tokens_[cursor].text == ";") {
+                ++cursor;
+                continue;
+            }
+            if (tokens_[cursor].text == "if") {
+                State after;
+                std::size_t next = cursor + 1;
+                CheckStatus status = AnalyzeIf(
+                    cursor, end, block_closed, *state, &after, &next
+                );
+                if (!status.ok) return status;
+                *state = std::move(after);
+                cursor = std::max(next, cursor + 1);
+                continue;
+            }
+            if (tokens_[cursor].text == "while" || tokens_[cursor].text == "for") {
+                std::size_t next = cursor + 1;
+                CheckStatus status = AnalyzeLoop(cursor, end, *state, &next);
+                if (!status.ok) return status;
+                cursor = std::max(next, cursor + 1);
+                continue;
+            }
+            if (tokens_[cursor].text == "do") {
+                State after;
+                std::size_t next = cursor + 1;
+                CheckStatus status = AnalyzeDoLoop(
+                    cursor, end, *state, &after, &next
+                );
+                if (!status.ok) return status;
+                *state = std::move(after);
+                cursor = std::max(next, cursor + 1);
+                continue;
+            }
+            if (tokens_[cursor].text == "match") {
+                std::size_t next = cursor + 1;
+                CheckStatus status = AnalyzeOpaqueMatch(
+                    cursor, end, state, &next
+                );
+                if (!status.ok) return status;
+                cursor = std::max(next, cursor + 1);
+                continue;
+            }
+            if (tokens_[cursor].text == "try") {
+                std::size_t next = cursor + 1;
+                CheckStatus status = AnalyzeOpaqueTry(
+                    cursor, end, state, &next
+                );
+                if (!status.ok) return status;
+                cursor = std::max(next, cursor + 1);
+                continue;
+            }
+            if (tokens_[cursor].text == "{") {
+                const auto close = MatchingToken(cursor, end, "{", "}");
+                State nested = *state;
+                CheckStatus status = AnalyzeBlock(
+                    cursor + 1, close.value_or(end), close.has_value(), &nested
+                );
+                if (!status.ok) return status;
+                state->assigned = std::move(nested.assigned);
+                state->reachable = nested.reachable;
+                state->uncertain_control_flow = nested.uncertain_control_flow;
+                cursor = close ? *close + 1 : end;
+                continue;
+            }
+            const std::size_t statement_end = StatementEnd(cursor, end);
+            const bool statement_complete = statement_end < end || block_closed;
+            CheckStatus status = AnalyzeStatement(
+                cursor, statement_end, statement_complete, state
+            );
+            if (!status.ok) return status;
+            cursor = statement_end < end
+                ? statement_end +
+                    (ConsumesStatementBoundary(statement_end, end) ? 1 : 0)
+                : end;
+        }
+        state->locals = outer_locals;
+        return {};
+    }
+
+    std::vector<FieldFlowToken> tokens_;
+    std::unordered_set<std::string> uninitialized_;
+    State initial_;
+};
+
+std::unordered_set<std::string> ConstructorParameterNames(std::string_view parameters) {
+    std::unordered_set<std::string> result;
+    for (const std::string& raw : SplitTopLevel(parameters, ',')) {
+        const std::size_t colon = FindTopLevel(raw, ":");
+        const std::string name = Trim(std::string_view(raw).substr(0, colon));
+        if (IsIdentifierText(name)) {
+            result.insert(name);
+        } else if (name.size() >= 3 && name.front() == '`' && name.back() == '`') {
+            const std::string unquoted = name.substr(1, name.size() - 2);
+            if (IsIdentifierText(unquoted)) result.insert(unquoted);
+        }
+    }
+    return result;
+}
+
+CheckStatus CheckConstructorFieldInitialization(std::string_view source) {
+    static const std::regex class_pattern(
+        R"(\bclass\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()]*>)?[^{}]*\{)"
+    );
+    static const std::regex init_pattern(
+        R"(\binit\s*\(([^{};]*?)\)\s*\{)"
+    );
+    static const std::regex delegated_pattern(R"(\bthis\s*\(([^()]*)\))" );
+    if (source.find("class") == std::string_view::npos) return {};
+    const std::string owned(source);
+    const std::string masked = MaskNonCodeText(source);
+    for (std::sregex_iterator cls(masked.begin(), masked.end(), class_pattern), end;
+         cls != end; ++cls) {
+        const std::size_t class_open = static_cast<std::size_t>(
+            (*cls).position() + (*cls).length() - 1
+        );
+        const auto class_close = MatchingDelimiter(masked, class_open, '{', '}');
+        const std::string body = owned.substr(
+            class_open + 1,
+            class_close ? *class_close - class_open - 1 : owned.size() - class_open - 1
+        );
+        const std::string masked_body = masked.substr(
+            class_open + 1,
+            class_close ? *class_close - class_open - 1 : masked.size() - class_open - 1
+        );
+        const auto fields = ScanTopLevelSourceFieldsMasked(masked_body);
+        std::unordered_set<std::string> uninitialized;
+        for (const auto& [name, field] : fields) {
+            if (!field.mutable_field && !field.is_static && !field.has_initializer) {
+                uninitialized.insert(name);
+            }
+        }
+        if (uninitialized.empty()) continue;
+
+        struct ConstructorSummary {
+            std::size_t required = 0;
+            std::size_t maximum = 0;
+            bool delegates = false;
+            std::optional<std::size_t> delegated_argument_count;
+        };
+        bool saw_constructor = false;
+        std::vector<ConstructorSummary> constructor_summaries;
+        for (std::sregex_iterator init(masked_body.begin(), masked_body.end(), init_pattern), init_end;
+             init != init_end; ++init) {
+            const std::size_t position = static_cast<std::size_t>((*init).position());
+            if (BraceDepthBefore(masked_body, position) != 0) continue;
+            saw_constructor = true;
+            const std::size_t init_open = position +
+                static_cast<std::size_t>((*init).length()) - 1;
+            const auto init_close = MatchingDelimiter(masked_body, init_open, '{', '}');
+            const std::string init_body = body.substr(
+                init_open + 1,
+                init_close ? *init_close - init_open - 1 : body.size() - init_open - 1
+            );
+            ConstructorFieldFlowAnalyzer analyzer(
+                init_body, uninitialized,
+                ConstructorParameterNames((*init)[1].str())
+            );
+            ConstructorFieldFlowAnalyzer::State state;
+            CheckStatus status = analyzer.Analyze(init_close.has_value(), &state);
+            if (!status.ok) return status;
+            if (!init_close) continue;
+            const std::string masked_init_body = MaskNonCodeText(init_body);
+            std::smatch delegation;
+            const bool delegates = std::regex_search(
+                masked_init_body, delegation, delegated_pattern
+            );
+            for (const std::string& field : uninitialized) {
+                if (state.reachable && !state.uncertain_control_flow &&
+                    !state.assigned.count(field)) {
+                    return {false, "constructor does not initialize field"};
+                }
+            }
+            ConstructorSummary summary;
+            const std::vector<std::string> parameters = SplitTopLevel(
+                (*init)[1].str(), ','
+            );
+            if (!(parameters.size() == 1 && parameters.front().empty())) {
+                summary.maximum = parameters.size();
+                for (const std::string& parameter : parameters) {
+                    if (FindTopLevel(parameter, "=") == std::string::npos) {
+                        ++summary.required;
+                    }
+                }
+            }
+            summary.delegates = delegates;
+            if (delegates) {
+                const std::vector<std::string> arguments = SplitTopLevel(
+                    delegation[1].str(), ','
+                );
+                summary.delegated_argument_count =
+                    arguments.size() == 1 && arguments.front().empty()
+                        ? 0 : arguments.size();
+            }
+            constructor_summaries.push_back(std::move(summary));
+        }
+        if (class_close && !constructor_summaries.empty()) {
+            std::vector<bool> reaches_direct(constructor_summaries.size(), false);
+            bool has_direct = false;
+            for (std::size_t index = 0; index < constructor_summaries.size(); ++index) {
+                if (!constructor_summaries[index].delegates) {
+                    reaches_direct[index] = true;
+                    has_direct = true;
+                }
+            }
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                for (std::size_t index = 0; index < constructor_summaries.size(); ++index) {
+                    const ConstructorSummary& current = constructor_summaries[index];
+                    if (!current.delegates || reaches_direct[index]) continue;
+                    if (!current.delegated_argument_count) {
+                        if (has_direct) {
+                            reaches_direct[index] = true;
+                            changed = true;
+                        }
+                        continue;
+                    }
+                    for (std::size_t target = 0;
+                         target < constructor_summaries.size(); ++target) {
+                        if (!reaches_direct[target]) continue;
+                        const ConstructorSummary& candidate = constructor_summaries[target];
+                        if (*current.delegated_argument_count >= candidate.required &&
+                            *current.delegated_argument_count <= candidate.maximum) {
+                            reaches_direct[index] = true;
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            for (std::size_t index = 0; index < constructor_summaries.size(); ++index) {
+                if (constructor_summaries[index].delegates && !reaches_direct[index]) {
+                    return {false, "constructor delegation has no initializing target"};
+                }
+            }
+        }
+        if (class_close && !saw_constructor) {
+            return {false, "class field is never initialized"};
+        }
+    }
+    return {};
+}
+
+CheckStatus CheckClassFieldPrefixRules(std::string_view source) {
+    static const std::regex class_pattern(
+        R"(\bclass\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()]*>)?[^{}]*\{)"
+    );
+    static const std::regex member_pattern(
+        R"((?:^|[\n\r])\s*(?:(?:public|private)\s+)?(?:static\s+)?(init|func\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()]*>)?)\s*\([^{};]*\)\s*(?::\s*[^{}\n\r]+)?\s*\{)"
+    );
+    const std::string owned = MaskNonCodeText(source);
+    for (std::sregex_iterator cls(owned.begin(), owned.end(), class_pattern), end;
+         cls != end; ++cls) {
+        const std::size_t class_open = static_cast<std::size_t>(
+            (*cls).position() + (*cls).length() - 1
+        );
+        const auto class_close = MatchingDelimiter(owned, class_open, '{', '}');
+        const std::string body = owned.substr(
+            class_open + 1,
+            class_close ? *class_close - class_open - 1 : owned.size() - class_open - 1
+        );
+        const auto fields = ScanTopLevelSourceFieldsMasked(body);
+        if (class_close) {
+            for (const auto& [_, field] : fields) {
+                if (field.is_static && !field.has_initializer) {
+                    return {false, "static field requires an initializer"};
+                }
+            }
+            continue;
+        }
+
+        std::size_t active_open = std::string::npos;
+        bool active_constructor = false;
+        for (std::sregex_iterator member(body.begin(), body.end(), member_pattern), member_end;
+             member != member_end; ++member) {
+            const std::size_t position = static_cast<std::size_t>((*member).position());
+            if (BraceDepthBefore(body, position) != 0) continue;
+            const std::size_t open = position + static_cast<std::size_t>((*member).length()) - 1;
+            if (!MatchingDelimiter(body, open, '{', '}')) {
+                active_open = open;
+                active_constructor = (*member)[1].str() == "init";
+            }
+        }
+        if (active_open == std::string::npos) continue;
+        const std::string member_body = body.substr(active_open + 1);
+
+        static const std::regex assignment_tail(
+            R"((?:^|[\n\r])\s*(?:this\s*\.\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^\n\r]+)$)"
+        );
+        std::smatch assignment;
+        if (!active_constructor && std::regex_search(member_body, assignment, assignment_tail)) {
+            const auto field = fields.find(assignment[1].str());
+            if (field != fields.end() && !field->second.mutable_field &&
+                !Trim(assignment[2].str()).empty()) {
+                return {false, "assignment to immutable field"};
+            }
+        }
+
+        // Constructor reads and definite assignment are handled together by
+        // CheckConstructorFieldInitialization below.  Keeping a second,
+        // prefix-only identifier heuristic here caused false rejections for
+        // scoped names such as `for (field in ...)`, lambda parameters, and
+        // other locals that intentionally shadow a field.
+    }
+    return CheckConstructorFieldInitialization(source);
+}
+
+CheckStatus CheckFunctionInitializerPrefix(
+    std::string_view source,
+    const Model& model
+) {
+    if (source.empty() || !IsIdentContinue(static_cast<unsigned char>(source.back()))) {
+        return {};
+    }
+    static const std::regex declaration_tail(
+        R"((?:^|[\n\r])\s*(?:let|var)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*([^=\n\r{}]+)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)$)"
+    );
+    const std::string owned(source);
+    std::smatch match;
+    if (!std::regex_search(owned, match, declaration_tail)) return {};
+    const std::string expected = CompactType(match[1].str());
+    const std::string name = match[2].str();
+    for (const auto& [candidate, _] : model.functions) {
+        if (candidate != name && StartsWith(candidate, name)) return {};
+    }
+    const auto signatures = model.functions.find(name);
+    if (signatures == model.functions.end()) return {};
+    for (const FunctionSig& signature : signatures->second) {
+        if (signature.required != 0 || !signature.type_params.empty()) return {};
+    }
+    for (const FunctionSig& signature : signatures->second) {
+        if (Compatible(signature.result, expected, model)) return {};
+        std::string function_type = "(";
+        for (std::size_t index = 0; index < signature.param_types.size(); ++index) {
+            if (index) function_type += ",";
+            function_type += signature.param_types[index];
+        }
+        function_type += ")->" + signature.result;
+        if (Compatible(function_type, expected, model)) return {};
+    }
+    return {false, "function initializer cannot match annotated type"};
+}
+
+CheckStatus CheckDeclarationPrefixes(std::string_view source, const Model& model) {
+    const std::string owned(source);
+    static const std::regex forbidden_func_main(
+        R"((?:^|[\n\r])\s*(?:(?:public|private)\s+)?(?:static\s+)?func\s+main\s*\()"
+    );
+    if (std::regex_search(owned, forbidden_func_main)) {
+        return {false, "func main is forbidden"};
+    }
+
+    static const std::regex closed_type_parameters(
+        R"(\b(?:func\s+[A-Za-z_][A-Za-z0-9_]*|class\s+[A-Za-z_][A-Za-z0-9_]*|interface\s+[A-Za-z_][A-Za-z0-9_]*)\s*<([^>{}()\n\r]*)>)"
+    );
+    static const std::unordered_set<std::string> reserved = {
+        "Int64", "Float64", "Bool", "Rune", "Unit"
+    };
+    std::unordered_set<std::string> type_parameters;
+    for (std::sregex_iterator it(owned.begin(), owned.end(), closed_type_parameters), end;
+         it != end; ++it) {
+        std::unordered_set<std::string> seen;
+        for (const std::string& item : SplitTopLevel((*it)[1].str(), ',')) {
+            const std::string name = Trim(item);
+            if (!IsIdentifierText(name)) continue;
+            if (reserved.count(name)) return {false, "type parameter conflicts with primitive"};
+            if (!seen.insert(name).second) return {false, "duplicate type parameter"};
+            type_parameters.insert(name);
+        }
+    }
+
+    if (!source.empty() && IsIdentContinue(static_cast<unsigned char>(source.back()))) {
+        static const std::regex local_type_tail(
+            R"((?:^|[\n\r])\s*(?:let|var)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*([^=\n\r{}]*)$)"
+        );
+        std::smatch local_type;
+        if (std::regex_search(owned, local_type, local_type_tail)) {
+            const std::string type_text = local_type[1].str();
+            std::size_t start = type_text.size();
+            while (start > 0 && IsIdentContinue(
+                       static_cast<unsigned char>(type_text[start - 1]))) --start;
+            const std::string prefix = type_text.substr(start);
+            if (!prefix.empty() && !HasKnownTypePrefix(prefix, model, type_parameters)) {
+                return {false, "unknown local type"};
+            }
+        }
+
+        static const std::regex super_tail(
+            R"((?:^|[\n\r])\s*(?:class|interface)\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()]*>)?\s*<:\s*([^{}\n\r]*)$)"
+        );
+        std::smatch super_header;
+        if (std::regex_search(owned, super_header, super_tail)) {
+            const std::string supers = super_header[1].str();
+            const std::size_t ampersand = supers.rfind('&');
+            const std::string current = Trim(std::string_view(supers).substr(
+                ampersand == std::string::npos ? 0 : ampersand + 1
+            ));
+            if (IsIdentifierText(current) &&
+                !HasKnownTypePrefix(current, model, type_parameters)) {
+                return {false, "unknown supertype prefix"};
+            }
+        }
+    }
+
+    if (CheckStatus status = CheckFunctionInitializerPrefix(source, model); !status.ok) {
+        return status;
+    }
+    if (CheckStatus status = CheckClassFieldPrefixRules(source); !status.ok) {
+        return status;
+    }
+    return CheckClassMemberNameCollisions(source);
+}
+
+CheckStatus CheckDuplicateLocalDeclarations(const FunctionContext& context) {
+    if (!context.in_function || context.body.empty()) return {};
+    std::vector<std::unordered_set<std::string>> scopes(1);
+    bool in_string = false;
+    bool triple_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    for (std::size_t index = 0; index < context.body.size(); ++index) {
+        const char ch = context.body[index];
+        const char next = index + 1 < context.body.size()
+            ? context.body[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') line_comment = false;
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (triple_string) {
+                if (index + 2 < context.body.size() &&
+                    std::string_view(context.body).substr(index, 3) == "\"\"\"") {
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+            continue;
+        }
+        if (ch == '"') {
+            triple_string = index + 2 < context.body.size() &&
+                std::string_view(context.body).substr(index, 3) == "\"\"\"";
+            in_string = true;
+            if (triple_string) index += 2;
+            continue;
+        }
+        if (ch == '{') {
+            scopes.emplace_back();
+            continue;
+        }
+        if (ch == '}') {
+            if (scopes.size() > 1) scopes.pop_back();
+            continue;
+        }
+        if (!IsIdentStart(static_cast<unsigned char>(ch))) continue;
+        std::size_t word_end = index + 1;
+        while (word_end < context.body.size() &&
+               IsIdentContinue(static_cast<unsigned char>(context.body[word_end]))) {
+            ++word_end;
+        }
+        const std::string_view keyword = std::string_view(context.body).substr(
+            index, word_end - index
+        );
+        if (keyword != "let" && keyword != "var") {
+            index = word_end - 1;
+            continue;
+        }
+        std::size_t name_start = word_end;
+        while (name_start < context.body.size() &&
+               std::isspace(static_cast<unsigned char>(context.body[name_start]))) {
+            ++name_start;
+        }
+        if (name_start >= context.body.size() ||
+            !IsIdentStart(static_cast<unsigned char>(context.body[name_start]))) {
+            index = word_end - 1;
+            continue;
+        }
+        std::size_t name_end = name_start + 1;
+        while (name_end < context.body.size() &&
+               IsIdentContinue(static_cast<unsigned char>(context.body[name_end]))) {
+            ++name_end;
+        }
+        const std::string name = context.body.substr(
+            name_start, name_end - name_start
+        );
+        const std::size_t declaration_operator = SkipLoopLineTrivia(
+            context.body, name_end
+        );
+        if (declaration_operator >= context.body.size() ||
+            (context.body[declaration_operator] != ':' &&
+             context.body[declaration_operator] != '=')) {
+            index = name_end - 1;
+            continue;
+        }
+        if (!scopes.back().insert(name).second) {
+            return {false, "duplicate local declaration"};
+        }
+        index = name_end - 1;
     }
     return {};
 }
@@ -3957,7 +6851,8 @@ void CollectInterfaceRequirements(
     std::string interface_type,
     const Model& model,
     std::unordered_map<std::string, std::vector<FunctionSig>>* requirements,
-    std::unordered_set<std::string>* visited
+    std::unordered_set<std::string>* visited,
+    bool static_methods
 ) {
     interface_type = CompactType(interface_type);
     if (!visited->insert(interface_type).second) return;
@@ -3969,7 +6864,9 @@ void CollectInterfaceRequirements(
          index < arguments.size() && index < interface->second.type_params.size(); ++index) {
         substitutions[interface->second.type_params[index]] = arguments[index];
     }
-    for (const auto& [method_name, signatures] : interface->second.methods) {
+    const auto& methods = static_methods
+        ? interface->second.static_methods : interface->second.methods;
+    for (const auto& [method_name, signatures] : methods) {
         auto& target = (*requirements)[method_name];
         for (const FunctionSig& signature : signatures) {
             target.push_back(SubstituteSignature(signature, substitutions));
@@ -3977,9 +6874,52 @@ void CollectInterfaceRequirements(
     }
     for (const std::string& super : interface->second.supers) {
         CollectInterfaceRequirements(
-            ApplySubstitution(super, substitutions), model, requirements, visited
+            ApplySubstitution(super, substitutions), model, requirements, visited,
+            static_methods
         );
     }
+}
+
+CheckStatus CheckInterfaceRequirementSet(
+    const std::string& class_name,
+    const NominalInfo& cls,
+    const Model& model,
+    const std::unordered_map<std::string, std::vector<FunctionSig>>& requirements,
+    const std::unordered_map<std::string, std::vector<FunctionSig>>& implementations,
+    bool class_closed,
+    bool reject_mismatch_while_open
+) {
+    for (const auto& [method_name, required_signatures] : requirements) {
+        const auto implementation = implementations.find(method_name);
+        if (implementation == implementations.end()) continue;
+        for (const FunctionSig& requirement : required_signatures) {
+            bool has_complete_candidate = false;
+            bool matched = false;
+            for (const FunctionSig& candidate : implementation->second) {
+                if (!SignatureTypesAreKnown(candidate, cls, model)) continue;
+                has_complete_candidate = true;
+                if (SameInterfaceSignature(candidate, requirement)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (has_complete_candidate && !matched &&
+                (class_closed || reject_mismatch_while_open)) {
+                if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
+                    std::cerr << "interface mismatch " << class_name << "." << method_name
+                              << ", required=" << requirement.result << '\n';
+                }
+                return {false, "interface method signature mismatch"};
+            }
+        }
+    }
+    if (!class_closed) return {};
+    for (const auto& [method_name, _] : requirements) {
+        if (!implementations.count(method_name)) {
+            return {false, "interface method not implemented"};
+        }
+    }
+    return {};
 }
 
 CheckStatus CheckInterfacesFromRecords(
@@ -3990,46 +6930,30 @@ CheckStatus CheckInterfacesFromRecords(
         const std::string& name = SnapshotCaptureAt(record, 1).text;
         const auto cls = model.nominals.find(name);
         if (cls == model.nominals.end()) continue;
-        std::unordered_map<std::string, std::vector<FunctionSig>> requirements;
-        std::unordered_set<std::string> visited_interfaces;
+        std::unordered_map<std::string, std::vector<FunctionSig>> instance_requirements;
+        std::unordered_map<std::string, std::vector<FunctionSig>> static_requirements;
+        std::unordered_set<std::string> visited_instance_interfaces;
+        std::unordered_set<std::string> visited_static_interfaces;
         for (const std::string& super_type : cls->second.supers) {
             CollectInterfaceRequirements(
-                super_type, model, &requirements, &visited_interfaces
+                super_type, model, &instance_requirements,
+                &visited_instance_interfaces, false
+            );
+            CollectInterfaceRequirements(
+                super_type, model, &static_requirements,
+                &visited_static_interfaces, true
             );
         }
-        for (const auto& [method_name, required_signatures] : requirements) {
-            const auto implementation = cls->second.methods.find(method_name);
-            if (implementation == cls->second.methods.end()) continue;
-            for (const FunctionSig& requirement : required_signatures) {
-                bool has_complete_candidate = false;
-                bool matched = false;
-                for (const FunctionSig& candidate : implementation->second) {
-                    if (!SignatureTypesAreKnown(candidate, cls->second, model)) continue;
-                    has_complete_candidate = true;
-                    if (SameInterfaceSignature(candidate, requirement)) {
-                        matched = true;
-                        break;
-                    }
-                }
-                if (has_complete_candidate && !matched) {
-                    if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
-                        std::cerr << "interface mismatch " << name << "." << method_name
-                                  << ", required=" << requirement.result << ", candidates=";
-                        for (const FunctionSig& candidate : implementation->second) {
-                            std::cerr << candidate.result << " ";
-                        }
-                        std::cerr << '\n';
-                    }
-                    return {false, "interface method signature mismatch"};
-                }
-            }
-        }
-        if (!record.close) continue;
-        for (const auto& [method_name, _] : requirements) {
-            if (!cls->second.methods.count(method_name)) {
-                return {false, "interface method not implemented"};
-            }
-        }
+        CheckStatus status = CheckInterfaceRequirementSet(
+            name, cls->second, model, instance_requirements,
+            cls->second.methods, record.close.has_value(), true
+        );
+        if (!status.ok) return status;
+        status = CheckInterfaceRequirementSet(
+            name, cls->second, model, static_requirements,
+            cls->second.static_methods, record.close.has_value(), false
+        );
+        if (!status.ok) return status;
     }
     return {};
 }
@@ -4045,49 +6969,34 @@ CheckStatus CheckInterfacesRegex(std::string_view source, const Model& model) {
         const std::string name = (*it)[1].str();
         const auto cls = model.nominals.find(name);
         if (cls == model.nominals.end()) continue;
-        std::unordered_map<std::string, std::vector<FunctionSig>> requirements;
-        std::unordered_set<std::string> visited_interfaces;
+        std::unordered_map<std::string, std::vector<FunctionSig>> instance_requirements;
+        std::unordered_map<std::string, std::vector<FunctionSig>> static_requirements;
+        std::unordered_set<std::string> visited_instance_interfaces;
+        std::unordered_set<std::string> visited_static_interfaces;
         for (const std::string& super_type : cls->second.supers) {
             CollectInterfaceRequirements(
-                super_type, model, &requirements, &visited_interfaces
+                super_type, model, &instance_requirements,
+                &visited_instance_interfaces, false
             );
-        }
-        for (const auto& [method_name, required_signatures] : requirements) {
-            const auto implementation = cls->second.methods.find(method_name);
-            if (implementation == cls->second.methods.end()) continue;
-            for (const FunctionSig& requirement : required_signatures) {
-                bool has_complete_candidate = false;
-                bool matched = false;
-                for (const FunctionSig& candidate : implementation->second) {
-                    if (!SignatureTypesAreKnown(candidate, cls->second, model)) continue;
-                    has_complete_candidate = true;
-                    if (SameInterfaceSignature(candidate, requirement)) {
-                        matched = true;
-                        break;
-                    }
-                }
-                if (has_complete_candidate && !matched) {
-                    if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
-                        std::cerr << "interface mismatch " << name << "." << method_name
-                                  << ", required=" << requirement.result << ", candidates=";
-                        for (const FunctionSig& candidate : implementation->second) {
-                            std::cerr << candidate.result << " ";
-                        }
-                        std::cerr << '\n';
-                    }
-                    return {false, "interface method signature mismatch"};
-                }
-            }
+            CollectInterfaceRequirements(
+                super_type, model, &static_requirements,
+                &visited_static_interfaces, true
+            );
         }
         const std::size_t open = static_cast<std::size_t>(
             (*it).position() + (*it).length() - 1
         );
-        if (!MatchingDelimiter(owned, open, '{', '}')) continue;
-        for (const auto& [method_name, _] : requirements) {
-            if (!cls->second.methods.count(method_name)) {
-                return {false, "interface method not implemented"};
-            }
-        }
+        const bool class_closed = MatchingDelimiter(owned, open, '{', '}').has_value();
+        CheckStatus status = CheckInterfaceRequirementSet(
+            name, cls->second, model, instance_requirements,
+            cls->second.methods, class_closed, true
+        );
+        if (!status.ok) return status;
+        status = CheckInterfaceRequirementSet(
+            name, cls->second, model, static_requirements,
+            cls->second.static_methods, class_closed, false
+        );
+        if (!status.ok) return status;
     }
     return {};
 }
@@ -4551,8 +7460,10 @@ FunctionContext PopulateFunctionContext(
                 cls != model.nominals.end()) {
                 for (const auto& [name, type] : cls->second.fields) {
                     context.variables.emplace(name, type);
+                    context.entry_variables.emplace(name, type);
                 }
                 context.variables["this"] = context.class_name;
+                context.entry_variables["this"] = context.class_name;
             }
         }
     }
@@ -4593,6 +7504,9 @@ FunctionContext PopulateFunctionContext(
             } else {
                 context.variables[(*it)[1].str()] = IterableElement(iterable.type);
             }
+            context.entry_variables[(*it)[1].str()] =
+                context.variables[(*it)[1].str()];
+            context.entry_immutable.insert((*it)[1].str());
         }
     }
     return context;
@@ -4608,6 +7522,8 @@ bool SameFunctionContext(const FunctionContext& left, const FunctionContext& rig
         left.body_end == right.body_end &&
         left.variables == right.variables &&
         left.immutable == right.immutable &&
+        left.entry_variables == right.entry_variables &&
+        left.entry_immutable == right.entry_immutable &&
         left.class_name == right.class_name;
 }
 #endif
@@ -4650,6 +7566,10 @@ std::size_t EstimateContextPayloadBytes(const FunctionContext& context) {
         result += name.size() + type.size();
     }
     for (const std::string& name : context.immutable) result += name.size();
+    for (const auto& [name, type] : context.entry_variables) {
+        result += name.size() + type.size();
+    }
+    for (const std::string& name : context.entry_immutable) result += name.size();
     return result;
 }
 #endif
@@ -4667,6 +7587,9 @@ CheckStatus AnalyzeSource(
 #endif
 ) {
     if (Trim(source).empty()) return {};
+
+    const CheckStatus declaration_prefixes = CheckDeclarationPrefixes(source, model);
+    if (!declaration_prefixes.ok) return declaration_prefixes;
 
 #ifdef CANGJIE_ENABLE_PROFILE
     ProfileScopeTimer analyze_timer(profile ? &profile->analyze_total_ns : nullptr);
@@ -4759,26 +7682,115 @@ CheckStatus AnalyzeSource(
 #endif
     FunctionContext context = cached_context;
     if (!context.in_function) return {};
+    auto correct_explicit_result = [&](const std::vector<DeclarationRecord>& records) {
+        for (const DeclarationRecord& record : records) {
+            if (record.open + 1 == context.body_start) {
+                context.result = CompactType(SnapshotCaptureAt(record, 4).text);
+                return true;
+            }
+        }
+        return false;
+    };
+    if (!correct_explicit_result(snapshot.explicit_functions_single_line)) {
+        correct_explicit_result(snapshot.explicit_functions_multiline_only);
+    }
     if (context.body_start <= source.size()) {
         const std::size_t end = context.body_end == std::string::npos
             ? source.size() : std::min(context.body_end, source.size());
         context.body = std::string(source.substr(context.body_start, end - context.body_start));
     }
 
+    const CheckStatus duplicate_locals = CheckDuplicateLocalDeclarations(context);
+    if (!duplicate_locals.ok) return duplicate_locals;
+
     ExpressionTyper typer(model, context, source);
     const bool trailing_numeric_prefix = !source.empty() &&
         std::isdigit(static_cast<unsigned char>(source.back()));
+    const bool soft_newline =
+        active_statement.boundary == ActiveStatementCache::Boundary::Newline;
     const bool committed =
-        active_statement.boundary != ActiveStatementCache::Boundary::None;
+        active_statement.boundary == ActiveStatementCache::Boundary::Semicolon ||
+        active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose;
 #ifdef CANGJIE_ENABLE_PROFILE
     if (profile) profile->unclosed_string_scan_bytes += source.size();
 #endif
     const bool unclosed_string = HasUnclosedString(source);
     const bool trailing_open_paren = !source.empty() && source.back() == '(';
     const bool defer_expression_error = trailing_numeric_prefix || unclosed_string ||
-        trailing_open_paren || (!context.is_main && !committed);
-    const std::string line = std::move(active_statement.text);
+        trailing_open_paren || (!context.is_main && !committed && !soft_newline);
+    auto should_defer_expression_error = [&](const ExprResult& result) {
+        return defer_expression_error || (soft_newline &&
+            (result.message == "mixed numeric arithmetic" ||
+             result.message == "logical operands require Bool" ||
+             result.message == "string concatenation requires String")) ||
+            (!committed && !source.empty() &&
+             std::isspace(static_cast<unsigned char>(source.back())) &&
+             result.message == "string concatenation requires String");
+    };
+    const std::string line = Trim(RemoveLoopComments(active_statement.text));
+    if (!active_statement.pending_text.empty()) {
+        const std::string pending = Trim(RemoveLoopComments(
+            active_statement.pending_text
+        ));
+        if (const auto declaration = ParseAnyVariableDeclaration(pending)) {
+            ExprResult actual = typer.Infer(
+                declaration->expression, declaration->annotated_type
+            );
+            if (actual.error &&
+                actual.message == "string concatenation requires String" &&
+                StartsWith(Trim(line), ".")) {
+                actual = typer.Infer(
+                    declaration->expression + Trim(line), declaration->annotated_type
+                );
+            }
+            if (actual.error) return {false, actual.message};
+            if (!declaration->annotated_type.empty() && actual.known &&
+                !Compatible(actual.type, declaration->annotated_type, model)) {
+                return {false, "variable initializer type mismatch"};
+            }
+        } else if (const auto assignment = ParseReassignment(pending)) {
+            std::string expected_type;
+            if (HasExplicitThisReceiver(pending) && !context.class_name.empty()) {
+                expected_type = TopLevelSourceFieldType(
+                    source, snapshot, context.class_name, assignment->first
+                );
+            } else if (const auto expected = context.variables.find(assignment->first);
+                       expected != context.variables.end()) {
+                expected_type = expected->second;
+            }
+            if (!expected_type.empty()) {
+                ExprResult actual = typer.Infer(assignment->second, expected_type);
+                if (actual.error &&
+                    actual.message == "string concatenation requires String" &&
+                    StartsWith(Trim(line), ".")) {
+                    actual = typer.Infer(
+                        assignment->second + Trim(line), expected_type
+                    );
+                }
+                if (actual.error) return {false, actual.message};
+                if (actual.known && !Compatible(actual.type, expected_type, model)) {
+                    return {false, "assignment type mismatch"};
+                }
+            }
+        } else if (!pending.empty() && !IsStatementPrefix(pending)) {
+            ExprResult expression = typer.Infer(pending, context.result);
+            if (expression.error) return {false, expression.message};
+        }
+    }
     const std::string trimmed_source = Trim(source);
+    if (commit_dirty && !trimmed_source.empty() && trimmed_source.back() == '}') {
+        const CheckStatus loop_bodies = CheckCompletedLoopBodies(
+            context.body, model, context, source
+        );
+        if (!loop_bodies.ok) return loop_bodies;
+    }
+    if (active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose) {
+        const CheckStatus adjacent_assignments =
+            CheckCompletedSimpleAssignmentSequence(
+                line, source, model, snapshot, context
+            );
+        if (!adjacent_assignments.ok) return adjacent_assignments;
+    }
     const bool condition_closed_now = !trimmed_source.empty() && trimmed_source.back() == ')';
     if (condition_closed_now) {
         for (const std::string keyword : {"if", "while"}) {
@@ -4787,7 +7799,9 @@ CheckStatus AnalyzeSource(
             const auto condition = LastCondition(context.body, keyword);
             if (!condition || condition->empty()) continue;
             ExprResult result = typer.Infer(*condition);
-            if (result.error && !defer_expression_error) return {false, result.message};
+            if (result.error && !should_defer_expression_error(result)) {
+                return {false, result.message};
+            }
             if (result.known && result.type != "Bool") return {false, keyword + " condition must be Bool"};
         }
     }
@@ -4804,11 +7818,19 @@ CheckStatus AnalyzeSource(
             );
             if (!iterable_text.empty()) {
                 ExprResult iterable = typer.Infer(iterable_text);
-                if (iterable.error && !defer_expression_error) return {false, iterable.message};
-                const bool numeric_literal = IsDecimalNumberText(iterable_text);
+                const bool incomplete_range_step = close == std::string::npos &&
+                    (iterable.message == "range step must be integral" ||
+                     iterable.message == "range step must share endpoint type");
+                if (iterable.error && !incomplete_range_step &&
+                    !should_defer_expression_error(iterable)) {
+                    return {false, iterable.message};
+                }
+                const bool numeric_literal = IsDecimalNumberText(iterable_text) ||
+                    IsBasedIntegerText(iterable_text);
                 const bool may_be_range = close == std::string::npos &&
                     (numeric_literal || (!iterable_text.empty() && iterable_text.back() == '.') ||
-                     (!context.is_main && (IsInteger(iterable.type) || iterable.type == "Rune")));
+                     ((!context.is_main || iterable_text.find('.') != std::string::npos) &&
+                      (IsInteger(iterable.type) || iterable.type == "Rune")));
                 if (iterable.known && !may_be_range && !IsIterable(iterable.type) &&
                     TypeHead(iterable.type) != "HashMap") {
                     return {false, "for operand is not iterable"};
@@ -4820,55 +7842,102 @@ CheckStatus AnalyzeSource(
     if ((line == "break" || line == "continue") && !InsideLoop(context.body)) {
         return {false, line + " outside loop"};
     }
+    if (HasInvalidAssignmentTarget(line)) {
+        return {false, "invalid assignment target"};
+    }
     if (const auto declaration = ParseVariableDeclaration(line)) {
         ExprResult actual = typer.Infer(declaration->second, declaration->first);
-        if (actual.error && !defer_expression_error) return {false, actual.message};
+        if (actual.error && !should_defer_expression_error(actual)) {
+            return {false, actual.message};
+        }
         static const std::regex incomplete_float(R"([0-9]+\.[0-9]*)");
-        const bool defer_atom = !committed && (
+        const bool defer_atom = !committed && !soft_newline && (
             IsIdentifierText(declaration->second) ||
             (!declaration->second.empty() && declaration->second.front() == '"') ||
             trailing_numeric_prefix || unclosed_string ||
             trailing_open_paren ||
             std::regex_match(declaration->second, incomplete_float)
         ) && declaration->second != "true" && declaration->second != "false";
-        const bool defer_suffix = !committed && actual.suffix_may_change_type;
+        const bool defer_suffix = !committed && actual.suffix_may_change_type &&
+            !IsFunctionType(actual.type);
         if (actual.known && !Compatible(actual.type, declaration->first, model) &&
             !defer_atom && !defer_suffix) {
             return {false, "variable initializer type mismatch"};
         }
     } else if (const auto declaration = ParseAnyVariableDeclaration(line)) {
         ExprResult actual = typer.Infer(declaration->expression, declaration->annotated_type);
-        if (actual.error && !defer_expression_error) return {false, actual.message};
-        if (!declaration->annotated_type.empty() && actual.known && committed &&
+        if (actual.error && !should_defer_expression_error(actual)) {
+            return {false, actual.message};
+        }
+        const bool stable_initializer = committed || (soft_newline &&
+            (!actual.suffix_may_change_type || IsFunctionType(actual.type)));
+        if (!declaration->annotated_type.empty() && actual.known && stable_initializer &&
             !Compatible(actual.type, declaration->annotated_type, model)) {
             return {false, "variable initializer type mismatch"};
         }
     } else if (const auto assignment = ParseReassignment(line)) {
-        if (committed && context.immutable.count(assignment->first)) return {false, "assignment to let"};
-        const auto expected = context.variables.find(assignment->first);
-        if (expected != context.variables.end()) {
-            ExprResult actual = typer.Infer(assignment->second, expected->second);
-            if (actual.error && !defer_expression_error) return {false, actual.message};
-            if (committed && actual.known && !Compatible(actual.type, expected->second, model)) {
+        const bool explicit_this = HasExplicitThisReceiver(line);
+        if ((committed || soft_newline) && !explicit_this &&
+            context.immutable.count(assignment->first)) {
+            return {false, "assignment to let"};
+        }
+        std::string expected_type;
+        if (explicit_this && !context.class_name.empty()) {
+            expected_type = TopLevelSourceFieldType(
+                source, snapshot, context.class_name, assignment->first
+            );
+        } else if (const auto expected = context.variables.find(assignment->first);
+                   expected != context.variables.end()) {
+            expected_type = expected->second;
+        }
+        if (!expected_type.empty()) {
+            ExprResult actual = typer.Infer(assignment->second, expected_type);
+            if (actual.error && !should_defer_expression_error(actual)) {
+                return {false, actual.message};
+            }
+            if (committed && actual.known && !Compatible(actual.type, expected_type, model)) {
                 return {false, "assignment type mismatch"};
             }
         }
+    } else if (line == "return") {
+        if (active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose &&
+            context.result != "Unit") {
+            return {false, "return value required"};
+        }
     } else if (StartsWith(line, "return ")) {
         ExprResult actual = typer.Infer(Trim(std::string_view(line).substr(7)), context.result);
-        if (actual.error && !defer_expression_error) return {false, actual.message};
+        if (actual.error && !should_defer_expression_error(actual)) {
+            return {false, actual.message};
+        }
         if (committed && actual.known && context.result != "Unit" && !Compatible(actual.type, context.result, model)) {
             return {false, "return type mismatch"};
         }
     } else if (!line.empty() && !IsStatementPrefix(line) &&
+               !IsExplicitBlockStatement(line) &&
                !StartsWith(line, "func ") && !StartsWith(line, "class ") &&
                !StartsWith(line, "interface ") && !StartsWith(line, "if ") &&
                !StartsWith(line, "while ") && !StartsWith(line, "for ") &&
                !StartsWith(line, "//") && !StartsWith(line, "/*")) {
         ExprResult expression = typer.Infer(line, context.result);
-        if (expression.error && !defer_expression_error) return {false, expression.message};
+        if (expression.error && !should_defer_expression_error(expression)) {
+            return {false, expression.message};
+        }
         const bool atomic = line == "true" || line == "false" ||
             (!line.empty() && (line.front() == '"' || std::isdigit(static_cast<unsigned char>(line.front()))));
-        if (atomic && context.result != "Unit" && expression.known &&
+        const std::size_t source_function_count =
+            snapshot.explicit_functions_single_line.size() +
+            snapshot.explicit_functions_multiline_only.size();
+        const bool first_open_source_function = source_function_count == 1 &&
+            snapshot.strict_nominals.empty();
+        const bool implicit_result_stable =
+            active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose ||
+            (atomic && !first_open_source_function);
+        const std::unordered_set<std::string> no_type_parameters;
+        const bool concrete_result = KnownDeclaredType(
+            context.result, model, no_type_parameters
+        );
+        if (implicit_result_stable && concrete_result && context.result != "Unit" &&
+            expression.known &&
             !trailing_numeric_prefix &&
             !Compatible(expression.type, context.result, model)) {
             return {false, "implicit return type mismatch"};

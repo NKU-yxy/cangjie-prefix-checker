@@ -125,6 +125,7 @@ type ::= primitive_type | func_type | array_type | nullable_type | tuple_type | 
 # Primary expressions
 primary ::= literal
          | generic_construct
+         | if_stmt
          | any_identifier
          | "(" ws expression ws ")"
          | "this"
@@ -304,7 +305,7 @@ enum_case ::= any_identifier (ws "=" ws expression)?
 enum_decl ::= "enum" ws_req any_identifier (ws ":" ws type)? ws "{" ws enum_case (ws "," ws enum_case)* ws ","? ws "}"
 
 # Interface method (signature without body)
-interface_method ::= "func" ws_req any_identifier ws type_arguments? ws "(" ws func_param_list? ws ")" ws ":" ws type ws ";"?
+interface_method ::= ("static" ws_req)? "func" ws_req any_identifier ws type_arguments? ws "(" ws func_param_list? ws ")" ws ":" ws type ws ";"?
 
 # Interface members (recursive)
 interface_methods ::= interface_method (ws interface_methods)?

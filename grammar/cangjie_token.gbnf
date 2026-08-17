@@ -241,7 +241,7 @@ enum_case ::= any_ident ("ASSIGN" expression)?
 enum_decl ::= access_modifier? "ENUM" any_ident ("COLON" type)? "LBRACE" enum_case ("COMMA" enum_case)* "COMMA"? "RBRACE"
 
 # Interface method (abstract — no body, just signature)
-interface_method ::= "FUNC" any_ident type_parameters? "LPAREN" func_param_list? "RPAREN" "COLON" type "SEMICOLON"?
+interface_method ::= static_modifier? "FUNC" any_ident type_parameters? "LPAREN" func_param_list? "RPAREN" "COLON" type "SEMICOLON"?
 
 # Interface methods (recursive)
 interface_methods ::= interface_method interface_methods?
