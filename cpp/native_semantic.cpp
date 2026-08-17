@@ -3304,6 +3304,7 @@ ExprResult ExpressionTyper::CheckSignatures(
     const std::unordered_map<std::string, std::string>& receiver_substitutions
 ) {
     std::string first_error;
+    bool over_arity_fallback = false;
     for (const FunctionSig& sig : signatures) {
         if (!explicit_types.empty() && explicit_types.size() != sig.type_params.size()) {
             if (first_error.empty()) first_error = "wrong generic arity";
@@ -3311,7 +3312,18 @@ ExprResult ExpressionTyper::CheckSignatures(
         }
         if (arguments.size() > sig.param_types.size() ||
             (closed && (arguments.size() < sig.required || arguments.size() > sig.param_types.size()))) {
-            if (first_error.empty()) first_error = "wrong argument arity";
+            // Unclosed over-arity is only fatal once NO candidate has room
+            // for the extra argument: `String(1` can still become
+            // `String(1.toString())` when some ctor accepts a String, so a
+            // candidate that merely rejects on arity must not preempt a more
+            // specific argument-type diagnosis (which the caller defers on a
+            // trailing numeric prefix).  Record it as a fallback; promote it
+            // at the end only when every candidate was over-arity.
+            if (!closed && arguments.size() > sig.param_types.size()) {
+                over_arity_fallback = true;
+            } else if (first_error.empty()) {
+                first_error = "wrong argument arity";
+            }
             continue;
         }
         std::unordered_map<std::string, std::string> substitutions = receiver_substitutions;
@@ -3402,6 +3414,7 @@ ExprResult ExpressionTyper::CheckSignatures(
         }
     }
     if (!first_error.empty()) return {"?", false, true, first_error};
+    if (over_arity_fallback) return {"?", false, true, "wrong argument arity"};
     return {};
 }
 
@@ -3416,7 +3429,13 @@ ExprResult ExpressionTyper::InferCall(
 ) {
     std::vector<std::string> args = SplitTopLevel(arguments, ',');
     if (args.size() == 1 && args.front().empty()) args.clear();
-    if (!closed && !args.empty() && args.back().empty()) args.pop_back();
+    // NOTE: do NOT drop a trailing empty arg from an unclosed call like
+    // `f(1,`.  The comma locks the preceding argument: `HashMap<String,
+    // Int64>(1,` can no longer be extended to a valid program (the literal
+    // cannot pick up `.toString()` past the comma), so the comma is already
+    // the first non-continuable token.  Keeping the empty slot makes the
+    // arity/argument checks reject at the comma instead of deferring to the
+    // closing paren.
     if (base.empty()) {
         std::vector<FunctionSig> candidates;
         if (const auto function = model_.functions.find(name); function != model_.functions.end()) {
@@ -3986,6 +4005,14 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         const auto& methods = type_receiver ? nominal->second.static_methods : nominal->second.methods;
         if (const auto method = methods.find(member->second); method != methods.end()) {
             if (MayExtendTrailingIdentifier(member->second)) return {};
+            // CALIBRATED against the official typechecker: a bare method
+            // reference is ambiguous whenever the member has more than one
+            // overload, even if the expected function type matches exactly
+            // one candidate (e.g. `(Int64) -> Unit = values.add` where add
+            // has four overloads is INVALID).
+            if (method->second.size() > 1) {
+                return {"?", false, true, "ambiguous overloaded member reference"};
+            }
             std::unordered_map<std::string, std::string> substitutions;
             const auto receiver_args = TypeArgs(receiver_type);
             for (std::size_t index = 0;
@@ -7719,6 +7746,14 @@ CheckStatus AnalyzeSource(
     const bool defer_expression_error = trailing_numeric_prefix || unclosed_string ||
         trailing_open_paren || (!context.is_main && !committed && !soft_newline);
     auto should_defer_expression_error = [&](const ExprResult& result) {
+        // Over-arity is already fatal while unclosed: `a.clone(1` cannot be
+        // rescued by any continuation (`.toString()` etc. still leaves one
+        // argument), so a trailing numeric prefix must not defer it.  The
+        // official first-non-continuable token is the argument itself.
+        // Exception: `a.clone(` (args not started yet) still extends to the
+        // valid `a.clone()`, so keep deferring while the source ends in `(`.
+        if (result.message == "wrong argument arity" && !trailing_open_paren)
+            return false;
         return defer_expression_error || (soft_newline &&
             (result.message == "mixed numeric arithmetic" ||
              result.message == "logical operands require Bool" ||
