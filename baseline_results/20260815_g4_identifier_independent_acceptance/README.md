@@ -5,6 +5,7 @@
 ## 发布文件
 
 - `g4-029-identifier-independent-acceptance.tar.gz`：完整、确定性证据包，94,182,816 bytes。
+- `g4-029-identifier-independent-acceptance.tar.gz.part-00` 至 `part-02`：为适配远端单次 50 MiB pack 限制而生成的字节级分块；Git 远端保存这三块，本地原始归档保持不变。
 - `g4-029-identifier-independent-acceptance.tar.gz.sha256`：压缩包外部 SHA-256 绑定。
 - `inventory.json`：sealed 证据清单的便捷副本。
 - `CONTENT_SHA256SUMS`：包内完整内容清单的便捷副本；权威校验对象是解压后的同名文件。
@@ -12,6 +13,13 @@
 - `ARCHIVE_BUILD_REPORT.json`：双 stage、双 tar、双解压与篡改拒绝结果。
 
 ## 校验
+
+从 Git 远端检出后，先重组完整归档：
+
+```sh
+cat g4-029-identifier-independent-acceptance.tar.gz.part-* \
+  > g4-029-identifier-independent-acceptance.tar.gz
+```
 
 在本目录先校验压缩包：
 
