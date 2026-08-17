@@ -642,6 +642,7 @@ struct FunctionSig {
     std::string result = "Unit";
     std::size_t required = 0;
     bool is_static = false;
+    bool from_context = false;
 };
 
 struct NominalInfo {
@@ -921,6 +922,7 @@ void LoadContextTable(const std::string& path, Model* model) {
         (void)reader.U32();  // mutability is tracked once the variable is assigned.
     }
     for (FunctionSig& sig : reader.Signatures()) {
+        sig.from_context = true;
         model->functions[sig.name].push_back(std::move(sig));
     }
     const std::uint32_t nominal_count = reader.U32();
@@ -3001,7 +3003,8 @@ class ExpressionTyper {
         bool closed,
         const std::string& expected,
         int depth,
-        const std::unordered_map<std::string, std::string>& receiver_substitutions = {}
+        const std::unordered_map<std::string, std::string>& receiver_substitutions = {},
+        bool strict_generic = false
     );
     bool HasSymbolPrefix(std::string_view prefix) const;
     bool MayExtendTrailingIdentifier(std::string_view identifier) const;
@@ -3301,12 +3304,14 @@ ExprResult ExpressionTyper::CheckSignatures(
     bool closed,
     const std::string& expected,
     int depth,
-    const std::unordered_map<std::string, std::string>& receiver_substitutions
+    const std::unordered_map<std::string, std::string>& receiver_substitutions,
+    bool strict_generic
 ) {
     std::string first_error;
     bool over_arity_fallback = false;
     for (const FunctionSig& sig : signatures) {
         if (!explicit_types.empty() && explicit_types.size() != sig.type_params.size()) {
+            if (getenv("CJ_TRACE")) std::cerr << "CS generic-arity reject: " << sig.name << " expl=" << explicit_types.size() << " tp=" << sig.type_params.size() << "\n";
             if (first_error.empty()) first_error = "wrong generic arity";
             continue;
         }
@@ -3320,6 +3325,7 @@ ExprResult ExpressionTyper::CheckSignatures(
             // trailing numeric prefix).  Record it as a fallback; promote it
             // at the end only when every candidate was over-arity.
             if (!closed && arguments.size() > sig.param_types.size()) {
+                if (getenv("CJ_TRACE")) std::cerr << "CS over-arity fb: " << sig.name << " nargs=" << arguments.size() << " nparams=" << sig.param_types.size() << "\n";
                 over_arity_fallback = true;
             } else if (first_error.empty()) {
                 first_error = "wrong argument arity";
@@ -3331,10 +3337,27 @@ ExprResult ExpressionTyper::CheckSignatures(
             substitutions[sig.type_params[index]] = CompactType(explicit_types[index]);
         }
         std::unordered_set<std::string> type_params(sig.type_params.begin(), sig.type_params.end());
-        if (!expected.empty()) BindTypeVariables(sig.result, expected, type_params, &substitutions);
+        // strict_generic: bare calls to generic GLOBAL functions (min/max).
+        // The official checker never instantiates T from the expected result
+        // nor from the arguments, so every such call fails ("expected T, got
+        // X") at the first locked argument.  Skip both bindings so the arg
+        // pattern stays the unbound variable and the Compatible check fails.
+        const bool strict = strict_generic && !sig.type_params.empty();
+        if (!expected.empty() && !strict) BindTypeVariables(sig.result, expected, type_params, &substitutions);
         bool rejected = false;
         std::size_t positional = 0;
         std::unordered_set<std::size_t> used;
+        // The re-attached trailing empty slot from `f(1,` marks a comma that
+        // still waits for more arguments.  It participates in arity checks
+        // (so `print("x",` over-arity fires at the comma) but must NOT revoke
+        // the trailing-argument rescues: `f(1,` with a wrong-but-continuable
+        // literal stays extendable via `.toString()` before the comma.
+        auto trailing_empty_slots = [&](std::size_t from) {
+            for (std::size_t k = from; k < arguments.size(); ++k) {
+                if (!Trim(arguments[k]).empty()) return false;
+            }
+            return true;
+        };
         for (std::size_t argument_number = 0; argument_number < arguments.size(); ++argument_number) {
             const std::string& raw_argument = arguments[argument_number];
             if (raw_argument.empty()) continue;
@@ -3387,15 +3410,27 @@ ExprResult ExpressionTyper::CheckSignatures(
                 continue;
             }
             if (actual.known) {
-                BindTypeVariables(sig.param_types[parameter_index], actual.type, type_params, &substitutions);
+                if (!strict) {
+                    BindTypeVariables(sig.param_types[parameter_index], actual.type, type_params, &substitutions);
+                }
                 const std::string want = ApplySubstitution(sig.param_types[parameter_index], substitutions);
                 if (!Compatible(actual.type, want, model_)) {
-                    if (!closed && actual.suffix_may_change_type &&
-                        argument_number + 1 == arguments.size()) {
+                    // Implicit-generic bare calls (min/max): the official
+                    // checker never instantiates T from the arguments, so
+                    // EVERY call fails candidate matching at the closing
+                    // paren ("no matching call candidate").  An argument
+                    // mismatch inside an unclosed call must therefore NOT
+                    // lock the error position at this comma/literal -- defer
+                    // to the ')' where the candidate is finally rejected.
+                    if (!closed && strict) {
+                        continue;
+                    }
+                    if (!closed && actual.suffix_may_change_type && !strict &&
+                        trailing_empty_slots(argument_number + 1)) {
                         continue;
                     }
                     if (!closed && MayExtendTrailingIdentifier(trimmed_argument) &&
-                        argument_number + 1 == arguments.size()) continue;
+                        trailing_empty_slots(argument_number + 1)) continue;
                     if (IsInteger(actual.type) && IsInteger(want) &&
                         IsDecimalIntegerText(Trim(argument))) {
                         continue;
@@ -3407,13 +3442,17 @@ ExprResult ExpressionTyper::CheckSignatures(
             }
         }
         if (!rejected) {
+            if (getenv("CJ_TRACE")) std::cerr << "CS accepted: " << sig.name << " nargs=" << arguments.size() << "\n";
             ExprResult result;
             result.type = ApplySubstitution(sig.result, substitutions);
             result.known = result.type.find_first_of("?") == std::string::npos;
             return result;
         }
     }
-    if (!first_error.empty()) return {"?", false, true, first_error};
+    if (!first_error.empty()) {
+        if (getenv("CJ_TRACE")) std::cerr << "CS-error: " << first_error << " args=[" << [&]() { std::string s; for (auto& a : arguments) { if (!s.empty()) s += "|"; s += a; } return s; }() << "]\n";
+        return {"?", false, true, first_error};
+    }
     if (over_arity_fallback) return {"?", false, true, "wrong argument arity"};
     return {};
 }
@@ -3429,19 +3468,23 @@ ExprResult ExpressionTyper::InferCall(
 ) {
     std::vector<std::string> args = SplitTopLevel(arguments, ',');
     if (args.size() == 1 && args.front().empty()) args.clear();
-    // NOTE: do NOT drop a trailing empty arg from an unclosed call like
-    // `f(1,`.  The comma locks the preceding argument: `HashMap<String,
-    // Int64>(1,` can no longer be extended to a valid program (the literal
-    // cannot pick up `.toString()` past the comma), so the comma is already
-    // the first non-continuable token.  Keeping the empty slot makes the
-    // arity/argument checks reject at the comma instead of deferring to the
-    // closing paren.
     if (base.empty()) {
         std::vector<FunctionSig> candidates;
+        // Bare call to a generic global function without explicit type args
+        // (min/max): official checker never instantiates T, so the call fails
+        // at the first locked argument.  Constructor candidates keep their
+        // normal inference, so any nominal candidate clears the flag.
+        bool strict_generic = explicit_types.empty();
         if (const auto function = model_.functions.find(name); function != model_.functions.end()) {
             candidates.insert(candidates.end(), function->second.begin(), function->second.end());
+            strict_generic = strict_generic &&
+                std::any_of(function->second.begin(), function->second.end(),
+                            [](const FunctionSig& sig) { return !sig.type_params.empty(); }) &&
+                std::all_of(function->second.begin(), function->second.end(),
+                            [](const FunctionSig& sig) { return sig.from_context; });
         }
         if (const auto nominal = model_.nominals.find(name); nominal != model_.nominals.end() && !nominal->second.is_interface) {
+            strict_generic = false;
             candidates.insert(candidates.end(), nominal->second.constructors.begin(), nominal->second.constructors.end());
         }
         if (candidates.empty() && !name.empty() && name.front() == '{') {
@@ -3460,7 +3503,7 @@ ExprResult ExpressionTyper::InferCall(
         }
         if (candidates.empty()) return {};
         return WithExtendablePostfix(
-            CheckSignatures(candidates, explicit_types, args, closed, expected, depth)
+            CheckSignatures(candidates, explicit_types, args, closed, expected, depth, {}, strict_generic)
         );
     }
 
@@ -7964,6 +8007,12 @@ CheckStatus AnalyzeSource(
             snapshot.explicit_functions_multiline_only.size();
         const bool first_open_source_function = source_function_count == 1 &&
             snapshot.strict_nominals.empty();
+        // The trailing expression is checked against the declared return type
+        // (Unit included) at its closure: an atom closes at itself, a closed
+        // call at its ')' (the statement ends with ')'), anything else when
+        // the function closes.  The official checker rejects every non-Unit
+        // trailing expression of a Unit function at the expression's closure
+        // (err_return_type_mismatch: `true` at the atom; abs(1) at the ')').
         const bool implicit_result_stable =
             active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose ||
             (atomic && !first_open_source_function);
@@ -7971,7 +8020,7 @@ CheckStatus AnalyzeSource(
         const bool concrete_result = KnownDeclaredType(
             context.result, model, no_type_parameters
         );
-        if (implicit_result_stable && concrete_result && context.result != "Unit" &&
+        if (implicit_result_stable && concrete_result &&
             expression.known &&
             !trailing_numeric_prefix &&
             !Compatible(expression.type, context.result, model)) {
