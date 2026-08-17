@@ -3398,6 +3398,14 @@ ExprResult ExpressionTyper::CheckSignatures(
             const std::string pattern = ApplySubstitution(sig.param_types[parameter_index], substitutions);
             ExprResult actual = InferImpl(argument, pattern, depth + 1);
             if (actual.error) {
+                // Implicit-generic bare calls (min/max): T never binds, so
+                // even an array literal vs Array<T> (InferImpl cannot
+                // resolve Array<T> without T) must NOT lock the error at
+                // this comma -- defer to the closing paren where candidate
+                // matching finally rejects the call.
+                if (!closed && strict) {
+                    continue;
+                }
                 rejected = true;
                 if (first_error.empty()) first_error = actual.message;
                 break;
@@ -3453,7 +3461,9 @@ ExprResult ExpressionTyper::CheckSignatures(
         if (getenv("CJ_TRACE")) std::cerr << "CS-error: " << first_error << " args=[" << [&]() { std::string s; for (auto& a : arguments) { if (!s.empty()) s += "|"; s += a; } return s; }() << "]\n";
         return {"?", false, true, first_error};
     }
-    if (over_arity_fallback) return {"?", false, true, "wrong argument arity"};
+    if (over_arity_fallback && !strict_generic) {
+        return {"?", false, true, "wrong argument arity"};
+    }
     return {};
 }
 

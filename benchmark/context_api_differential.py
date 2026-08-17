@@ -87,7 +87,7 @@ def oracle_accepts(source: str) -> tuple[bool, str]:
 
 TPARAM_DEFAULTS = {"T": "Int64", "K": "String", "V": "Int64", "U": "Int64"}
 
-OK_LITERALS = {"Int64": "1", "Float64": "1.5", "Bool": "true", "String": "\"x\"", "Rune": "'a'"}
+OK_LITERALS = {"Int64": "1", "Float64": "1.5", "Bool": "true", "String": "\"x\""}
 
 WRONG_LITERALS = {"Int64": "\"bad\"", "Float64": "\"bad\"", "Bool": "1", "String": "1", "Rune": "1"}
 
@@ -427,6 +427,217 @@ def build_bad_stmt(class_name, method_name, overload, kind, tparams, receiver,
     return None
 
 
+# ---------------------------------------------------------------------------
+# Global-function kinds (min/max/clamp/abs/println family)
+# ---------------------------------------------------------------------------
+
+GLOBAL_TPARAMS = {"T": "Int64"}
+
+# Oracle probe for the continuation method that can rescue a wrong-typed
+# literal: `min(1, "bad", [1, 2])` is still continuable at the string's end
+# boundary because `"bad".toInt64()` turns the argument valid; if no such
+# method exists, the literal's first char is already non-continuable.
+FIXUP_PROBES = {
+    ('"bad"', "Int64"): ".toInt64()",
+    ('"bad"', "Float64"): ".toFloat64()",
+    ("1", "Float64"): ".toFloat64()",
+    ("1", "String"): ".toString()",
+    ('"x"', "Int64"): ".toInt64()",
+    ('"x"', "Float64"): ".toFloat64()",
+    ('"x"', "String"): ".toString()",
+}
+_fixable_cache = {}
+
+
+def lit_fixable(lit, target_type):
+    key = (lit, target_type)
+    if key in _fixable_cache:
+        return _fixable_cache[key]
+    suffix = FIXUP_PROBES.get(key)
+    ok = False
+    if suffix:
+        probe = f'main(): Unit {{\n    let z: {target_type} = {lit}{suffix}\n}}'
+        ok, _ = oracle_accepts(probe)
+    _fixable_cache[key] = ok
+    return ok
+
+
+def global_ok_arg(t):
+    tstr = instantiate(t, GLOBAL_TPARAMS)
+    if tstr in OK_LITERALS:
+        return OK_LITERALS[tstr]
+    if tstr.startswith("Array<"):
+        return "[1, 2]"
+    return None
+
+
+def global_call(name, overload, idx=None, lit=None, drop_last=0, extra_arg=None):
+    """Build `name(arg, ...)` with param idx replaced by lit (or the last
+    `drop_last` params dropped, or `extra_arg` appended)."""
+    params = overload.get("params") or []
+    args = []
+    for i, p in enumerate(params[: len(params) - drop_last]):
+        if i == idx and lit is not None:
+            args.append(lit)
+        else:
+            ok = global_ok_arg(p["type"])
+            if ok is None:
+                return None
+            args.append(ok)
+    if extra_arg is not None:
+        args.append(extra_arg)
+    return f"{name}({', '.join(args)})"
+
+
+def build_bad_global(name, overload, kind, all_ovs=None):
+    """Generate a bad variant of a global-function call.
+
+    Ground truth (CALIBRATED against the official continuation model):
+    - the comma after a wrong literal LOCKS it (`min(1, "bad", ...)` can
+      only be rescued by appending `.toInt64()` BEFORE the comma), so the
+      first non-continuable char is the literal's end boundary when a
+      fixup method exists, else the literal's first char;
+    - a wrong literal in the LAST position (`abs("bad")`) is rescued by
+      appending the fixup before the closing paren, so the end boundary
+      is the paren itself;
+    - arity_long: comma after the last legal argument;
+    - arity_short: the closing paren.
+    """
+    params = overload.get("params") or []
+    ret = overload.get("ret")
+
+    if kind == "g_arg" and params:
+        generic = bool(overload.get("type_params"))
+        for idx in (0, 1):
+            if idx >= len(params):
+                break
+            tstr = instantiate(params[idx]["type"], GLOBAL_TPARAMS)
+            lit = WRONG_LITERALS.get(tstr)
+            if lit is None:
+                continue
+            call = global_call(name, overload, idx, lit)
+            if call is None:
+                continue
+            if generic:
+                # implicit-generic (min/max): every call fails candidate
+                # matching at the closing paren (official: T never binds)
+                err_pos = call.rfind(")")
+            elif idx == len(params) - 1:
+                # trailing arg: checked when it closes at ')'
+                err_pos = call.rfind(")")
+            else:
+                # non-trailing arg: checked when it closes at the comma
+                # literal ends at the comma that locks it; do NOT push
+                # past it (the char after the literal is the comma itself)
+                err_pos = call.find(lit) + len(lit)
+            return call, f"{name} g_arg", err_pos
+        return None
+
+    if kind == "g_arg_mixed" and params:
+        generic = bool(overload.get("type_params"))
+        # a VALID literal of the wrong type (numeric-family mixups)
+        # NOTE: no Float64 -> "1" entry: Int64 literals convert to Float64
+        # implicitly, so `abs(1)` matches abs(Int64) and only fails as the
+        # trailing expression of a Unit function (a different error kind).
+        mixed = {"Int64": ('"x"', "String"), "String": ("1", "Int64")}
+        for idx in (0, 1, 2):
+            if idx >= len(params):
+                break
+            tstr = instantiate(params[idx]["type"], GLOBAL_TPARAMS)
+            pair = mixed.get(tstr)
+            if pair is None:
+                continue
+            lit, lit_t = pair
+            call = global_call(name, overload, idx, lit)
+            if call is None:
+                continue
+            if generic:
+                err_pos = call.rfind(")")
+            elif idx == len(params) - 1:
+                err_pos = call.rfind(")")
+            else:
+                err_pos = call.find(lit) + len(lit)
+            return call, f"{name} g_arg_mixed", err_pos
+        return None
+
+    if kind == "g_rest_elem" and params:
+        generic = bool(overload.get("type_params"))
+        last = params[-1]
+        if instantiate(last["type"], GLOBAL_TPARAMS).startswith("Array<"):
+            call = global_call(name, overload, len(params) - 1, '["x"]')
+            if call is None:
+                return None
+            if generic:
+                err_pos = call.rfind(")")
+            else:
+                err_pos = call.find('["x"]') + 4  # after the closing quote of "x"
+            return call, f"{name} g_rest_elem", err_pos
+        return None
+
+    if kind == "g_arity_short" and params:
+        generic = bool(overload.get("type_params"))
+        call = global_call(name, overload, drop_last=1)
+        if call is None:
+            return None
+        if generic:
+            # min(1, 1) is 2 args < 3 required: candidate fails at ')'
+            err_pos = call.rfind(")")
+        else:
+            err_pos = call.rfind(")")
+        return call, f"{name} g_arity_short", err_pos
+
+    if kind == "g_arity_long" and params:
+        generic = bool(overload.get("type_params"))
+        call = global_call(name, overload, extra_arg="1")
+        if call is None:
+            return None
+        if generic:
+            err_pos = call.rfind(")")
+        else:
+            # A longer overload (e.g. print(s: String, flush: Bool)) can
+            # hold the extra argument ONLY if its first param accepts our
+            # arg0 (print("x", 1) -> ')' where the 2-param candidate is
+            # checked; print(1, 1) -> the comma: arg0 is already wrong for
+            # every longer candidate).  Otherwise the extra arg is
+            # over-arity and locks at the comma after the last legal arg.
+            arg0 = call[call.find("(") + 1:].split(",")[0].strip()
+            longer = any(
+                len(o.get("params") or []) > len(params) and
+                global_ok_arg((o.get("params") or [])[0]["type"]) == arg0
+                for o in (all_ovs or [])
+            )
+            if longer:
+                err_pos = call.rfind(")")
+            else:
+                # comma after the last legal argument locks the arg list
+                err_pos = nth_top_level_comma(call, call.find("(") + 1, len(params))
+                if err_pos < 0:
+                    err_pos = call.rfind(")")
+        return call, f"{name} g_arity_long", err_pos
+
+    if kind == "g_ret":
+        tstr = ret_type_str(ret, GLOBAL_TPARAMS)
+        if tstr == "Unit":
+            return None
+        wrong_t = {"Int64": "String", "String": "Int64",
+                   "Bool": "Int64", "Float64": "String"}.get(tstr)
+        if wrong_t is None:
+            return None
+        call = global_call(name, overload)
+        if call is None:
+            return None
+        bad = f"let z: {wrong_t} = {call}"
+        if overload.get("type_params"):
+            # implicit-generic: candidate fails at the call's closing paren
+            err_pos = bad.rfind(")")
+        else:
+            # same as ret_type: newline continuable, error at next statement
+            err_pos = len(bad) + 1
+        return bad, f"{name} g_ret", err_pos
+
+    return None
+
+
 def load_context():
     return json.loads((ROOT / "context.json").read_text())
 
@@ -653,6 +864,55 @@ def main() -> int:
                             break
                 if len(divergences) >= args.max_cases:
                     break
+            if len(divergences) >= args.max_cases:
+                break
+        if len(divergences) >= args.max_cases:
+            break
+
+    # ---- global-function family (min/max/clamp/abs/println/print) ----
+    gkinds = ["g_arg", "g_arg_mixed", "g_rest_elem", "g_arity_short",
+              "g_arity_long", "g_ret"]
+    global_pad = (
+        HELPER_PREFIX
+        + '\nmain(): Unit {\n    var v: String = "x"\n'
+        + '    let xi: Int64 = 1\n    let xf: Float64 = 1.5\n'
+        + '    let xb: Bool = true\n'
+        + '    println(padGamma("ok"))\n}\n'
+    )
+    for gname, govs in ctx.get("global_functions", {}).items():
+        g_ovs = as_overloads(govs)
+        for ov_idx, ov in enumerate(g_ovs[:6]):
+            for kind in gkinds:
+                built = build_bad_global(gname, ov, kind, g_ovs)
+                if built is None:
+                    continue
+                bad_stmt, desc, err_pos_local = built
+                full = global_pad[: global_pad.rfind("    println")] + f"    {bad_stmt}\n}}\n"
+                ok, msg = oracle_accepts(full)
+                if ok:
+                    continue
+                token_ids = enc.encode(full)
+                err_pos_global = full.rfind(f"    {bad_stmt}") + 4 + err_pos_local
+                gt = token_index_of_char(full, token_ids, err_pos_global, enc)
+                if gt >= len(token_ids):
+                    continue
+                rc, sol_err, n_lines, stderr = run_solution(args.solution, token_ids)
+                generated += 1
+                if sol_err != gt:
+                    divergences.append({
+                        "class": "global",
+                        "method": gname,
+                        "overload": ov_idx,
+                        "kind": kind,
+                        "desc": desc,
+                        "gt": gt,
+                        "solution": sol_err,
+                        "n_lines": n_lines,
+                        "oracle": msg[:160],
+                        "source": full,
+                    })
+                    if len(divergences) >= args.max_cases:
+                        break
             if len(divergences) >= args.max_cases:
                 break
         if len(divergences) >= args.max_cases:
