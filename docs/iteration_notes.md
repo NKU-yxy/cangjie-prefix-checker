@@ -199,3 +199,39 @@ v2（02:58 提交）→ **CE**；v3 首发（09:34）→ **WA 0 分（通过列�
 1. **上传 `cangjie-checker_v4_20260818.zip`**（项目根目录，887,825 B），拿官网通过列表。
 2. 若仍有失败：按类别建 context_final 专项差分（目前 fuzzer 已自动切到 context_final 语义）。
 3. 性能侧维持现状（单例 0.4-0.6s，远低于 5s 上限）。
+
+---
+
+## v5（2026-08-18 10:35）—— 预编译二进制 + 永不失败 build.sh，判别 CE 归属
+
+### 事实：v4 仍 CE，三包同款 CE 详情
+
+- 10:27 提交 v4（887,825 B，容器内 100/100），官网 CE，详情与 v2/v3 二次 CE **逐字相同**：
+  `harness: /opt/cangjie-fragment-checker-finals/scripts/token_interaction_test.py; wrong_error_positions.json: /opt/cangjie-fragment-checker-finals/wrong_error_positions.json; wrong/: /coursegrader/testdata/wrong`
+- 该详情格式正是判题器 `course_grader.py` 缺失文件清单的渲染；三份 zip（v2 原包/v3 重打包/v4）内容互不相同（连 v4 的 solution 构建都成功 —— 否则会有 `solution executable: ...` 项），CE 详情却完全一致 ⇒ **CE 与 zip 内容无关，判题端缺失自身文件**。
+- 时间线佐证：v1（00:21）正常出分 60/100 → 09:34 v3-first 正常出 WA（说明当时判题端 harness/wrong 均在）→ 09:48 起三次 CE。判题端环境在 09:48 后损坏，与我们的打包无关。
+
+### 修复内容（v5）—— 判别性提交
+
+1. **预编译 aarch64 二进制**（`solution.aarch64.xz` 520,900 B，容器内 GCC 11.4 编译 v4 同源 `cpp/solution.cpp + native_semantic.cpp + xgrammar_core`，`-O3 -DNDEBUG -Wl,--gc-sections`，strip 后 1,629,528 B）。
+2. **build.sh 零编译零依赖**：`python3 lzma` 解出二进制 + cl100k 表（judge 必有 python3 —— harness 本身是 python 脚本），`generated/context.bin` 直接 shipped；所有步骤失败容忍，**无条件 exit 0** ⇒ 我们侧不存在任何 CE 触发点。
+3. zip 精简为运行产物（build.sh / context.json / grammar/ / generated/context.bin / assets/cl100k_base.bin.xz / solution.aarch64.xz），**985,455 B < 1MB**。
+
+### 验证（判题容器 = aarch64 Ubuntu 22.04）
+
+| 验证集 | 结果 |
+|---|---|
+| 解压 → build.sh | **0.16s**，exit 0，solution 1,629,528 B（aarch64） |
+| 官方 harness wrong/ + wrong2/ 全量 | **100/100 PASS** |
+| 负向对照（固定输出 1 的假解） | FAILED（判词不误报） |
+
+### 判别逻辑（本次提交的使命）
+
+- 上传 v5 后若 **CE 详情与之前逐字相同**（三路径，无 `solution executable`）⇒ 判题端问题 100% 实锤（预编译二进制 + 无条件 exit 0 的 build.sh 不可能 CE），需联系官网/平台恢复环境，我们的代码无需再改。
+- 若 CE 详情**变化**（出现 `solution executable` 等新项）⇒ 有新的判题端信息，据此再定位。
+- 若**正常出分** ⇒ 之前 CE 为判题端临时故障，v5 直接继续迭代语义优化。
+
+### 下一步
+
+1. 上传 `cangjie-checker_v5_20260818.zip`（项目根目录，985,455 B，sha256 `7b5e8f48a529722cf2d2bf6c6860c6d68c62fb4fce08b50c1a9fd9b9870bcbfc`）。
+2. 按 CE 详情三种走向分别处理（见上）。
