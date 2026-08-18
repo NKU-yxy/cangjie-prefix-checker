@@ -5159,7 +5159,11 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             // there only when an identical body was previously typechecked
             // as valid (staticBump's `relay<Int64>(..., { v: Int64 => v + 1 })`
             // precedes the bad copy); without such a twin the body defers to
-            // the closing `}`.
+            // the closing `}` — err_lambda_interface_callback_explicit is the
+            // no-twin twin of this program (identical shape, gold at `})`,
+            // audit: "after `v + 1` the prefix is still extendable via
+            // `.toString()`"), so the twin gate is not an anti-overfit
+            // heuristic but the documented official behavior.
             if (!lambda_closed) {
                 if (TailBinary(body) && HasSeenValidLambdaTwin(body)) {
                     return {"?", false, true, "lambda return type mismatch"};
