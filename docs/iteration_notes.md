@@ -710,3 +710,68 @@ v9 结论需要修订：旧 golds 下 100/100 已不成立，v10 必须按新语
 - `official-reference` 已 merge 至 `040fbbc`（含 typechecker/context_final/audit 文档）。
 - `/tmp/probe_v10.py`：context_final + 官方 typechecker 探针（探针脚本，非二进制）。
 - 本地旧 wrong2 备份在 `/tmp/wrong2_local_backup`（内容 = 官方版，无差异）。
+
+## v10（2026-08-18 18:15 打包，未上传）— 官方锚点修复落地，wrong 44→48/50、wrong2 50/50
+
+### 实际实现（与 v9.1 清单的差异已裁决）
+
+1. **return 锚 → `}`**（完成，同清单）：
+   - 删除裸表达式分支的 `(atomic && !first_open_source_function)`，`implicit_result_stable`
+     仅 `FunctionClose`（8236 区域）；
+   - pending 重查（~8084）新增：FunctionClose + known-incompatible + result≠Unit 且
+     concrete → "implicit return type mismatch"。
+   ⇒ err_return_type_mismatch fire 53→**20**（`}`）✓；变体验证：单行体 `{ true }` 锚 ` }`、
+     多函数文件锚 `}`、`{ true\n9 }` NO FIRE、`{ "x" }` 锚 `}`——与官方 typechecker 全一致。
+2. **assignment to let 延迟**（实现比清单更精细）：
+   - 8191 门控：`committed || (soft_newline && !rhs_extendable)`，其中
+     rhs_extendable = actual.known && (suffix_may_change_type || 类型非
+     Bool/Unit/函数类型)——`n = "x"` 延迟过换行，`n = true` 换行即报（保持 v8）；
+   - **pending 重查新增 immutable 检查**（"assignment to let"）→ `n = "x"` 在 println
+     （427）fire ✓、`n = 2`（类型合法但 let）也在 println fire（官方模型一致：
+     generator 延续检查只按类型恢复，immutable 不参与延续）。
+   - 实测：err_assign_let 425→**427** ✓；wrong2 err_assign_immutable_field 保持
+     （fire 来自 6790 class 扫描 "assignment to immutable field"，与 8193 无关，零回归）。
+3. **eq/rel 延迟到 println**：should_defer_expression_error 增加
+   `"incomparable operands"` 与 `"mixed numeric relation"`（!committed 时延迟，
+   与 mixed-family 同类）。
+   ⇒ err_eq_incomparable 296→**298** ✓、err_rel_mixed_numeric 281→**285** ✓。
+4. **err_arraylist_toarray_assign：保持 309（不动）**——裁决修正：
+   v9.1 清单写"按模型到 println"，但官方 audit 声称"Array 无 toString 无法恢复"
+   与官方自家 typechecker 实测矛盾（`arr.size.toString()` 实测 NO ERROR）；
+   旧 gold=309=v8 现状；308 是官方 generator 与 typechecker 不一致的产物。
+   三种候选（308/309/310）均无第二证据，选择保持 309（旧 gold，v8 60 分基线）。
+5. **err_lambda_interface_callback_explicit：保持 341（不动）**——344 是官方 bug：
+   audit 声称 lambda 块延续，parser/typechecker 实测 UnexpectedToken 期望 RBRACE，
+   wrong2 家族 err_lambda_tick_callback 锚 `+` 从未变。341 有 typechecker + wrong2
+   双证据。
+
+### 关键机制发现
+
+- **pending_text 机制**：ActiveStatementCache.Update（2860-2866）在下一条语句首
+  token 到达时把上一条已提交语句放进 pending_text；Probe 的 8040-8088 对它重查。
+  这是官方"换行不提交、锚点延迟到下一条语句首 token"的落点。缩进 token 因
+  `started_after_newline` 需非空白字符（2771-2773）被跳过——426/297/284 的空格
+  不会误 fire。
+- **官方 generator 的延续模型 = 仅类型恢复**：immutable 错误不参与"可延续性"
+  （`n = "x".size` 仍是 immutable 错，但官方把它当合法延续）。
+
+### 变体差分（15 例，官方 typechecker + 模型推锚 vs v10 fire）
+
+全部一致，零误报零漏报：ret 单行/多行/多函数/字符串体；assign 可恢复 RHS/死 RHS/
+类型合法 let/字段 var；eq String-lhs/Bool-rhs/恢复；rel 恢复/多函数；非 main 函数内
+声明错误延迟到 println 同样成立（8157 分支共享 should_defer）。
+
+### 门禁与性能
+
+- wrong **48/50**（仅 2 例有意保持的官方 bug 案例）、wrong2 **50/50**（零回归）；
+- 最坏单例 522ms ≪ 5s；zip 897,007 字节 < 1MB；
+- 交付物（zip 解压构建）复验 48/50 + 50/50。
+
+### 剩余风险（记档）
+
+- `1 == true`：Bool 无成员路径，官方模型可能锚 `true`，v10 延迟到 println（消息级
+  延迟无法区分 dead RHS）。public 无此例，finals 概率低，未修。
+- `n = true`：同理，v10 在换行报（v8 行为），官方模型可能锚 `true`。
+- 308/341 两例：若 finals keys 用 040fbbc 新 generator 重新生成（而非冻结的旧 keys），
+  这两族会各 -1；反之 v10 的 4 处修复在旧 keys 下可能损失 finals 对应族——但
+  wrong2 规则是官方声明的稳定权威（wrong2 golds 从未变），v10 与其完全一致。

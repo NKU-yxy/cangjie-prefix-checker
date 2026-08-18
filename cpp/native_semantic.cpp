@@ -8017,7 +8017,9 @@ CheckStatus AnalyzeSource(
              result.message == "array index must be Int64") ||
             (!committed &&
              (result.message == "mixed numeric arithmetic" ||
-              result.message == "logical operands require Bool")) ||
+              result.message == "logical operands require Bool" ||
+              result.message == "incomparable operands" ||
+              result.message == "mixed numeric relation")) ||
             (!committed && !soft_newline && !source.empty() &&
              std::isspace(static_cast<unsigned char>(source.back())) &&
              result.message == "string concatenation requires String");
@@ -8058,6 +8060,13 @@ CheckStatus AnalyzeSource(
                 return {false, "variable initializer type mismatch"};
             }
         } else if (const auto assignment = ParseReassignment(pending)) {
+            // A let-reassignment with a member-extendable RHS defers across
+            // the newline; it surfaces here at the next statement's first
+            // token (official anchors `n = "x"` at `println`).
+            if (!HasExplicitThisReceiver(pending) &&
+                context.immutable.count(assignment->first)) {
+                return {false, "assignment to let"};
+            }
             std::string expected_type;
             if (HasExplicitThisReceiver(pending) && !context.class_name.empty()) {
                 expected_type = TopLevelSourceFieldType(
@@ -8084,6 +8093,16 @@ CheckStatus AnalyzeSource(
         } else if (!pending.empty() && !IsStatementPrefix(pending)) {
             ExprResult expression = typer.Infer(pending, context.result);
             if (expression.error) return {false, expression.message};
+            // Implicit-return mismatch anchors at the body close: `{ true }`
+            // against `: Int64` stays extendable (`{ true\n9 }` compiles) and
+            // only the `}` fixes the last expression as the return value.
+            if (active_statement.boundary ==
+                    ActiveStatementCache::Boundary::FunctionClose &&
+                expression.known && context.result != "Unit" &&
+                KnownDeclaredType(context.result, model, {}) &&
+                !Compatible(expression.type, context.result, model)) {
+                return {false, "implicit return type mismatch"};
+            }
         }
     }
     const std::string trimmed_source = Trim(source);
@@ -8188,10 +8207,6 @@ CheckStatus AnalyzeSource(
         }
     } else if (const auto assignment = ParseReassignment(line)) {
         const bool explicit_this = HasExplicitThisReceiver(line);
-        if ((committed || soft_newline) && !explicit_this &&
-            context.immutable.count(assignment->first)) {
-            return {false, "assignment to let"};
-        }
         std::string expected_type;
         if (explicit_this && !context.class_name.empty()) {
             expected_type = TopLevelSourceFieldType(
@@ -8201,14 +8216,28 @@ CheckStatus AnalyzeSource(
                    expected != context.variables.end()) {
             expected_type = expected->second;
         }
+        ExprResult actual;
         if (!expected_type.empty()) {
-            ExprResult actual = typer.Infer(assignment->second, expected_type);
+            actual = typer.Infer(assignment->second, expected_type);
             if (actual.error && !should_defer_expression_error(actual)) {
                 return {false, actual.message};
             }
-            if (committed && actual.known && !Compatible(actual.type, expected_type, model)) {
-                return {false, "assignment type mismatch"};
-            }
+        }
+        // A `let` reassignment commits once the right-hand side can no longer
+        // recover the expected type via member access: `n = "x"` is still
+        // extendable (`n = "x".size`, member postfix continues across the
+        // newline) and the official anchor is the next statement, while a dead
+        // RHS such as `n = true` commits at the newline.
+        const bool rhs_extendable = actual.known &&
+            (actual.suffix_may_change_type ||
+             !(actual.type == "Bool" || actual.type == "Unit" ||
+               IsFunctionType(actual.type)));
+        if (!explicit_this && context.immutable.count(assignment->first) &&
+            (committed || (soft_newline && !rhs_extendable))) {
+            return {false, "assignment to let"};
+        }
+        if (committed && actual.known && !Compatible(actual.type, expected_type, model)) {
+            return {false, "assignment type mismatch"};
         }
     } else if (line == "return") {
         if (active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose &&
@@ -8233,17 +8262,9 @@ CheckStatus AnalyzeSource(
         if (expression.error && !should_defer_expression_error(expression)) {
             return {false, expression.message};
         }
-        const bool atomic = line == "true" || line == "false" ||
-            (!line.empty() && (line.front() == '"' || std::isdigit(static_cast<unsigned char>(line.front()))));
-        const std::size_t source_function_count =
-            snapshot.explicit_functions_single_line.size() +
-            snapshot.explicit_functions_multiline_only.size();
-        const bool first_open_source_function = source_function_count == 1 &&
-            snapshot.strict_nominals.empty();
-        const bool implicit_result_stable =
-            active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose ||
-            (atomic && !first_open_source_function);
         const std::unordered_set<std::string> no_type_parameters;
+        const bool implicit_result_stable =
+            active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose;
         const bool concrete_result = KnownDeclaredType(
             context.result, model, no_type_parameters
         );
