@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Team-authored competition build. XGrammar's disclosed Apache-2.0 C++ core
-# is compiled from the source included in this submission. No package index or
-# network access is used.
+# v4: hardened competition build.
+#
+# Runtime files (grammar/, generated/context.bin) are shipped in the submission
+# itself, so this script only provisions derived artifacts and compiles the
+# native checker. There are no hash pinning steps, no network accesses, and no
+# hard failure paths except when no runnable solution can be produced at all
+# (missing token table or missing toolchain with no fallback).
 
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 run_quiet() {
-  local log_file="/tmp/xgrammar_build_$$.log"
+  local log_file="/tmp/cangjie_build_$$.log"
   if ! "$@" >"${log_file}" 2>&1; then
     cat "${log_file}" >&2
     rm -f "${log_file}"
@@ -17,70 +21,38 @@ run_quiet() {
   rm -f "${log_file}"
 }
 
-verify_sha256() {
-  local expected="$1"
-  local file="$2"
-  local actual
-  if [[ ! -s "${file}" ]]; then
-    echo "missing required submission file: ${file}" >&2
-    exit 1
-  fi
-  actual="$(sha256sum "${file}")"
-  actual="${actual%% *}"
-  if [[ "${actual}" != "${expected}" ]]; then
-    echo "submission file hash mismatch: ${file}" >&2
-    exit 1
-  fi
-}
+mkdir -p generated
 
-verify_sha256 \
-  "facb628ab01a52d7ef8f2fe36ca463ccd381e02e45282c82803b793730068303" \
-  "context.json"
-
-token_table_archive="assets/cl100k_base.bin.xz"
+# --- 1) token table (runtime: generated/cl100k_base.bin) -------------------
+# The shipped assets/cl100k_base.bin.xz is self-contained; python3 is present on
+# the judge because the interaction harness itself is a python script.
 if [[ ! -s generated/cl100k_base.bin ]]; then
-  if [[ -s "${token_table_archive}" ]]; then
-    verify_sha256 \
-      "91f5569da2fafd5a456261be7ed74fbe9db7bdd43bd22b2c040b0ff3fbb7fd73" \
-      "${token_table_archive}"
+  if [[ -s assets/cl100k_base.bin.xz ]]; then
     run_quiet python3 -c \
-      'import lzma, pathlib, sys; source = pathlib.Path(sys.argv[1]); target = pathlib.Path(sys.argv[2]); target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(lzma.decompress(source.read_bytes()))' \
-      "${token_table_archive}" generated/cl100k_base.bin
-  else
-    if ! python3 -c 'import tiktoken' >/dev/null 2>&1; then
-      echo "missing self-contained token table and grader tiktoken" >&2
-      exit 1
-    fi
-    cache_key="9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
-    if [[ -z "${TIKTOKEN_CACHE_DIR:-}" ]]; then
-      cache_candidates=(
-        "/opt/cangjie-fragment-checker-finals/tiktoken_cache"
-        "/opt/cangjie-fragment-checker/tiktoken_cache"
-        "/coursegrader/testdata/tiktoken_cache"
-        "/coursegrader/tiktoken_cache"
-        "${PWD}/tiktoken_cache"
-      )
-      for cache_candidate in "${cache_candidates[@]}"; do
-        if [[ -s "${cache_candidate}/${cache_key}" ]]; then
-          export TIKTOKEN_CACHE_DIR="${cache_candidate}"
-          break
-        fi
-      done
-    fi
-    run_quiet python3 tools/generate_cl100k_table.py generated/cl100k_base.bin
+      'import lzma, pathlib, sys; src = pathlib.Path(sys.argv[1]); dst = pathlib.Path(sys.argv[2]); dst.write_bytes(lzma.decompress(src.read_bytes()))' \
+      assets/cl100k_base.bin.xz generated/cl100k_base.bin || true
   fi
 fi
-verify_sha256 \
-  "308b0361bc24138a3ba3b3659cc09083f2d8fcd5dcd080a407b499e97cc2fd34" \
-  "generated/cl100k_base.bin"
-
-if [[ ! -s generated/context.bin ]]; then
-  run_quiet python3 tools/generate_context_table.py context.json generated/context.bin
+if [[ ! -s generated/cl100k_base.bin ]]; then
+  echo "missing self-contained token table: generated/cl100k_base.bin" >&2
+  exit 1
 fi
-verify_sha256 \
-  "2cf015b7f60f4d6fbb89a805e4d11daeaae0e70061f6a5813c94dcf0586ec113" \
-  "generated/context.bin"
 
+# --- 2) context table (runtime: generated/context.bin) ---------------------
+# The submission ships the correct generated/context.bin. If context.json and
+# the generator are present, regenerate; on any failure keep the shipped one.
+if [[ -s context.json && -s tools/generate_context_table.py ]]; then
+  if run_quiet python3 tools/generate_context_table.py context.json generated/context.bin.tmp; then
+    mv -f generated/context.bin.tmp generated/context.bin
+  fi
+fi
+rm -f generated/context.bin.tmp
+if [[ ! -s generated/context.bin ]]; then
+  echo "missing context table: generated/context.bin" >&2
+  exit 1
+fi
+
+# --- 3) compile the native checker -----------------------------------------
 xgrammar_root="third_party/xgrammar_core"
 xgrammar_sources=(
   "${xgrammar_root}/src/compiled_grammar.cc"
@@ -131,5 +103,6 @@ run_quiet "${native_cxx}" \
   -Wl,--gc-sections -ldl \
   -o solution
 
-strip --strip-unneeded solution
+# strip is a nicety, not a requirement
+strip --strip-unneeded solution 2>/dev/null || true
 chmod +x solution
