@@ -821,8 +821,8 @@ void AddBuiltinModel(Model* model) {
     add_ctor(&array, {"Int64"}, {"size"});
     add_method(&array, "fill", {"T"}, "Unit", {"value"});
     add_method(&array, "get", {"Int64"}, "Optional<T>");
-    add_method(&array, "first", {}, "Optional<T>");
-    add_method(&array, "last", {}, "Optional<T>");
+    array.fields["first"] = "Optional<T>";
+    array.fields["last"] = "Optional<T>";
     add_method(&array, "toString", {}, "String");
 
     NominalInfo& list = add_nominal("ArrayList", {"T"});
