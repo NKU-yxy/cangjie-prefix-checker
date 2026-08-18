@@ -888,3 +888,14 @@ typechecker 实测裁决为**字段语义**：
   build.sh/context.json/context.bin 未动（zip 内 build.sh 保留 Linux 原版）。
 - 判别标尺：官方 err_lambda_max_by 通过 → twin 独立有效；未通过 → 归因存疑
   （可能来自 recovery），后续提交 3 用结构化 lambda frontier。
+
+## v12-F1-L 官方结果（2026-08-18 23:02:28 提交）— **63/100，净 +1，升为新基线**
+
+- 63 = 62 基线 + **err_lambda_max_by** 唯一新增，0 丢失（diff 单行）。
+- **twin ↔ max_by 强对应闭合**：v11（twin+recovery）有 → v12-F1-only（无两者）
+  无 → v12-F1-L（仅 twin）有。max_by 100% 归因 twin，twin 有独立收益 → 进入主干
+  候选；结构化 frontier 不必要。
+- **stack_toarray_string 归因确认 = recovery**：两个无 recovery 变体均无该例。
+  recovery 净负（+1/-4）不进入基线；narrow-recovery 单点收益（仅 stack_toarray_
+  string 形态）成为提交 3 候选。
+- 决策（Plan 13）：net +1 > 0 且无回退 → **v12-F1-L 63/100 升为新基线**。
