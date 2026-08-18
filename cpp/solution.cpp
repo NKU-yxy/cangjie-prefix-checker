@@ -1267,6 +1267,9 @@ int main(int argc, char** argv) {
                 // V14 Patch 3: shadow recovery witness for the same fire.
                 const cangjie::RecoveryWitness& witness = native_semantic.LastWitness();
                 const cangjie::WitnessStats& witness_stats = native_semantic.WitnessStatistics();
+                // V14 Patch 4: shadow per-overload call frontier (plan §8).
+                const cangjie::CallFrontierResult& call_frontier =
+                    native_semantic.LastCallFrontier();
                 const std::size_t fire_nl = fire_source.rfind('\n');
                 std::cerr << "{\"event\":\"fire\",\"token\":" << tokens_seen
                           << ",\"syntax_ok\":" << (syntax_ok ? "true" : "false")
@@ -1287,7 +1290,16 @@ int main(int argc, char** argv) {
                           << ",\"witness_target\":\"" << json_escape(witness.target) << "\""
                           << ",\"witness_suffix\":\"" << json_escape(witness.printable_suffix) << "\""
                           << ",\"witness_cache\":\"" << (witness_stats.cache_hits ? "hit" : "miss") << "\""
-                          << "}\n";
+                          << ",\"cf_resolved\":" << (call_frontier.resolved ? "true" : "false")
+                          << ",\"cf_total\":" << call_frontier.overload_count
+                          << ",\"cf_alive\":" << call_frontier.alive_count
+                          << ",\"cf_closed\":" << (call_frontier.call_closed ? "true" : "false")
+                          << ",\"cf_candidates\":\"";
+                for (std::size_t cf_i = 0; cf_i < call_frontier.reasons.size(); ++cf_i) {
+                    if (cf_i) std::cerr << "; ";
+                    std::cerr << json_escape(call_frontier.reasons[cf_i]);
+                }
+                std::cerr << "\"}\n";
             }
             emit(ok, args.competition_output);
             if (!ok) break;

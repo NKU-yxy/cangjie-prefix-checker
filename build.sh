@@ -99,6 +99,7 @@ run_quiet "${native_cxx}" \
   -I"${xgrammar_root}/third_party/dlpack" \
   cpp/solution.cpp \
   cpp/native_semantic.cpp \
+  cpp/call_frontier.cpp \
   "${xgrammar_sources[@]}" \
   -Wl,--gc-sections -ldl \
   -o solution

@@ -1,5 +1,7 @@
 #include "native_semantic.h"
 
+#include "call_frontier.h"
+
 #include <algorithm>
 #include <cctype>
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -3549,6 +3551,118 @@ RecoveryWitness ComputeShadowWitness(
     }
     (*cache)[cache_key] = witness;
     return witness;
+}
+
+// V14 Patch 4 (shadow): per-overload call candidate frontier (plan §8).  For
+// a fire whose frontier is a callee ('(' follows), resolve every overload of
+// the callee (member methods through the receiver type, bare functions
+// directly), reduce the already-typed arguments to their best-effort types
+// and classify each candidate independently (state + elimination reason).
+// Pure shadow: the decision path never consults the result (activation is
+// Patch 5); completion standard: alive counts printable, every elimination
+// carries a reason.
+CallFrontierResult ComputeCallFrontier(
+    const FrontierInfo& frontier,
+    const Model& model,
+    const FunctionContext& context
+) {
+    CallFrontierResult result;
+    if (frontier.tail_kind != TailKind::Call) return result;
+    const std::size_t symbol_end = frontier.line.find(frontier.symbol);
+    if (symbol_end == std::string::npos) return result;
+    const std::size_t callee_end = symbol_end + frontier.symbol.size();
+
+    std::vector<OverloadView> views;
+    const auto add_views = [&views](const std::string& name,
+                                    const std::vector<FunctionSig>& sigs,
+                                    const std::vector<std::string>& type_params,
+                                    const std::vector<std::string>& subst_args) {
+        for (const FunctionSig& sig : sigs) {
+            OverloadView view;
+            view.name = name;
+            view.type_params = sig.type_params;
+            view.required = sig.required;
+            for (const std::string& param : sig.param_types) {
+                view.param_types.push_back(SubstituteTypeArgs(
+                    param, type_params, subst_args
+                ));
+            }
+            view.result_type = SubstituteTypeArgs(
+                sig.result, type_params, subst_args
+            );
+            views.push_back(std::move(view));
+        }
+    };
+    if (frontier.symbol_kind == SymbolKind::Method ||
+        frontier.symbol_kind == SymbolKind::StaticMember) {
+        // frontier.receiver is already the receiver TYPE HEAD (Patch 2);
+        // receiver_type carries the full instantiation for substitution.
+        const auto nominal = model.nominals.find(frontier.receiver);
+        if (nominal != model.nominals.end()) {
+            const std::vector<std::string> receiver_args = TypeArgs(frontier.receiver_type);
+            const auto methods = nominal->second.methods.find(frontier.symbol);
+            if (methods != nominal->second.methods.end()) {
+                add_views(frontier.symbol, methods->second,
+                          nominal->second.type_params, receiver_args);
+            } else {
+                const auto statics = nominal->second.static_methods.find(frontier.symbol);
+                if (statics != nominal->second.static_methods.end()) {
+                    add_views(frontier.symbol, statics->second,
+                              nominal->second.type_params, receiver_args);
+                }
+            }
+        }
+    } else if (frontier.symbol_kind == SymbolKind::Function) {
+        const auto functions = model.functions.find(frontier.symbol);
+        if (functions != model.functions.end()) {
+            add_views(frontier.symbol, functions->second, {}, {});
+        }
+    } else if (frontier.symbol_kind == SymbolKind::Type) {
+        // Constructor call: "Array(...)" — the constructors are the overloads.
+        const auto nominal = model.nominals.find(frontier.symbol);
+        if (nominal != model.nominals.end()) {
+            add_views(frontier.symbol, nominal->second.constructors,
+                      nominal->second.type_params, TypeArgs(frontier.receiver_type));
+        }
+    } else if (frontier.symbol_kind == SymbolKind::Local ||
+               frontier.symbol_kind == SymbolKind::Global) {
+        // Function-value call: the variable's type decomposes into
+        // params/result (plan §8.2 rule 8: a function value called is a
+        // different state from the same name read as a value).
+        const auto local = context.variables.find(frontier.symbol);
+        std::string var_type = local != context.variables.end()
+            ? local->second : "";
+        if (var_type.empty()) {
+            const auto global = model.globals.find(frontier.symbol);
+            if (global != model.globals.end()) var_type = global->second;
+        }
+        if (!var_type.empty() && IsFunctionType(var_type)) {
+            const auto parts = FunctionTypeParts(var_type);
+            OverloadView view;
+            view.name = frontier.symbol;
+            view.required = parts.first.size();
+            view.param_types = parts.first;
+            view.result_type = parts.second;
+            views.push_back(std::move(view));
+        }
+    }
+    if (views.empty()) return result;
+
+    // Complete arguments typed so far, reduced to their best-effort types
+    // ("" = unknown — the classifier never vetoes on those).
+    std::vector<std::string> typed;
+    for (const std::string& arg : OpenCallTypedArgs(frontier.line, callee_end)) {
+        typed.push_back(ArgTextType(arg, model, context));
+    }
+    const std::string expected = ExpectedFromLine(frontier.line, context, model);
+    const bool call_closed = !CallStillOpen(frontier.line, callee_end);
+
+    return CallFrontierClassifier().Classify(
+        frontier.symbol, views, typed, expected, call_closed,
+        [&model](std::string_view got, std::string_view want) {
+            return Compatible(got, want, model);
+        }
+    );
 }
 
 }  // namespace
@@ -9486,11 +9600,18 @@ class IncrementalSemanticEngine::Impl {
     void SetLastWitness(const RecoveryWitness& witness) { last_witness_ = witness; }
     const WitnessStats& WitnessStatistics() const { return witness_stats_; }
 
+    // V14 Patch 4: shadow per-overload call frontier of the last failed Probe.
+    const CallFrontierResult& LastCallFrontier() const { return last_call_frontier_; }
+    void SetLastCallFrontier(const CallFrontierResult& result) {
+        last_call_frontier_ = result;
+    }
+
     std::string context_path_;
     PostfixGraph postfix_graph_;
     FrontierInfo last_frontier_;
     RecoveryWitness last_witness_;
     WitnessStats witness_stats_;
+    CallFrontierResult last_call_frontier_;
     std::unordered_map<std::string, RecoveryWitness> witness_cache_;
     Model preload_;
     Model active_model_;
@@ -9862,9 +9983,15 @@ CheckStatus IncrementalSemanticEngine::Probe(
                                  impl_->active_context_, impl_->postfix_graph_,
                                  &impl_->witness_cache_, &impl_->witness_stats_)
         );
+        // V14 Patch 4: shadow-only per-overload call frontier (plan §8).
+        impl_->SetLastCallFrontier(
+            ComputeCallFrontier(impl_->LastFrontier(), impl_->active_model_,
+                                impl_->active_context_)
+        );
     } else {
         impl_->SetLastFrontier(FrontierInfo());
         impl_->SetLastWitness(RecoveryWitness());
+        impl_->SetLastCallFrontier(CallFrontierResult());
     }
     return status;
 }
@@ -9895,6 +10022,10 @@ const RecoveryWitness& IncrementalSemanticEngine::LastWitness() const {
 
 const WitnessStats& IncrementalSemanticEngine::WitnessStatistics() const {
     return impl_->WitnessStatistics();
+}
+
+const CallFrontierResult& IncrementalSemanticEngine::LastCallFrontier() const {
+    return impl_->LastCallFrontier();
 }
 
 // V14 Patch 2: FrontierInfo name helpers (external linkage per the header).
