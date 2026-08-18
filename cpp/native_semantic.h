@@ -1,5 +1,7 @@
 #pragma once
 
+#include "call_frontier.h"
+
 #include <cstddef>
 #include <memory>
 #include <ostream>
@@ -168,6 +170,10 @@ class IncrementalSemanticEngine {
     const RecoveryWitness& LastWitness() const;
     const WitnessStats& WitnessStatistics() const;
 
+    // Shadow per-overload call frontier of the last failed Probe (Patch 4).
+    // Empty when the last Probe succeeded or the frontier was not a callee.
+    const CallFrontierResult& LastCallFrontier() const;
+
  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
@@ -181,6 +187,7 @@ class NativeSemanticChecker {
     const FrontierInfo& LastFrontier() const { return engine_.LastFrontier(); }
     const RecoveryWitness& LastWitness() const { return engine_.LastWitness(); }
     const WitnessStats& WitnessStatistics() const { return engine_.WitnessStatistics(); }
+    const CallFrontierResult& LastCallFrontier() const { return engine_.LastCallFrontier(); }
 
  private:
     IncrementalLexer lexer_;
