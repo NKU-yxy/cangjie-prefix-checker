@@ -1223,6 +1223,7 @@ int main(int argc, char** argv) {
 #endif
 
         std::string line;
+        std::string fire_source;
         std::size_t tokens_seen = 0;
         while (std::getline(std::cin, line)) {
             std::int64_t token_id = -1;
@@ -1231,6 +1232,7 @@ int main(int argc, char** argv) {
                 emit(false, args.competition_output);
                 return 0;
             }
+            fire_source.append(fragment.data(), fragment.size());
 #ifdef CANGJIE_ENABLE_PROFILE
             phase_started = PhaseProfiler::Clock::now();
 #endif
@@ -1259,9 +1261,22 @@ int main(int argc, char** argv) {
             }
             const bool ok = syntax_ok && semantic_ok;
             if (!ok && std::getenv("CANGJIE_TRACE_FIRE")) {
+                // V14 Patch 2: shadow frontier classification of the last
+                // failed Probe (never consulted by the decision path).
+                const cangjie::FrontierInfo& frontier = native_semantic.LastFrontier();
+                const std::size_t fire_nl = fire_source.rfind('\n');
                 std::cerr << "{\"event\":\"fire\",\"token\":" << tokens_seen
                           << ",\"syntax_ok\":" << (syntax_ok ? "true" : "false")
-                          << ",\"message\":\"" << json_escape(semantic_status.message) << "\"}\n";
+                          << ",\"message\":\"" << json_escape(semantic_status.message) << "\""
+                          << ",\"line\":\"" << json_escape(fire_source.substr(
+                                 fire_nl == std::string::npos ? 0 : fire_nl + 1)) << "\""
+                          << ",\"symbol\":\"" << json_escape(frontier.symbol) << "\""
+                          << ",\"symbol_kind\":\"" << cangjie::SymbolKindName(frontier.symbol_kind) << "\""
+                          << ",\"tail\":\"" << cangjie::TailKindName(frontier.tail_kind) << "\""
+                          << ",\"boundary\":\"" << cangjie::BoundaryKindName(frontier.boundary_kind) << "\""
+                          << ",\"receiver\":\"" << json_escape(frontier.receiver) << "\""
+                          << ",\"shadow_verdict\":\"" << cangjie::FrontierVerdictName(frontier.verdict) << "\""
+                          << "}\n";
             }
             emit(ok, args.competition_output);
             if (!ok) break;

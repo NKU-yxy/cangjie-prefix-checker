@@ -2029,6 +2029,362 @@ struct FunctionContext {
     std::string class_name;
 };
 
+// ---------------------------------------------------------------------------
+// V14 Patch 2: shadow frontier classification (never consulted by decisions).
+//
+// NOTE: the four *_Name functions are defined in namespace cangjie (external
+// linkage, matching native_semantic.h) at the end of this file; the helpers
+// below are internal to this translation unit.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Mask out string literals, char literals and comments so the frontier
+// identifier scan never lands inside them.
+std::string MaskQuotedAndComments(std::string_view line) {
+    std::string out(line);
+    const std::size_t n = out.size();
+    bool in_string = false;
+    bool in_line_comment = false;
+    bool in_block_comment = false;
+    for (std::size_t i = 0; i < n; ++i) {
+        const char ch = out[i];
+        if (in_line_comment) {
+            out[i] = ' ';
+            continue;
+        }
+        if (in_block_comment) {
+            out[i] = ' ';
+            if (ch == '*' && i + 1 < n && out[i + 1] == '/') {
+                out[i + 1] = ' ';
+                ++i;
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if (in_string) {
+            out[i] = ' ';
+            if (ch == '\\') {
+                if (i + 1 < n) out[i + 1] = ' ';
+                ++i;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+            out[i] = ' ';
+        } else if (ch == '/' && i + 1 < n && out[i + 1] == '/') {
+            in_line_comment = true;
+            out[i] = out[i + 1] = ' ';
+            ++i;
+        } else if (ch == '/' && i + 1 < n && out[i + 1] == '*') {
+            in_block_comment = true;
+            out[i] = out[i + 1] = ' ';
+            ++i;
+        }
+    }
+    return out;
+}
+
+struct FrontierScan {
+    std::size_t start = std::string_view::npos;   // outer-name start
+    std::size_t end = std::string_view::npos;     // outer-name end (exclusive)
+    std::size_t tail_start = std::string_view::npos;  // where tail scanning begins
+};
+
+// Position just after the '>' matching line[open], where line[open] == '<'.
+std::size_t SkipTypeArgumentList(std::string_view line, std::size_t open) {
+    int depth = 0;
+    for (std::size_t i = open; i < line.size(); ++i) {
+        if (line[i] == '<') ++depth;
+        else if (line[i] == '>') {
+            if (--depth == 0) return i + 1;
+        }
+    }
+    return std::string_view::npos;
+}
+
+// The frontier is the last identifier in the masked line.  If that identifier
+// is a type argument ("ArrayDeque<Int64>("), walk out over the whole
+// instantiated name so the frontier is the callee/receiver ("ArrayDeque") and
+// tail_start lands after the matching '>' ("(" → Call).  Digit-only runs are
+// skipped ("123" is not an identifier).
+FrontierScan FindFrontierIdentifier(std::string_view line) {
+    FrontierScan scan;
+    std::size_t i = line.size();
+    while (i > 0) {
+        while (i > 0 && !IsIdentContinue(static_cast<unsigned char>(line[i - 1]))) --i;
+        if (i == 0) break;
+        const std::size_t end = i;
+        while (i > 0 && IsIdentContinue(static_cast<unsigned char>(line[i - 1]))) --i;
+        if (!IsIdentStart(static_cast<unsigned char>(line[i]))) continue;  // "123"
+        std::size_t name_end = end;
+        std::size_t type_args_tail = std::string_view::npos;
+        while (i > 0 && line[i - 1] == '<') {
+            const std::size_t outer_end = i - 1;
+            std::size_t j = outer_end;
+            while (j > 0 && IsIdentContinue(static_cast<unsigned char>(line[j - 1]))) --j;
+            if (j == outer_end || !IsIdentStart(static_cast<unsigned char>(line[j]))) break;
+            type_args_tail = SkipTypeArgumentList(line, outer_end);
+            if (type_args_tail == std::string_view::npos) break;
+            i = j;
+            name_end = outer_end;
+        }
+        scan = {i, name_end, type_args_tail == std::string_view::npos ? end : type_args_tail};
+        break;
+    }
+    return scan;
+}
+
+// Tail classification relative to the scanned identifier in the masked line.
+TailKind ClassifyTail(std::string_view line, std::size_t tail_start) {
+    std::size_t i = tail_start;
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) ++i;
+    if (i >= line.size()) return TailKind::Value;
+    if (line[i] == '(') return TailKind::Call;
+    if (line[i] == '.') return TailKind::Member;
+    if (line[i] == '<') {
+        const std::size_t after = SkipTypeArgumentList(line, i);
+        if (after == std::string_view::npos) return TailKind::Value;
+        i = after;
+        while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) ++i;
+        if (i < line.size() && line[i] == '(') return TailKind::Call;
+        if (i < line.size() && line[i] == '.') return TailKind::Member;
+    }
+    return TailKind::Value;
+}
+
+bool EndsWithWord(std::string_view text, std::string_view word) {
+    if (text.size() < word.size()) return false;
+    const std::size_t cut = text.size() - word.size();
+    if (text.substr(cut) != word) return false;
+    return cut == 0 || !IsIdentContinue(static_cast<unsigned char>(text[cut - 1]));
+}
+
+// Boundary of the scanned identifier: look at the masked prefix before it.
+BoundaryKind ClassifyBoundary(
+    std::string_view prefix,
+    bool member_selection,
+    bool type_position
+) {
+    if (member_selection) return BoundaryKind::MemberSel;
+    if (type_position) return BoundaryKind::Decl;
+    std::size_t end = prefix.size();
+    while (end > 0 && (prefix[end - 1] == ' ' || prefix[end - 1] == '\t')) --end;
+    if (end > 0 && prefix[end - 1] == '=') return BoundaryKind::AssignRhs;
+    if (EndsWithWord(prefix.substr(0, end), "return")) return BoundaryKind::Return;
+    if (EndsWithWord(prefix.substr(0, end), "if")) return BoundaryKind::Condition;
+    if (EndsWithWord(prefix.substr(0, end), "while")) return BoundaryKind::Condition;
+    if (EndsWithWord(prefix.substr(0, end), "for")) return BoundaryKind::LoopHead;
+    // Inside an argument list of an enclosing call?  Count parens in the
+    // prefix: if the nearest unmatched '(' is followed by a keyword it is a
+    // condition header, otherwise a plain call argument.
+    int depth = 0;
+    std::size_t last_open = std::string_view::npos;
+    for (std::size_t i = 0; i < end; ++i) {
+        if (prefix[i] == '(') {
+            ++depth;
+            last_open = i;
+        } else if (prefix[i] == ')' && depth > 0) {
+            --depth;
+        }
+    }
+    if (depth > 0) {
+        const std::string_view head = prefix.substr(0, last_open);
+        std::size_t head_end = head.size();
+        while (head_end > 0 && (head[head_end - 1] == ' ' || head[head_end - 1] == '\t')) --head_end;
+        if (EndsWithWord(head.substr(0, head_end), "if") ||
+            EndsWithWord(head.substr(0, head_end), "while")) {
+            return BoundaryKind::Condition;
+        }
+        if (EndsWithWord(head.substr(0, head_end), "for")) return BoundaryKind::LoopHead;
+        return BoundaryKind::CallArg;
+    }
+    return BoundaryKind::Statement;
+}
+
+bool IsPrimitiveTypeName(std::string_view name) {
+    static const std::unordered_set<std::string> primitives = {
+        "Int8", "Int16", "Int32", "Int64",
+        "UInt8", "UInt16", "UInt32", "UInt64",
+        "Float32", "Float64", "Bool", "Rune", "Unit",
+    };
+    return primitives.count(std::string(name)) != 0;
+}
+
+SymbolKind ResolveBareSymbol(
+    std::string_view name,
+    const Model& model,
+    const FunctionContext& context
+) {
+    if (context.variables.count(std::string(name)) != 0) return SymbolKind::Local;
+    if (model.functions.count(std::string(name)) != 0) return SymbolKind::Function;
+    if (model.globals.count(std::string(name)) != 0) return SymbolKind::Global;
+    if (model.nominals.count(std::string(name)) != 0) return SymbolKind::Type;
+    if (IsPrimitiveTypeName(name)) return SymbolKind::Primitive;
+    return SymbolKind::Unknown;
+}
+
+// Resolve "recv.member" against the active model; returns the member's kind
+// and the receiver's TypeHead ("" when unresolvable).  Field beats method for
+// the same name (reference truth table R2), statics are reported separately
+// (reference checker has no static access, D1 — shadow keeps them Unknown).
+SymbolKind ResolveMemberKind(
+    std::string_view receiver_text,
+    std::string_view member,
+    const Model& model,
+    const FunctionContext& context,
+    std::string* receiver_head
+) {
+    const std::string recv(Trim(receiver_text));
+    std::string recv_type;
+    const auto local = context.variables.find(recv);
+    if (local != context.variables.end()) {
+        recv_type = local->second;
+    } else if (model.globals.count(recv) != 0) {
+        recv_type = model.globals.at(recv);
+    } else if (model.nominals.count(recv) != 0) {
+        // Type name used as a receiver — static access (D1).
+        *receiver_head = recv;
+        const auto& info = model.nominals.at(recv);
+        const std::string key(member);
+        if (info.fields.count(key) || info.methods.count(key)) {
+            return SymbolKind::StaticMember;
+        }
+        if (info.static_fields.count(key) || info.static_methods.count(key)) {
+            return SymbolKind::StaticMember;
+        }
+        return SymbolKind::Unknown;
+    } else {
+        *receiver_head = recv;
+        return SymbolKind::Unknown;
+    }
+    *receiver_head = TypeHead(recv_type);
+    const auto info_it = model.nominals.find(*receiver_head);
+    if (info_it == model.nominals.end()) return SymbolKind::Unknown;
+    const NominalInfo& info = info_it->second;
+    const std::string key(member);
+    if (info.fields.count(key) != 0) return SymbolKind::Field;
+    if (info.methods.count(key) != 0) return SymbolKind::Method;
+    if (info.static_fields.count(key) != 0 || info.static_methods.count(key) != 0) {
+        return SymbolKind::StaticMember;
+    }
+    return SymbolKind::Unknown;
+}
+
+// Member-kind semantics truth table (reference R1-R3): zero-arg methods read
+// as values are function references (Alive), fields are not callable (Dead
+// with complete evidence), methods with params read as values are Dead.
+FrontierVerdict MemberVerdict(
+    SymbolKind kind,
+    TailKind tail,
+    const Model& model,
+    const std::string& receiver_head,
+    const std::string& member
+) {
+    if (kind == SymbolKind::Unknown || kind == SymbolKind::StaticMember) {
+        return FrontierVerdict::Unknown;
+    }
+    if (tail == TailKind::Call) {
+        return kind == SymbolKind::Field ? FrontierVerdict::Dead : FrontierVerdict::Alive;
+    }
+    // Value position: field → Alive; method → Alive iff some overload is
+    // zero-arg (function reference), else Dead (complete evidence).
+    if (kind == SymbolKind::Field) return FrontierVerdict::Alive;
+    const auto info = model.nominals.find(receiver_head);
+    if (info == model.nominals.end()) return FrontierVerdict::Unknown;
+    const auto methods = info->second.methods.find(member);
+    if (methods == info->second.methods.end()) return FrontierVerdict::Unknown;
+    for (const FunctionSig& sig : methods->second) {
+        if (sig.param_types.empty()) return FrontierVerdict::Alive;
+    }
+    return FrontierVerdict::Dead;
+}
+
+FrontierInfo ClassifyFrontier(
+    std::string_view source,
+    const Model& model,
+    const FunctionContext& context
+) {
+    FrontierInfo info;
+    // Fires land either mid-identifier (extendable-failure lookahead) or at
+    // the statement terminator — the closing brace line ("}").  Walk up past
+    // trailing "}" / "{" / whitespace-only lines so the statement line is
+    // classified; a fire on a bare "}" with nothing above stays None.
+    std::size_t line_start = source.rfind('\n');
+    if (line_start != std::string_view::npos) ++line_start;
+    for (;;) {
+        if (line_start == std::string_view::npos) return info;
+        const std::string trimmed = Trim(MaskQuotedAndComments(source.substr(line_start)));
+        if (!trimmed.empty() && trimmed != "}" && trimmed != "{") break;
+        if (line_start == 0) return info;
+        const std::size_t prev = source.rfind('\n', line_start - 2);
+        line_start = prev == std::string_view::npos ? 0 : prev + 1;
+    }
+    const std::string masked = MaskQuotedAndComments(source.substr(line_start));
+    const std::string trimmed = Trim(masked);
+    if (trimmed.empty()) return info;
+    const FrontierScan scan = FindFrontierIdentifier(trimmed);
+    if (scan.start == std::string_view::npos) return info;
+
+    info.symbol = std::string(trimmed.substr(scan.start, scan.end - scan.start));
+    // View into `trimmed` itself — never into the substr temporary.
+    const std::string_view prefix = std::string_view(trimmed).substr(0, scan.start);
+    const bool member_selection =
+        !prefix.empty() && prefix.back() == '.';
+    // Type position: ':' (annotation), ',' (second type argument of an
+    // instantiated name), or '<' directly before the identifier.
+    const bool type_position =
+        !prefix.empty() &&
+        (prefix.back() == ':' || prefix.back() == ',' || prefix.back() == '<');
+    info.tail_kind = ClassifyTail(trimmed, scan.tail_start);
+    if (type_position && info.tail_kind == TailKind::Value) {
+        info.tail_kind = TailKind::Type;
+    }
+    info.boundary_kind = ClassifyBoundary(prefix, member_selection, type_position);
+
+    if (member_selection) {
+        // "recv.member": receiver is the identifier before the dot.
+        std::size_t recv_end = prefix.size() - 1;
+        while (recv_end > 0 && !IsIdentContinue(static_cast<unsigned char>(prefix[recv_end - 1]))) --recv_end;
+        std::size_t recv_start = recv_end;
+        while (recv_start > 0 && IsIdentContinue(static_cast<unsigned char>(prefix[recv_start - 1]))) --recv_start;
+        const std::string_view receiver_text = prefix.substr(recv_start, recv_end - recv_start);
+        info.symbol_kind = ResolveMemberKind(receiver_text, info.symbol, model, context, &info.receiver);
+        info.verdict = MemberVerdict(info.symbol_kind, info.tail_kind, model, info.receiver, info.symbol);
+        return info;
+    }
+
+    // Bare identifier: callee, type or value position.
+    const std::string base = info.symbol;
+    info.symbol_kind = ResolveBareSymbol(base, model, context);
+    if (info.tail_kind == TailKind::Call) {
+        // Callee position: a resolvable callable (function, local, global,
+        // type constructor) is Alive; primitives and unresolvable symbols
+        // carry no adjudication (Unknown).
+        info.verdict =
+            info.symbol_kind == SymbolKind::Unknown || info.symbol_kind == SymbolKind::Primitive
+                ? FrontierVerdict::Unknown : FrontierVerdict::Alive;
+        return info;
+    }
+    if (info.tail_kind == TailKind::Type) {
+        // Type position: names a type, not a value frontier — Unknown.
+        info.verdict = FrontierVerdict::Unknown;
+        return info;
+    }
+    // Value position: only concrete value symbols are Alive; Unknown, Type and
+    // Primitive names carry no adjudication (Unknown).
+    info.verdict =
+        info.symbol_kind == SymbolKind::Local || info.symbol_kind == SymbolKind::Global ||
+        info.symbol_kind == SymbolKind::Function
+            ? FrontierVerdict::Alive : FrontierVerdict::Unknown;
+    return info;
+}
+
+}  // namespace
+
 FunctionContext CurrentFunctionContextFromRecords(
     std::string_view source,
     const std::vector<DeclarationRecord>& single_line_records,
@@ -8249,7 +8605,12 @@ class IncrementalSemanticEngine::Impl {
     // Context IR JSON (context-ir-v1) for tools/compare_context_ir.py.
     void DumpContextIrJson(std::ostream& os) const;
 
+    // V14 Patch 2: shadow frontier classification of the last failed Probe.
+    const FrontierInfo& LastFrontier() const { return last_frontier_; }
+    void SetLastFrontier(const FrontierInfo& info) { last_frontier_ = info; }
+
     std::string context_path_;
+    FrontierInfo last_frontier_;
     Model preload_;
     Model active_model_;
     DeclarationSnapshot declaration_snapshot_;
@@ -8601,13 +8962,23 @@ CheckStatus IncrementalSemanticEngine::Probe(
 #ifdef CANGJIE_ENABLE_PROFILE
     if (profile) ++profile->analyze_calls;
 #endif
-    return AnalyzeSource(
+    CheckStatus status = AnalyzeSource(
         source, impl_->active_model_, impl_->declaration_snapshot_, model_dirty, commit_dirty,
         impl_->active_context_, std::move(active_statement)
 #ifdef CANGJIE_ENABLE_PROFILE
         , profile
 #endif
     );
+    // V14 Patch 2: shadow-only frontier classification on failure.  Never
+    // consulted by the decision path; only observed via LastFrontier().
+    if (!status.ok) {
+        impl_->SetLastFrontier(
+            ClassifyFrontier(source, impl_->active_model_, impl_->active_context_)
+        );
+    } else {
+        impl_->SetLastFrontier(FrontierInfo());
+    }
+    return status;
 }
 
 Checkpoint IncrementalSemanticEngine::Save() const {
@@ -8624,6 +8995,63 @@ void IncrementalSemanticEngine::Rollback(const Checkpoint& checkpoint) {
 
 void IncrementalSemanticEngine::DumpContextIrJson(std::ostream& os) const {
     impl_->DumpContextIrJson(os);
+}
+
+const FrontierInfo& IncrementalSemanticEngine::LastFrontier() const {
+    return impl_->LastFrontier();
+}
+
+// V14 Patch 2: FrontierInfo name helpers (external linkage per the header).
+const char* SymbolKindName(SymbolKind kind) {
+    switch (kind) {
+        case SymbolKind::None: return "none";
+        case SymbolKind::Local: return "local";
+        case SymbolKind::Global: return "global";
+        case SymbolKind::Function: return "function";
+        case SymbolKind::Method: return "method";
+        case SymbolKind::Field: return "field";
+        case SymbolKind::StaticMember: return "static";
+        case SymbolKind::Type: return "type";
+        case SymbolKind::Primitive: return "primitive";
+        case SymbolKind::Unknown: return "unknown";
+    }
+    return "none";
+}
+
+const char* TailKindName(TailKind kind) {
+    switch (kind) {
+        case TailKind::None: return "none";
+        case TailKind::Call: return "call";
+        case TailKind::Member: return "member";
+        case TailKind::Type: return "type";
+        case TailKind::Value: return "value";
+    }
+    return "none";
+}
+
+const char* BoundaryKindName(BoundaryKind kind) {
+    switch (kind) {
+        case BoundaryKind::None: return "none";
+        case BoundaryKind::Statement: return "statement";
+        case BoundaryKind::AssignRhs: return "assign_rhs";
+        case BoundaryKind::Return: return "return";
+        case BoundaryKind::Condition: return "condition";
+        case BoundaryKind::LoopHead: return "loop_head";
+        case BoundaryKind::CallArg: return "call_arg";
+        case BoundaryKind::MemberSel: return "member_sel";
+        case BoundaryKind::Decl: return "decl";
+    }
+    return "none";
+}
+
+const char* FrontierVerdictName(FrontierVerdict verdict) {
+    switch (verdict) {
+        case FrontierVerdict::None: return "none";
+        case FrontierVerdict::Alive: return "Alive";
+        case FrontierVerdict::Dead: return "Dead";
+        case FrontierVerdict::Unknown: return "Unknown";
+    }
+    return "none";
 }
 
 NativeSemanticChecker::NativeSemanticChecker(std::string context_path)
