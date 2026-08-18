@@ -733,6 +733,11 @@ bool IsFunctionType(std::string_view type) {
     return !type.empty() && type.front() == '(' && type.find("->") != std::string_view::npos;
 }
 
+bool Compatible(std::string_view got, std::string_view want, const Model& model);
+bool KnownType(std::string_view type, const Model& model);
+std::pair<std::vector<std::string>, std::string> FunctionTypeParts(
+    std::string_view type);
+
 // Lambda bodies that typechecked as valid, canonicalized (whitespace
 // stripped).  err_lambda_tick_callback anchors the bad `{ v: Int64 => v + 1 }`
 // at the `+` only because staticBump's valid copy of the same body preceded
@@ -756,6 +761,132 @@ bool HasSeenValidLambdaTwin(const std::string& body_so_far) {
         if (seen.size() >= candidate.size() &&
             seen.compare(0, candidate.size(), candidate) == 0) {
             return true;
+        }
+    }
+    return false;
+}
+
+// One-hop postfix closure of a call result (fields and zero-argument method
+// results), used when a method CALL keeps its receiver alive: `m.get(1)`
+// yields Optional<String> whose `getOrThrow()` reaches String
+// (let x: String = m.get(1).getOrThrow() is valid, so `m` must not commit).
+// Deeper chains stay dead: `arr.get(0).getOrThrow()` is Int64 and
+// `.toString()` after it would not recover (err_arraylist_toarray_assign
+// anchors `arr`).
+bool HasShallowPostfix(const std::string& type, const std::string& target,
+                       const Model& model) {
+    if (Compatible(type, target, model)) return true;
+    const auto nominal = model.nominals.find(TypeHead(type));
+    if (nominal == model.nominals.end()) return false;
+    std::unordered_map<std::string, std::string> substitutions;
+    const auto args = TypeArgs(type);
+    for (std::size_t index = 0;
+         index < args.size() && index < nominal->second.type_params.size(); ++index) {
+        substitutions[nominal->second.type_params[index]] = args[index];
+    }
+    for (const auto& [name, field_type] : nominal->second.fields) {
+        if (Compatible(ApplySubstitution(field_type, substitutions), target, model)) {
+            return true;
+        }
+    }
+    for (const auto& [name, signatures] : nominal->second.methods) {
+        for (const FunctionSig& signature : signatures) {
+            if (!signature.param_types.empty()) continue;
+            const std::string result =
+                ApplySubstitution(signature.result, substitutions);
+            if (Compatible(result, target, model)) return true;
+            if (IsIdentifierText(result) && !KnownType(result, model)) return true;
+        }
+    }
+    return false;
+}
+
+// Official postfix-recovery semantics (error_position_audit.md): a type's
+// member postfixes are its fields plus its zero-argument methods, each with
+// the receiver's type parameters substituted.  An expression commits at its
+// final token when no postfix chain can produce the expected type
+// (err_arraylist_toarray_assign anchors the bare identifier `arr` because
+// Array has no toString and `.size` is Int64).  {Int64, Float64, String}
+// form postfix chains of any depth (err_rel_mixed_numeric keeps `1.0`
+// alive via `1.0.toString().size` -> Int64); Bool is memberless in the
+// position layer (`true` anchors immediately, err_type_mismatch /
+// err_arith_non_numeric).  A function value stays continuable because its
+// syntactic tail genuinely is a function value (err_abs_* family anchors
+// past the bare `abs`).  Method calls also keep the receiver alive when their
+// result unifies with the target, or recovers via one postfix on the result:
+// `let bad: Int64 = p.add("x", 2)` does not anchor at `p`
+// (err_instance_method_args anchors the committed String argument instead),
+// and a bare generic result such as `run<R>`'s `R` unifies with any target
+// (err_lambda_infer_interface_helper does not anchor at `h` either).  The
+// zero-argument method VALUE (`a.clone` as `() -> Array<Int64>`) is also a
+// valid continuation for function-typed targets.
+bool ChainClosureReaches(const std::string& type, const std::string& target,
+                         const Model& model) {
+    if (Compatible(type, target, model)) return true;
+    std::vector<std::string> queue = {type};
+    std::unordered_set<std::string> seen = {type};
+    while (!queue.empty()) {
+        const std::string current = queue.back();
+        queue.pop_back();
+        std::vector<std::string> next;
+        if (current == "Int64" || current == "Float64") {
+            next.push_back("String");  // .toString()
+        } else if (current == "String") {
+            // .size, .isEmpty(), .hashCode(), .clone()/trimAscii()
+            next = {"Int64", "Bool", "String"};
+        } else {
+            continue;
+        }
+        for (const std::string& n : next) {
+            if (seen.count(n)) continue;
+            if (Compatible(n, target, model)) return true;
+            seen.insert(n);
+            queue.push_back(n);
+        }
+    }
+    return false;
+}
+
+bool HasRecoveringMember(const std::string& type, const std::string& target,
+                         const Model& model) {
+    if (Compatible(type, target, model)) return true;
+    if (type == "Bool") return false;  // memberless in the position layer
+    if (type == "Int64" || type == "Float64" || type == "String") {
+        return ChainClosureReaches(type, target, model);
+    }
+    if (IsFunctionType(type)) return true;  // tail is a function value
+    const auto nominal = model.nominals.find(TypeHead(type));
+    if (nominal == model.nominals.end()) return false;
+    std::unordered_map<std::string, std::string> substitutions;
+    const auto args = TypeArgs(type);
+    for (std::size_t index = 0;
+         index < args.size() && index < nominal->second.type_params.size(); ++index) {
+        substitutions[nominal->second.type_params[index]] = args[index];
+    }
+    for (const auto& [name, field_type] : nominal->second.fields) {
+        if (Compatible(ApplySubstitution(field_type, substitutions), target, model)) {
+            return true;
+        }
+    }
+    for (const auto& [name, signatures] : nominal->second.methods) {
+        for (const FunctionSig& signature : signatures) {
+            const std::string result =
+                ApplySubstitution(signature.result, substitutions);
+            if (Compatible(result, target, model)) return true;
+            std::string fn_type = "(";
+            for (std::size_t index = 0; index < signature.param_types.size(); ++index) {
+                if (index) fn_type += ",";
+                fn_type += ApplySubstitution(signature.param_types[index], substitutions);
+            }
+            fn_type += ")->" + result;
+            if (Compatible(fn_type, target, model)) return true;
+            // A result that is a bare type variable — a method-level generic
+            // parameter such as `run<R>`'s `R` — unifies with any target.
+            if (IsIdentifierText(result) && !KnownType(result, model)) return true;
+            if (!signature.param_types.empty() &&
+                HasShallowPostfix(result, target, model)) {
+                return true;
+            }
         }
     }
     return false;
@@ -8104,6 +8235,10 @@ CheckStatus AnalyzeSource(
             if (actual.error) return {false, actual.message};
             if (!declaration->annotated_type.empty() && actual.known &&
                 !Compatible(actual.type, declaration->annotated_type, model)) {
+                if (std::getenv("CANGJIE_DEBUG_FIRE")) {
+                    std::cerr << "FIRE[pending-let] '" << pending << "' actual="
+                              << actual.type << " known=" << actual.known << '\n';
+                }
                 return {false, "variable initializer type mismatch"};
             }
         } else if (const auto assignment = ParseReassignment(pending)) {
@@ -8235,9 +8370,22 @@ CheckStatus AnalyzeSource(
         ) && declaration->second != "true" && declaration->second != "false";
         const bool defer_suffix = !committed && actual.suffix_may_change_type &&
             !IsFunctionType(actual.type);
+        // A bare-identifier initializer whose type no member postfix can
+        // recover commits at the identifier itself (official anchor for
+        // err_arraylist_toarray_assign), not at the following newline.
+        const bool dead_identifier = !committed && !soft_newline &&
+            IsIdentifierText(declaration->second) &&
+            declaration->second != "true" && declaration->second != "false" &&
+            actual.known && !actual.error &&
+            !HasRecoveringMember(actual.type, declaration->first, model);
         if (actual.known && !Compatible(actual.type, declaration->first, model) &&
-            !defer_atom && !defer_suffix &&
+            (!defer_atom || dead_identifier) && !defer_suffix &&
             !defer_mixed_mismatch(actual.type, declaration->first)) {
+            if (std::getenv("CANGJIE_DEBUG_FIRE")) {
+                std::cerr << "FIRE[let] '" << line << "' actual=" << actual.type
+                          << " known=" << actual.known << " suffix=" << actual.suffix_may_change_type
+                          << " committed=" << committed << " softnl=" << soft_newline << '\n';
+            }
             return {false, "variable initializer type mismatch"};
         }
     } else if (const auto declaration = ParseAnyVariableDeclaration(line)) {

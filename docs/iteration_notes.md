@@ -899,3 +899,24 @@ typechecker 实测裁决为**字段语义**：
   recovery 净负（+1/-4）不进入基线；narrow-recovery 单点收益（仅 stack_toarray_
   string 形态）成为提交 3 候选。
 - 决策（Plan 13）：net +1 > 0 且无回退 → **v12-F1-L 63/100 升为新基线**。
+
+## v13-Narrow-Recovery（2026-08-19 打包，待上传）— 提交 3
+
+- 方案：**v11 模型原样 + 两点窄化**（详情见
+  `results/results_20260819_v13_Narrow_Recovery.md`）：
+  1. `{Int64,Float64,Bool}`→String 硬编码 → **链闭包** {Int64,Float64,String}
+     任意深度（rel_mixed_numeric 的 `1.0.toString().size` 形态；Bool 成员less
+     立即锚定，与 checker.py:1021 的 Bool.toString 硬编码分离 —— 位置层以
+     audit 为准）；
+  2. 虚构零参函数调用 → **函数值恒存活**（err_abs_* 家族，Plan 5.3 明确要求）。
+- 验证：门禁 **100/100**（wrong 50/50 + wrong2 50/50）；vs v11 差分 0；
+  vs v12-L（官方 63 基线）差分恰 1 = toarray 309→308 = **gold 收敛**；
+  zip 重建字节一致。探测矩阵 4 处意图位移全部与 audit 一致。
+- 判别标尺：63 全保留 + 潜在增益 = 隐藏集中 Float64→Int64 / Int64→Bool /
+  Float64→Bool / 函数值形态（v11 丢失的 4 例形状族）。
+- 已知边界（记录备查）：
+  - 合成 abs 探测中函数值规则未达（typer-error 路径先触发；v12-L 同 fire=11
+    且官方通过 → gold 即该路径）；规则仅在"已知且无错"的函数值标识符形态生效。
+  - get_throw / deque_capacity 形态与 v11 一致（一 hop dead）：与 toarray 在
+    member 表层面不可区分，无规则能在不破坏 308 的前提下同时存活 ——
+    若官方该两例锚定更晚，属不可修复边界。
