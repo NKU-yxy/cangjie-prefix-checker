@@ -470,3 +470,32 @@ CheckConstructorsFromRecords/Regex、IncrementalSemanticEngine::Probe），
 - Bug A-D 修复在官方隐藏集上的收益未定（v6 已含这些修复但被 strict_generic
   拖累 3 例；若官方集含 same-line/ctor 族，v7 可能 >60）；
 - 上传 v7 后以官网结果为准进入下一轮。
+
+## v7 官网 CE（2026-08-18 13:20:20 提交）— 判题端环境故障，非打包问题
+
+### 事实
+
+- v7 zip（sha256 c5980ddb…，895,741 B）与 v6b zip **逐文件一致**（109 文件，
+  `diff -rq` 仅 native_semantic.cpp 不同，且 zip 内该文件 sha256
+  e05a1c7e == 宿主项目 v7 源码），build.sh 存储权限 rwxr-xr-x，无 __MACOSX 残留。
+  ⇒ **源码完整在包内**，"缺源码"假设被证伪。
+- 容器全链路（zip → python zipfile 解压 → build.sh → solution 1,645,912 B →
+  battery 41/41 == v1）通过；判题端评审用同一镜像。
+- 官网 CE 消息三路径 = `/ref/course_grader.py` 第 187-190 行 `missing` 列表：
+  只有当 `harness`、`wrong_error_positions.json`、`wrong/` **在判题端不存在**时才打印。
+  - 消息里**没有** `solution executable: /coursegrader/submit/solution` ⇒
+    判题端上 solution 已由 build.sh 编译产出 ⇒ **我们的包在判题端构建成功**。
+  - 缺的是 `/opt/cangjie-fragment-checker-finals/scripts/token_interaction_test.py`、
+    `/opt/cangjie-fragment-checker-finals/wrong_error_positions.json`、
+    `/coursegrader/testdata/wrong` —— 全部是判题端自己的工具链/测试数据路径，
+    zip 内容无法影响。
+
+### 结论
+
+- v7 CE 与 v2-v5 完全同签名（同一三路径 missing），且本次连"构建产物存在"都能
+  证实 ⇒ **判题端 finals 环境再次故障**（v5 先例：环境恢复后同包重传即过；
+  v6b 的 57/100 落在环境正常窗口内）。
+- 修正 v6b 章节的旧结论："CE 根因 = 不含源码"不成立——v4 同为源码+编译型也 CE，
+  且 v7 证明源码齐全+构建成功仍 CE。CE 的稳定解释是**判题端环境路径缺失**。
+- 行动：重传同一 v7 zip（sha256 c5980ddb7410e57dfaf0ca49123a0ca5c29e8f6bb9d52f59639a930e2abb9e1e）；
+  若官网反馈附带 build 日志等更多 detail，再贴出分析。
