@@ -1264,18 +1264,29 @@ int main(int argc, char** argv) {
                 // V14 Patch 2: shadow frontier classification of the last
                 // failed Probe (never consulted by the decision path).
                 const cangjie::FrontierInfo& frontier = native_semantic.LastFrontier();
+                // V14 Patch 3: shadow recovery witness for the same fire.
+                const cangjie::RecoveryWitness& witness = native_semantic.LastWitness();
+                const cangjie::WitnessStats& witness_stats = native_semantic.WitnessStatistics();
                 const std::size_t fire_nl = fire_source.rfind('\n');
                 std::cerr << "{\"event\":\"fire\",\"token\":" << tokens_seen
                           << ",\"syntax_ok\":" << (syntax_ok ? "true" : "false")
                           << ",\"message\":\"" << json_escape(semantic_status.message) << "\""
                           << ",\"line\":\"" << json_escape(fire_source.substr(
                                  fire_nl == std::string::npos ? 0 : fire_nl + 1)) << "\""
+                          << ",\"src\":\"" << json_escape(fire_source) << "\""
                           << ",\"symbol\":\"" << json_escape(frontier.symbol) << "\""
+                          << ",\"frontier_start\":" << frontier.frontier_start
+                          << ",\"frontier_end\":" << frontier.frontier_end
                           << ",\"symbol_kind\":\"" << cangjie::SymbolKindName(frontier.symbol_kind) << "\""
                           << ",\"tail\":\"" << cangjie::TailKindName(frontier.tail_kind) << "\""
                           << ",\"boundary\":\"" << cangjie::BoundaryKindName(frontier.boundary_kind) << "\""
                           << ",\"receiver\":\"" << json_escape(frontier.receiver) << "\""
                           << ",\"shadow_verdict\":\"" << cangjie::FrontierVerdictName(frontier.verdict) << "\""
+                          << ",\"witness\":" << (witness.found ? "true" : "false")
+                          << ",\"witness_source\":\"" << json_escape(witness.source) << "\""
+                          << ",\"witness_target\":\"" << json_escape(witness.target) << "\""
+                          << ",\"witness_suffix\":\"" << json_escape(witness.printable_suffix) << "\""
+                          << ",\"witness_cache\":\"" << (witness_stats.cache_hits ? "hit" : "miss") << "\""
                           << "}\n";
             }
             emit(ok, args.competition_output);
@@ -1295,6 +1306,12 @@ int main(int argc, char** argv) {
         }
         shutdown_profiler.Arm();
 #endif
+        if (std::getenv("CANGJIE_TRACE_FIRE")) {
+            const cangjie::WitnessStats& stats = native_semantic.WitnessStatistics();
+            std::cerr << "{\"event\":\"stats\",\"queries\":" << stats.queries
+                      << ",\"cache_hits\":" << stats.cache_hits
+                      << ",\"witness_found\":" << stats.witness_found << "}\n";
+        }
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "native solution error: " << error.what() << '\n';

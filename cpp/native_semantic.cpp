@@ -2227,16 +2227,18 @@ SymbolKind ResolveBareSymbol(
     return SymbolKind::Unknown;
 }
 
-// Resolve "recv.member" against the active model; returns the member's kind
-// and the receiver's TypeHead ("" when unresolvable).  Field beats method for
-// the same name (reference truth table R2), statics are reported separately
-// (reference checker has no static access, D1 — shadow keeps them Unknown).
+// Resolve "recv.member" against the active model; returns the member's kind,
+// the receiver's TypeHead and the receiver's full type ("" when
+// unresolvable).  Field beats method for the same name (reference truth
+// table R2), statics are reported separately (reference checker has no static
+// access, D1 — shadow keeps them Unknown).
 SymbolKind ResolveMemberKind(
     std::string_view receiver_text,
     std::string_view member,
     const Model& model,
     const FunctionContext& context,
-    std::string* receiver_head
+    std::string* receiver_head,
+    std::string* receiver_full = nullptr
 ) {
     const std::string recv(Trim(receiver_text));
     std::string recv_type;
@@ -2248,6 +2250,7 @@ SymbolKind ResolveMemberKind(
     } else if (model.nominals.count(recv) != 0) {
         // Type name used as a receiver — static access (D1).
         *receiver_head = recv;
+        if (receiver_full) *receiver_full = recv;
         const auto& info = model.nominals.at(recv);
         const std::string key(member);
         if (info.fields.count(key) || info.methods.count(key)) {
@@ -2259,9 +2262,11 @@ SymbolKind ResolveMemberKind(
         return SymbolKind::Unknown;
     } else {
         *receiver_head = recv;
+        if (receiver_full) *receiver_full = recv;
         return SymbolKind::Unknown;
     }
     *receiver_head = TypeHead(recv_type);
+    if (receiver_full) *receiver_full = recv_type;
     const auto info_it = model.nominals.find(*receiver_head);
     if (info_it == model.nominals.end()) return SymbolKind::Unknown;
     const NominalInfo& info = info_it->second;
@@ -2326,8 +2331,15 @@ FrontierInfo ClassifyFrontier(
     const std::string masked = MaskQuotedAndComments(source.substr(line_start));
     const std::string trimmed = Trim(masked);
     if (trimmed.empty()) return info;
+    info.line = std::string(source.substr(line_start));
     const FrontierScan scan = FindFrontierIdentifier(trimmed);
     if (scan.start == std::string_view::npos) return info;
+
+    // Byte offsets of the frontier identifier in the fire-time source
+    // (Patch 3 validator insertion point).
+    const std::size_t lead = masked.find_first_not_of(" \t\r\n");
+    info.frontier_start = line_start + lead + scan.start;
+    info.frontier_end = line_start + lead + scan.end;
 
     info.symbol = std::string(trimmed.substr(scan.start, scan.end - scan.start));
     // View into `trimmed` itself — never into the substr temporary.
@@ -2352,7 +2364,9 @@ FrontierInfo ClassifyFrontier(
         std::size_t recv_start = recv_end;
         while (recv_start > 0 && IsIdentContinue(static_cast<unsigned char>(prefix[recv_start - 1]))) --recv_start;
         const std::string_view receiver_text = prefix.substr(recv_start, recv_end - recv_start);
-        info.symbol_kind = ResolveMemberKind(receiver_text, info.symbol, model, context, &info.receiver);
+        info.symbol_kind = ResolveMemberKind(
+            receiver_text, info.symbol, model, context, &info.receiver, &info.receiver_type
+        );
         info.verdict = MemberVerdict(info.symbol_kind, info.tail_kind, model, info.receiver, info.symbol);
         return info;
     }
@@ -2683,6 +2697,861 @@ bool KnownType(std::string_view type, const Model& model) {
     if (IsFunctionType(normalized)) return true;
     return model.nominals.count(TypeHead(normalized)) != 0;
 }
+
+// ---------------------------------------------------------------------------
+// V14 Patch 3: ContextGraph + RecoveryWitness (shadow).
+//
+// The postfix graph is precomputed from the official-context model; bounded
+// BFS finds a ≤3-step suffix from the frontier expression's type to the
+// expected type.  Witnesses are recorded per fire and validated offline by
+// tools/validate_witnesses.py against the official typechecker.  Nothing
+// here is consulted by the decision path (activation is Patch 5).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Substitute nominal type parameters in a type text per the instantiation
+// args (whole-identifier match, nested occurrences included).
+std::string SubstituteTypeArgs(
+    std::string_view type,
+    const std::vector<std::string>& params,
+    const std::vector<std::string>& args
+) {
+    if (params.empty()) return std::string(type);
+    std::string out;
+    out.reserve(type.size() + 16);
+    std::size_t index = 0;
+    while (index < type.size()) {
+        const char ch = type[index];
+        if (ch != '_' && !std::isalpha(static_cast<unsigned char>(ch))) {
+            out.push_back(ch);
+            ++index;
+            continue;
+        }
+        std::size_t end = index;
+        while (end < type.size() && (type[end] == '_' ||
+               std::isalnum(static_cast<unsigned char>(type[end])))) ++end;
+        const std::string_view word = type.substr(index, end - index);
+        bool replaced = false;
+        for (std::size_t p = 0; p < params.size() && p < args.size(); ++p) {
+            if (word == params[p]) {
+                out += args[p];
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) out.append(word.data(), word.size());
+        index = end;
+    }
+    return out;
+}
+
+struct PostfixGraph {
+    struct NominalNode {
+        std::vector<std::string> type_params;
+        std::unordered_map<std::string, std::string> fields;  // name -> type
+        std::unordered_map<std::string,
+            std::vector<std::pair<std::vector<std::string>, std::string>>> calls;  // name -> (params, result)
+        std::unordered_map<std::string, std::string> method_values;  // zero-arg: name -> "(params)->result"
+    };
+    std::unordered_map<std::string, NominalNode> nodes;  // keyed by nominal head
+
+    static std::string FunctionTypeOf(const FunctionSig& sig) {
+        std::string out = "(";
+        for (std::size_t index = 0; index < sig.param_types.size(); ++index) {
+            if (index) out += ",";
+            out += sig.param_types[index];
+        }
+        out += ")->" + sig.result;
+        return out;
+    }
+
+    static PostfixGraph Build(const Model& model) {
+        PostfixGraph graph;
+        for (const auto& entry : model.nominals) {
+            const NominalInfo& info = entry.second;
+            NominalNode& node = graph.nodes[info.name];
+            node.type_params = info.type_params;
+            for (const auto& field : info.fields) {
+                node.fields[field.first] = field.second;
+            }
+            for (const auto& member : info.methods) {
+                for (const FunctionSig& sig : member.second) {
+                    node.calls[member.first].push_back({sig.param_types, sig.result});
+                    if (sig.param_types.empty()) {
+                        node.method_values[member.first] = FunctionTypeOf(sig);
+                        // F1 (reference truth table R1): a zero-arg first/last
+                        // method auto-applies as a field read.
+                        if (member.first == "first" || member.first == "last") {
+                            node.fields[member.first] = sig.result;
+                        }
+                    }
+                }
+            }
+        }
+        // Primitives are not nominals in the official context, but their
+        // conversion surface is fixed (reference truth table R11/D3):
+        // toString exists on Int64/Float64/Bool only.
+        static const char* kToStringPrimitives[] = {"Int64", "Float64", "Bool"};
+        for (const char* primitive : kToStringPrimitives) {
+            NominalNode& node = graph.nodes[primitive];
+            node.calls["toString"].push_back({{}, "String"});
+            node.method_values["toString"] = "()->String";
+        }
+        return graph;
+    }
+};
+
+// Whether a value of `type` can be spelled by the checker's grammar in an
+// argument position (reference truth table R9: no Rune literals exist).
+std::string ConstructibleArg(
+    std::string_view type,
+    const FunctionContext& context,
+    const Model& model
+) {
+    const std::string normalized = CompactType(type);
+    if (normalized == "Bool") return "true";
+    if (normalized == "Int64") return "0";
+    if (normalized == "Float64") return "0.0";
+    if (normalized == "String") return "\"\"";
+    if (normalized == "Unit") return "";
+    if (IsFunctionType(normalized)) return "";
+    const std::string head = TypeHead(normalized);
+    if (head == "Array") return "[]";  // empty array literal infers element type
+    if (head == "Rune") return "";     // no Rune literals in the official grammar
+    const auto nominal = model.nominals.find(head);
+    if (nominal != model.nominals.end()) {
+        for (const FunctionSig& ctor : nominal->second.constructors) {
+            if (ctor.param_types.empty()) {
+                return normalized + "()";
+            }
+        }
+    }
+    for (const auto& local : context.variables) {
+        if (Compatible(local.second, normalized, model)) return local.first;
+    }
+    return "";
+}
+
+// Expected type of the frontier expression, from the OUTER statement context
+// (the enclosing call, declaration initializer, return, or condition) rather
+// than the frontier's own boundary: the frontier is the last expression of a
+// larger expression whose expected type comes from the statement.
+std::string ExpectedFromLine(
+    std::string_view line,
+    const FunctionContext& context,
+    const Model& model
+) {
+    const std::string trimmed = Trim(line);
+    // 1. Enclosing call argument: the '(' immediately preceding the frontier
+    // belongs to a resolvable callee — the expected type is that call's
+    // parameter.  On any failure, fall through to the statement rules.
+    {
+        int depth = 0;
+        std::size_t open = std::string_view::npos;
+        for (std::size_t i = line.size(); i-- > 0;) {
+            const char ch = line[i];
+            if (ch == ')') {
+                ++depth;
+            } else if (ch == '(') {
+                if (depth == 0) {
+                    open = i;
+                    break;
+                }
+                --depth;
+            }
+        }
+        if (open != std::string_view::npos) {
+            std::size_t callee_end = open;
+            while (callee_end > 0 && !IsIdentContinue(
+                       static_cast<unsigned char>(line[callee_end - 1]))) --callee_end;
+            std::size_t callee_start = callee_end;
+            while (callee_start > 0 && IsIdentContinue(
+                       static_cast<unsigned char>(line[callee_start - 1]))) --callee_start;
+            std::size_t arg_index = 0;
+            for (std::size_t i = open + 1; i < line.size(); ++i) {
+                if (line[i] == ',') ++arg_index;
+            }
+            const std::string callee(
+                line.substr(callee_start, callee_end - callee_start)
+            );
+            // if/while condition inside the expression.
+            if (callee == "if" || callee == "while") return "Bool";
+            // Member call: "recv.member(" — resolve through the receiver type.
+            const std::size_t dot = callee.rfind('.');
+            if (dot != std::string_view::npos) {
+                const std::string recv = Trim(line.substr(0, callee_start + dot));
+                std::string head;
+                std::string full;
+                if (ResolveMemberKind(recv, callee.substr(dot + 1), model, context,
+                                      &head, &full) == SymbolKind::Method) {
+                    const auto nominal = model.nominals.find(head);
+                    if (nominal != model.nominals.end()) {
+                        const auto methods = nominal->second.methods.find(callee.substr(dot + 1));
+                        if (methods != nominal->second.methods.end()) {
+                            for (const FunctionSig& sig : methods->second) {
+                                if (arg_index < sig.param_types.size()) {
+                                    return SubstituteTypeArgs(
+                                        sig.param_types[arg_index],
+                                        nominal->second.type_params,
+                                        TypeArgs(full)
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                const auto functions = model.functions.find(callee);
+                if (functions != model.functions.end()) {
+                    for (const FunctionSig& sig : functions->second) {
+                        if (arg_index < sig.param_types.size()) {
+                            return sig.param_types[arg_index];
+                        }
+                    }
+                }
+            }
+        }
+        // 1b. Balanced trailing paren group: "if (...)" / "while (...)" —
+        // the frontier is the condition inside the group at the line end.
+        if (!trimmed.empty() && trimmed[trimmed.size() - 1] == ')') {
+            int depth = 0;
+            for (std::size_t i = trimmed.size(); i-- > 0;) {
+                const char ch = trimmed[i];
+                if (ch == ')') {
+                    ++depth;
+                } else if (ch == '(') {
+                    if (--depth == 0) {
+                        std::size_t ce = i;
+                        while (ce > 0 && !IsIdentContinue(
+                                   static_cast<unsigned char>(trimmed[ce - 1]))) --ce;
+                        std::size_t cs = ce;
+                        while (cs > 0 && IsIdentContinue(
+                                   static_cast<unsigned char>(trimmed[cs - 1]))) --cs;
+                        const std::string group(trimmed.substr(cs, ce - cs));
+                        if (group == "if" || group == "while") return "Bool";
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    // 2. let/var declaration initializer: "let name: TYPE = ...".
+    static const std::regex decl_pattern(
+        R"(\b(let|var)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*([^=\n;]+?)\s*=)"
+    );
+    {
+        std::string owned(line);
+        std::smatch match;
+        if (std::regex_search(owned, match, decl_pattern)) {
+            return CompactType(match[2].str());
+        }
+    }
+    // 3. return statement.
+    if (StartsWith(trimmed, "return") &&
+        (trimmed.size() == 6 || std::isspace(static_cast<unsigned char>(trimmed[6])))) {
+        return context.result.empty() ? "" : context.result;
+    }
+    // 4. if/while condition.
+    if (StartsWith(trimmed, "if (") || StartsWith(trimmed, "while (")) {
+        return "Bool";
+    }
+    return "";
+}
+
+// Complete argument expressions typed so far inside the frontier's call
+// (top-level split on ','; a trailing incomplete argument after the last
+// comma is dropped).  Empty when no '(' follows the callee.  For a closed
+// call the text ends at the call's own ')'.
+std::vector<std::string> OpenCallTypedArgs(
+    std::string_view line, std::size_t callee_end
+) {
+    std::vector<std::string> out;
+    std::size_t open = std::string_view::npos;
+    int depth = 0;
+    for (std::size_t i = callee_end; i < line.size(); ++i) {
+        if (line[i] == '(') {
+            if (depth == 0 && open == std::string_view::npos) open = i;
+            ++depth;
+        } else if (line[i] == ')' && depth > 0) {
+            --depth;
+        }
+    }
+    if (open == std::string_view::npos) return out;
+    // Text boundary of the argument list: the call's own ')' if closed.
+    std::size_t scan_end = line.size();
+    depth = 0;
+    for (std::size_t i = open + 1; i < line.size(); ++i) {
+        if (line[i] == '(' || line[i] == '[') {
+            ++depth;
+        } else if (line[i] == ')' || line[i] == ']') {
+            if (depth > 0) {
+                --depth;
+            } else if (line[i] == ')') {
+                scan_end = i;
+                break;
+            }
+        }
+    }
+    std::size_t piece_start = open + 1;
+    depth = 0;
+    for (std::size_t i = open + 1; i < scan_end; ++i) {
+        if (line[i] == '(' || line[i] == '[') {
+            ++depth;
+        } else if (line[i] == ')' || line[i] == ']') {
+            if (depth > 0) --depth;
+        } else if (line[i] == ',' && depth == 0) {
+            out.push_back(Trim(line.substr(piece_start, i - piece_start)));
+            piece_start = i + 1;
+        }
+    }
+    const std::string last = Trim(line.substr(piece_start, scan_end - piece_start));
+    if (!last.empty()) out.push_back(last);
+    return out;
+}
+
+int OpenCallArgCount(std::string_view line, std::size_t callee_end) {
+    return static_cast<int>(OpenCallTypedArgs(line, callee_end).size());
+}
+
+// Whether the frontier's call parens are still open at the end of the line
+// (the user is mid-typing the argument list).
+bool CallStillOpen(std::string_view line, std::size_t callee_end) {
+    int depth = 0;
+    for (std::size_t i = callee_end; i < line.size(); ++i) {
+        if (line[i] == '(') {
+            ++depth;
+        } else if (line[i] == ')' && depth > 0) {
+            --depth;
+        }
+    }
+    return depth > 0;
+}
+
+// Static type of the frontier expression, best-effort.  Empty when the
+// frontier carries no value type (unknown symbols, type names, primitives).
+std::string FrontierTypeFor(
+    const FrontierInfo& frontier,
+    const FunctionContext& context,
+    const Model& model
+) {
+    switch (frontier.symbol_kind) {
+        case SymbolKind::Local:
+        case SymbolKind::Global: {
+            const auto local = context.variables.find(frontier.symbol);
+            if (local != context.variables.end()) return local->second;
+            const auto global = model.globals.find(frontier.symbol);
+            if (global != model.globals.end()) return global->second;
+            return "";
+        }
+        case SymbolKind::Method:
+        case SymbolKind::Field: {
+            const auto nominal = model.nominals.find(frontier.receiver);
+            if (nominal == model.nominals.end()) return "";
+            // Instantiate the receiver's generic member types: T→<args>.
+            const std::vector<std::string> receiver_args = TypeArgs(frontier.receiver_type);
+            if (frontier.symbol_kind == SymbolKind::Field) {
+                const auto field = nominal->second.fields.find(frontier.symbol);
+                if (field != nominal->second.fields.end()) {
+                    return SubstituteTypeArgs(
+                        field->second, nominal->second.type_params, receiver_args
+                    );
+                }
+                return "";
+            }
+            // Method: the call result (closed call) or the method reference.
+            const auto methods = nominal->second.methods.find(frontier.symbol);
+            if (methods == nominal->second.methods.end()) return "";
+            if (frontier.tail_kind == TailKind::Call) {
+                if (frontier.line.find(frontier.symbol) == std::string::npos) return "";
+                const std::size_t symbol_end =
+                    frontier.line.find(frontier.symbol) + frontier.symbol.size();
+                const int args = OpenCallArgCount(frontier.line, symbol_end);
+                if (args >= 0) {
+                    for (const FunctionSig& sig : methods->second) {
+                        if (static_cast<std::size_t>(args) == sig.param_types.size()) {
+                            return SubstituteTypeArgs(
+                                sig.result, nominal->second.type_params, receiver_args
+                            );
+                        }
+                    }
+                }
+                return SubstituteTypeArgs(
+                    methods->second.front().result, nominal->second.type_params, receiver_args
+                );
+            }
+            const FunctionSig& front = methods->second.front();
+            std::vector<std::string> params(front.param_types);
+            for (std::string& param : params) {
+                param = SubstituteTypeArgs(param, nominal->second.type_params, receiver_args);
+            }
+            FunctionSig substituted = front;
+            substituted.param_types = std::move(params);
+            substituted.result = SubstituteTypeArgs(
+                front.result, nominal->second.type_params, receiver_args
+            );
+            return PostfixGraph::FunctionTypeOf(substituted);
+        }
+        case SymbolKind::Function: {
+            const auto functions = model.functions.find(frontier.symbol);
+            if (functions == model.functions.end()) return "";
+            if (frontier.tail_kind == TailKind::Call) {
+                if (frontier.line.find(frontier.symbol) == std::string::npos) return "";
+                const std::size_t symbol_end =
+                    frontier.line.find(frontier.symbol) + frontier.symbol.size();
+                const int args = OpenCallArgCount(frontier.line, symbol_end);
+                if (args >= 0) {
+                    for (const FunctionSig& sig : functions->second) {
+                        if (static_cast<std::size_t>(args) == sig.param_types.size()) {
+                            return sig.result;
+                        }
+                    }
+                }
+                return functions->second.front().result;
+            }
+            return PostfixGraph::FunctionTypeOf(functions->second.front());
+        }
+        default:
+            return "";
+    }
+}
+
+// Best-effort static type of a typed argument's text: literals and simple
+// identifiers; "" when the type cannot be judged cheaply (lambda bodies,
+// arrays, unknown names — never used to veto a witness).
+std::string ArgTextType(
+    std::string_view text,
+    const Model& model,
+    const FunctionContext& context
+) {
+    const std::string owned(Trim(text));
+    if (owned.empty()) return "";
+    if (owned == "true" || owned == "false") return "Bool";
+    if (owned.front() == '"') return "String";
+    if (owned.front() == '[' || owned.front() == '{') return "";
+    bool numeric = true;
+    bool integral = true;
+    for (std::size_t index = 0; index < owned.size(); ++index) {
+        const char ch = owned[index];
+        if (index == 0 && (ch == '-' || ch == '+')) continue;
+        if (ch >= '0' && ch <= '9') continue;
+        if (ch == '.' && integral) {
+            integral = false;
+            continue;
+        }
+        numeric = false;
+        break;
+    }
+    if (numeric) return integral ? "Int64" : "Float64";
+    const auto local = context.variables.find(owned);
+    if (local != context.variables.end()) return local->second;
+    const auto global = model.globals.find(owned);
+    if (global != model.globals.end()) return global->second;
+    const auto function = model.functions.find(owned);
+    if (function != model.functions.end()) {
+        return PostfixGraph::FunctionTypeOf(function->second.front());
+    }
+    return "";
+}
+
+// Open-call witness: the callee's '(' is still open mid-typing, and an
+// overload exists that can absorb the arguments already typed.  The typed
+// arguments must be compatible with the overload's leading parameters (a
+// mismatch already defeats every completion), and the remaining parameters
+// must be spellable.  When both hold the witness is concrete (the suffix
+// completes the call, oracle-validatable); otherwise it is a non-production
+// ellipsis marker the oracle validator skips.
+bool OpenCallWitness(
+    const FrontierInfo& frontier,
+    const Model& model,
+    const FunctionContext& context,
+    RecoveryWitness* witness
+) {
+    const std::size_t symbol_end = frontier.line.find(frontier.symbol);
+    if (symbol_end == std::string::npos) return false;
+    const std::size_t callee_end = symbol_end + frontier.symbol.size();
+    if (!CallStillOpen(frontier.line, callee_end)) return false;
+    const std::vector<std::string> typed = OpenCallTypedArgs(
+        frontier.line, callee_end
+    );
+    const std::vector<FunctionSig>* overloads = nullptr;
+    if (frontier.symbol_kind == SymbolKind::Function) {
+        const auto functions = model.functions.find(frontier.symbol);
+        if (functions != model.functions.end()) overloads = &functions->second;
+    } else if (frontier.symbol_kind == SymbolKind::Method) {
+        const auto nominal = model.nominals.find(frontier.receiver);
+        if (nominal != model.nominals.end()) {
+            const auto methods = nominal->second.methods.find(frontier.symbol);
+            if (methods != nominal->second.methods.end()) overloads = &methods->second;
+        }
+    }
+    if (overloads == nullptr) return false;
+    for (const FunctionSig& sig : *overloads) {
+        if (typed.size() > sig.param_types.size()) continue;
+        bool typed_ok = true;
+        for (std::size_t index = 0; index < typed.size(); ++index) {
+            const std::string arg_type = ArgTextType(
+                typed[index], model, context
+            );
+            if (!arg_type.empty() &&
+                !Compatible(arg_type, sig.param_types[index], model)) {
+                typed_ok = false;
+                break;
+            }
+        }
+        if (!typed_ok) continue;
+        std::string suffix;
+        bool concrete = true;
+        for (std::size_t index = typed.size();
+             index < sig.param_types.size(); ++index) {
+            const std::string arg = ConstructibleArg(
+                sig.param_types[index], context, model
+            );
+            if (arg.empty() && sig.param_types[index] != "Unit") {
+                concrete = false;
+                break;
+            }
+            suffix += ", ";
+            suffix += arg;
+        }
+        witness->found = true;
+        witness->source = frontier.symbol;
+        witness->target = sig.result;
+        if (concrete) {
+            witness->printable_suffix = suffix + ")";
+        } else {
+            witness->printable_suffix = "…)";  // non-production marker
+        }
+        return true;
+    }
+    return false;
+}
+
+// Mid-identifier fire: the trailing identifier is still being typed.  A
+// witness exists iff some known name with the identifier as a prefix can
+// complete to a type compatible with the expected type.  Member selection
+// completes against the receiver's own members (fields and methods).
+bool CompletionWitness(
+    const FrontierInfo& frontier,
+    std::string_view expected,
+    const FunctionContext& context,
+    const Model& model,
+    RecoveryWitness* witness
+) {
+    if (frontier.symbol.empty()) return false;
+    if (frontier.line.empty() || frontier.line.back() == '\n' ||
+        !IsIdentContinue(static_cast<unsigned char>(frontier.line.back()))) {
+        return false;
+    }
+    // The frontier identifier must be the trailing text: for a fire that
+    // landed on a walked-up statement line (terminator), the identifier is
+    // complete and no completion witness applies.
+    auto is_completion_candidate = [&](const std::string& candidate) {
+        if (candidate.size() <= frontier.symbol.size()) return false;
+        return candidate.compare(0, frontier.symbol.size(), frontier.symbol) == 0;
+    };
+    auto accept = [&](const std::string& type) {
+        if (!expected.empty() && !Compatible(type, expected, model)) return false;
+        return true;
+    };
+    if (frontier.boundary_kind == BoundaryKind::MemberSel) {
+        // Complete the member name against the receiver's members.
+        if (frontier.receiver.empty()) return false;
+        const auto nominal = model.nominals.find(frontier.receiver);
+        if (nominal == model.nominals.end()) return false;
+        for (const auto& field : nominal->second.fields) {
+            if (!is_completion_candidate(field.first)) continue;
+            if (!accept(field.second)) continue;
+            witness->found = true;
+            witness->source = field.second;
+            witness->target = std::string(expected);
+            witness->printable_suffix = field.first.substr(frontier.symbol.size());
+            return true;
+        }
+        for (const auto& method : nominal->second.methods) {
+            if (!is_completion_candidate(method.first)) continue;
+            const std::string type = PostfixGraph::FunctionTypeOf(method.second.front());
+            if (!accept(type)) continue;
+            witness->found = true;
+            witness->source = type;
+            witness->target = std::string(expected);
+            witness->printable_suffix = method.first.substr(frontier.symbol.size());
+            return true;
+        }
+        return false;
+    }
+    if (frontier.symbol_kind != SymbolKind::Unknown) return false;
+    std::vector<std::string> candidates;
+    for (const auto& local : context.variables) {
+        candidates.push_back(local.first);
+    }
+    for (const auto& global : model.globals) {
+        candidates.push_back(global.first);
+    }
+    for (const auto& function : model.functions) {
+        candidates.push_back(function.first);
+    }
+    for (const auto& nominal : model.nominals) {
+        candidates.push_back(nominal.first);
+    }
+    for (const std::string& candidate : candidates) {
+        if (!is_completion_candidate(candidate)) continue;
+        std::string type;
+        const auto local = context.variables.find(candidate);
+        if (local != context.variables.end()) {
+            type = local->second;
+        } else {
+            const auto global = model.globals.find(candidate);
+            if (global != model.globals.end()) {
+                type = global->second;
+            } else if (model.functions.count(candidate) != 0) {
+                type = PostfixGraph::FunctionTypeOf(model.functions.at(candidate).front());
+            } else {
+                type = "type:" + candidate;
+            }
+        }
+        if (!accept(type)) continue;
+        witness->found = true;
+        witness->source = type;
+        witness->target = std::string(expected);
+        witness->printable_suffix = candidate.substr(frontier.symbol.size());
+        return true;
+    }
+    return false;
+}
+
+// Bounded BFS over the postfix graph: ≤3 steps, cost-ordered, caps on alive
+// states and per-member overloads.  Goal: a ≥1-step path to a type
+// Compatible with the expected type (or any reachable known type when the
+// expected type is unknown — the expression can still be completed).
+RecoveryWitness FindRecoveryWitness(
+    std::string_view source_type,
+    std::string_view expected,
+    const PostfixGraph& graph,
+    const FunctionContext& context,
+    const Model& model
+) {
+    RecoveryWitness result;
+    result.source = std::string(source_type);
+    result.target = std::string(expected);
+    const bool debug = std::getenv("CANGJIE_TRACE_WITNESS") != nullptr;
+    if (debug) std::cerr << "[witness] search " << source_type << " -> " << expected << "\n";
+    if (source_type.empty() || !KnownType(source_type, model)) return result;
+
+    struct State {
+        std::string type;
+        std::size_t cost = 0;
+        std::vector<SuffixStep> steps;
+    };
+    std::vector<State> frontier_states;
+    frontier_states.push_back({std::string(source_type), 0, {}});
+    std::size_t visited = 0;
+    while (!frontier_states.empty() && visited < 32) {
+        // Pop the lowest-cost state (linear scan — state counts are tiny).
+        std::size_t best = 0;
+        for (std::size_t index = 1; index < frontier_states.size(); ++index) {
+            if (frontier_states[index].cost < frontier_states[best].cost) best = index;
+        }
+        State state = frontier_states[best];
+        frontier_states.erase(frontier_states.begin() + best);
+        ++visited;
+        if (debug) {
+            std::cerr << "[witness]   pop type=" << state.type
+                      << " cost=" << state.cost << " steps=" << state.steps.size() << "\n";
+        }
+        // Goal check at pop time: with cost-ordered pops, the first goal
+        // state popped is the cheapest complete path.
+        if (!state.steps.empty()) {
+            const bool goal = expected.empty()
+                ? KnownType(state.type, model)
+                : Compatible(state.type, expected, model);
+            if (goal) {
+                result.steps = state.steps;
+                result.found = true;
+                std::string suffix;
+                for (const SuffixStep& step : state.steps) {
+                    switch (step.kind) {
+                        case EdgeKind::Field:
+                        case EdgeKind::MethodValue:
+                        case EdgeKind::MethodCall:
+                        case EdgeKind::Index:
+                            suffix += "." + step.member;
+                            break;
+                        case EdgeKind::FunctionCall:
+                            suffix += step.member;
+                            break;
+                    }
+                }
+                result.printable_suffix = suffix;
+                if (debug) {
+                    std::cerr << "[witness]   goal found: " << suffix
+                              << "  (cost " << state.cost << ")\n";
+                }
+                return result;
+            }
+        }
+        if (state.steps.size() >= 3) continue;
+        const std::string head = TypeHead(state.type);
+        const PostfixGraph::NominalNode* node = nullptr;
+        const auto node_it = graph.nodes.find(head);
+        if (node_it != graph.nodes.end()) node = &node_it->second;
+        auto push = [&](const SuffixStep& step, std::size_t step_cost) {
+            if (state.steps.size() + 1 > 3) return;
+            State next;
+            next.type = step.result;
+            next.cost = state.cost + step_cost;
+            next.steps = state.steps;
+            next.steps.push_back(step);
+            frontier_states.push_back(std::move(next));
+        };
+        // Instantiate the current type's generic member results (T→<args>).
+        const std::vector<std::string> inst_args = TypeArgs(state.type);
+        auto subst = [&](const std::string& type) {
+            return node != nullptr
+                ? SubstituteTypeArgs(type, node->type_params, inst_args)
+                : type;
+        };
+        std::size_t overload_checked = 0;
+        if (node != nullptr) {
+            for (const auto& field : node->fields) {
+                SuffixStep step;
+                step.kind = EdgeKind::Field;
+                step.member = field.first;
+                step.result = subst(field.second);
+                push(step, 1);
+            }
+            for (const auto& value : node->method_values) {
+                SuffixStep step;
+                step.kind = EdgeKind::MethodValue;
+                step.member = value.first;
+                step.result = subst(value.second);
+                push(step, 1);
+            }
+            for (const auto& calls : node->calls) {
+                for (const auto& overload : calls.second) {
+                    if (++overload_checked > 32) break;
+                    bool constructible = true;
+                    std::string args;
+                    for (const std::string& param : overload.first) {
+                        const std::string param_type = subst(param);
+                        const std::string arg = ConstructibleArg(param_type, context, model);
+                        if (arg.empty() && !param_type.empty() && param_type != "Unit") {
+                            constructible = false;
+                            break;
+                        }
+                        if (!args.empty()) args += ", ";
+                        args += arg;
+                    }
+                    if (!constructible) continue;
+                    SuffixStep step;
+                    step.kind = EdgeKind::MethodCall;
+                    step.member = calls.first + "(" + args + ")";
+                    step.result = subst(overload.second);
+                    push(step, overload.first.empty() ? 1 : 2);
+                }
+            }
+        }
+        if (IsFunctionType(state.type)) {
+            const auto parts = FunctionTypeParts(state.type);
+            bool constructible = true;
+            std::string args;
+            for (const std::string& param : parts.first) {
+                const std::string arg = ConstructibleArg(param, context, model);
+                if (arg.empty() && !param.empty() && param != "Unit") {
+                    constructible = false;
+                    break;
+                }
+                if (!args.empty()) args += ", ";
+                args += arg;
+            }
+            if (constructible) {
+                SuffixStep step;
+                step.kind = EdgeKind::FunctionCall;
+                step.member = "(" + args + ")";
+                step.result = parts.second;
+                push(step, 1);
+            }
+        }
+        // Index edges.
+        const auto args = TypeArgs(state.type);
+        if (head == "Array" || head == "ArrayList" || head == "ArrayDeque" ||
+            head == "Range") {
+            if (!args.empty()) {
+                SuffixStep step;
+                step.kind = EdgeKind::Index;
+                step.member = "[0]";
+                step.result = args.front();
+                push(step, 2);
+            }
+        } else if (head == "String") {
+            SuffixStep step;
+            step.kind = EdgeKind::Index;
+            step.member = "[0]";
+            step.result = "Rune";
+            push(step, 2);
+        } else if (head == "HashMap" && args.size() >= 2) {
+            SuffixStep step;
+            step.kind = EdgeKind::Index;
+            step.member = "[\"x\"]";
+            step.result = args[1];
+            push(step, 2);
+        }
+    }
+    return result;
+}
+
+// Orchestrator: expected type → completion witness (mid-identifier) → open
+// call witness → postfix BFS.  Cached by (source|target|tail|boundary).
+RecoveryWitness ComputeShadowWitness(
+    const FrontierInfo& frontier,
+    const Model& model,
+    const FunctionContext& context,
+    const PostfixGraph& graph,
+    std::unordered_map<std::string, RecoveryWitness>* cache,
+    WitnessStats* stats
+) {
+    RecoveryWitness witness;
+    if (frontier.symbol_kind == SymbolKind::None) return witness;
+    const std::string expected = ExpectedFromLine(
+        frontier.line, context, model
+    );
+    const std::string cache_key = frontier.symbol + "|" + SymbolKindName(frontier.symbol_kind) +
+        "|" + expected + "|" + std::to_string(static_cast<int>(frontier.tail_kind)) +
+        "|" + std::to_string(static_cast<int>(frontier.boundary_kind));
+    const auto cached = cache->find(cache_key);
+    ++stats->queries;
+    if (cached != cache->end()) {
+        ++stats->cache_hits;
+        return cached->second;
+    }
+    // Mid-identifier completion first.
+    if (CompletionWitness(frontier, expected, context, model, &witness)) {
+        ++stats->witness_found;
+        (*cache)[cache_key] = witness;
+        return witness;
+    }
+    // Open call (callee with '(' but args not closed): the call may still
+    // close on a matching overload — concrete suffix when constructible.
+    if ((frontier.symbol_kind == SymbolKind::Function ||
+         frontier.symbol_kind == SymbolKind::Method) &&
+        frontier.tail_kind == TailKind::Call &&
+        OpenCallWitness(frontier, model, context, &witness)) {
+        ++stats->witness_found;
+        (*cache)[cache_key] = witness;
+        return witness;
+    }
+    const std::string frontier_type = FrontierTypeFor(frontier, context, model);
+    if (!frontier_type.empty()) {
+        witness = FindRecoveryWitness(
+            frontier_type, expected, graph, context, model
+        );
+        if (witness.found) ++stats->witness_found;
+    }
+    (*cache)[cache_key] = witness;
+    return witness;
+}
+
+}  // namespace
 
 bool KnownDeclaredType(
     std::string_view type,
@@ -8592,6 +9461,9 @@ class IncrementalSemanticEngine::Impl {
         // V14 Patch 1: generated/context.bin is the single context source.
         LoadContextTable(context_path_, &preload_);
         active_model_ = preload_;
+        // V14 Patch 3: the postfix graph must be built AFTER the context
+        // loads (the member-init list runs before LoadContextTable).
+        postfix_graph_ = PostfixGraph::Build(preload_);
     }
 
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -8609,8 +9481,17 @@ class IncrementalSemanticEngine::Impl {
     const FrontierInfo& LastFrontier() const { return last_frontier_; }
     void SetLastFrontier(const FrontierInfo& info) { last_frontier_ = info; }
 
+    // V14 Patch 3: shadow recovery witness of the last failed Probe.
+    const RecoveryWitness& LastWitness() const { return last_witness_; }
+    void SetLastWitness(const RecoveryWitness& witness) { last_witness_ = witness; }
+    const WitnessStats& WitnessStatistics() const { return witness_stats_; }
+
     std::string context_path_;
+    PostfixGraph postfix_graph_;
     FrontierInfo last_frontier_;
+    RecoveryWitness last_witness_;
+    WitnessStats witness_stats_;
+    std::unordered_map<std::string, RecoveryWitness> witness_cache_;
     Model preload_;
     Model active_model_;
     DeclarationSnapshot declaration_snapshot_;
@@ -8975,8 +9856,15 @@ CheckStatus IncrementalSemanticEngine::Probe(
         impl_->SetLastFrontier(
             ClassifyFrontier(source, impl_->active_model_, impl_->active_context_)
         );
+        // V14 Patch 3: shadow-only recovery witness for the same failure.
+        impl_->SetLastWitness(
+            ComputeShadowWitness(impl_->LastFrontier(), impl_->active_model_,
+                                 impl_->active_context_, impl_->postfix_graph_,
+                                 &impl_->witness_cache_, &impl_->witness_stats_)
+        );
     } else {
         impl_->SetLastFrontier(FrontierInfo());
+        impl_->SetLastWitness(RecoveryWitness());
     }
     return status;
 }
@@ -8999,6 +9887,14 @@ void IncrementalSemanticEngine::DumpContextIrJson(std::ostream& os) const {
 
 const FrontierInfo& IncrementalSemanticEngine::LastFrontier() const {
     return impl_->LastFrontier();
+}
+
+const RecoveryWitness& IncrementalSemanticEngine::LastWitness() const {
+    return impl_->LastWitness();
+}
+
+const WitnessStats& IncrementalSemanticEngine::WitnessStatistics() const {
+    return impl_->WitnessStatistics();
 }
 
 // V14 Patch 2: FrontierInfo name helpers (external linkage per the header).

@@ -79,12 +79,48 @@ enum class BoundaryKind {
 // completion standard: no UnknownSymbol directly judged Dead).
 enum class FrontierVerdict { None, Alive, Dead, Unknown };
 
+// V14 Patch 3: RecoveryWitness (shadow).  A witness is a bounded postfix
+// path from the frontier expression's type to the expected type; it answers
+// "can this frontier still be extended to a valid program?"  Only observed,
+// never consulted by the decision path (activation is Patch 5).
+enum class EdgeKind {
+    Field,        // ".name" — instance field (incl. F1 first/last auto-apply)
+    MethodValue,  // ".name" — zero-arg method read as a value (function ref)
+    MethodCall,   // ".name(...)" — instance method call
+    FunctionCall, // "(...)" — call a function value
+    Index,        // "[...]" — index operator
+};
+
+struct SuffixStep {
+    EdgeKind kind = EdgeKind::Field;
+    std::string member;  // member name / index type text ("" for function call)
+    std::string result;  // type after this step
+};
+
+struct RecoveryWitness {
+    bool found = false;
+    std::string source;  // frontier type ("" = none)
+    std::string target;  // expected type ("" = no expected context)
+    std::vector<SuffixStep> steps;
+    std::string printable_suffix;
+};
+
+struct WitnessStats {
+    std::size_t queries = 0;
+    std::size_t cache_hits = 0;
+    std::size_t witness_found = 0;
+};
+
 struct FrontierInfo {
     std::string symbol;    // frontier identifier text ("" for non-identifier fires)
     SymbolKind symbol_kind = SymbolKind::None;
     TailKind tail_kind = TailKind::None;
     BoundaryKind boundary_kind = BoundaryKind::None;
     std::string receiver;  // TypeHead of the member receiver, if member selection
+    std::string receiver_type;  // full receiver type (Patch 3 witness input)
+    std::string line;      // raw statement line the frontier was read from
+    std::size_t frontier_start = 0;  // frontier identifier byte offset in the
+    std::size_t frontier_end = 0;    // fire-time source (Patch 3 validator)
     FrontierVerdict verdict = FrontierVerdict::None;
 };
 
@@ -127,6 +163,11 @@ class IncrementalSemanticEngine {
     // Empty FrontierInfo when the last Probe succeeded or had no identifier.
     const FrontierInfo& LastFrontier() const;
 
+    // Shadow recovery witness of the last failed Probe (Patch 3).  Empty
+    // when the last Probe succeeded or no witness machinery applied.
+    const RecoveryWitness& LastWitness() const;
+    const WitnessStats& WitnessStatistics() const;
+
  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
@@ -138,6 +179,8 @@ class NativeSemanticChecker {
     CheckStatus Check(std::string_view bytes);
     void DumpContextIrJson(std::ostream& os) const { engine_.DumpContextIrJson(os); }
     const FrontierInfo& LastFrontier() const { return engine_.LastFrontier(); }
+    const RecoveryWitness& LastWitness() const { return engine_.LastWitness(); }
+    const WitnessStats& WitnessStatistics() const { return engine_.WitnessStatistics(); }
 
  private:
     IncrementalLexer lexer_;
