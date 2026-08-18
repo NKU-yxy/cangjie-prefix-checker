@@ -284,6 +284,54 @@ bool IsIdentifierText(std::string_view text) {
     });
 }
 
+// True if the text contains a whole-word "var" or "let" keyword. Used to
+// decide whether a same-line delta introduces a declaration that the context
+// (symbol table) must be rebuilt for; declaration and use on one line
+// (e.g. "var i: Int64 = 0 while (i < 10)") otherwise never crosses the
+// newline/semicolon/brace markers that force a rebuild.
+bool HasBareVarLetKeyword(std::string_view text) {
+    for (std::size_t index = 0; index + 3 <= text.size(); ++index) {
+        const bool is_var = text[index] == 'v' && text[index + 1] == 'a' && text[index + 2] == 'r';
+        const bool is_let = text[index] == 'l' && text[index + 1] == 'e' && text[index + 2] == 't';
+        if (!is_var && !is_let) continue;
+        if (index > 0 && IsIdentContinue(static_cast<unsigned char>(text[index - 1]))) continue;
+        if (index + 3 < text.size() &&
+            IsIdentContinue(static_cast<unsigned char>(text[index + 3]))) {
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
+// True if a bare "var"/"let" keyword in `text` is immediately followed by
+// (whitespace and then) an identifier start — i.e. the declaration name is
+// part of the same delta.  A delta that ends at the keyword ("var", "let ")
+// leaves the name for the next delta.
+bool HasDeclNameAfterKeyword(std::string_view text) {
+    for (std::size_t index = 0; index + 3 <= text.size(); ++index) {
+        const bool is_var = text[index] == 'v' && text[index + 1] == 'a' && text[index + 2] == 'r';
+        const bool is_let = text[index] == 'l' && text[index + 1] == 'e' && text[index + 2] == 't';
+        if (!is_var && !is_let) continue;
+        if (index > 0 && IsIdentContinue(static_cast<unsigned char>(text[index - 1]))) continue;
+        if (index + 3 < text.size() &&
+            IsIdentContinue(static_cast<unsigned char>(text[index + 3]))) {
+            continue;
+        }
+        std::size_t cursor = index + 3;
+        while (cursor < text.size() &&
+               (text[cursor] == ' ' || text[cursor] == '\t')) {
+            ++cursor;
+        }
+        if (cursor < text.size()) {
+            const unsigned char ch = static_cast<unsigned char>(text[cursor]);
+            return std::isalpha(ch) || ch == '_';
+        }
+        return false;
+    }
+    return false;
+}
+
 bool IsDecimalIntegerText(std::string_view text) {
     return !text.empty() && std::all_of(text.begin(), text.end(), [](unsigned char ch) {
         return std::isdigit(ch);
@@ -642,7 +690,6 @@ struct FunctionSig {
     std::string result = "Unit";
     std::size_t required = 0;
     bool is_static = false;
-    bool from_context = false;
 };
 
 struct NominalInfo {
@@ -922,7 +969,6 @@ void LoadContextTable(const std::string& path, Model* model) {
         (void)reader.U32();  // mutability is tracked once the variable is assigned.
     }
     for (FunctionSig& sig : reader.Signatures()) {
-        sig.from_context = true;
         model->functions[sig.name].push_back(std::move(sig));
     }
     const std::uint32_t nominal_count = reader.U32();
@@ -2902,6 +2948,28 @@ bool IsStatementPrefix(std::string_view line) {
     return false;
 }
 
+// IsStatementPrefix variant for completed-loop bodies: a complete identifier
+// that is not itself a statement keyword (e.g. "i" is not "if") is a finished
+// bare expression, so it must still flow through type inference instead of
+// being skipped as an unfinished keyword prefix.
+bool IsUnfinishedKeywordPrefix(std::string_view line) {
+    static const std::vector<std::string> keywords = {
+        "if", "else", "while", "for", "return", "let", "var", "break",
+        "continue", "func", "class", "interface", "public", "private",
+        "static", "init", "import", "package"
+    };
+    const std::string trimmed = Trim(line);
+    if (trimmed.empty() || trimmed == "{" || trimmed == "}") return true;
+    const bool whole_word = IsIdentifierText(trimmed);
+    for (const std::string& keyword : keywords) {
+        if (StartsWith(keyword, trimmed)) {
+            if (whole_word && trimmed != keyword) continue;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool HasCompleteTrailingIdentifier(std::string_view source) {
     if (source.empty()) return false;
     const unsigned char last = static_cast<unsigned char>(source.back());
@@ -3003,8 +3071,7 @@ class ExpressionTyper {
         bool closed,
         const std::string& expected,
         int depth,
-        const std::unordered_map<std::string, std::string>& receiver_substitutions = {},
-        bool strict_generic = false
+        const std::unordered_map<std::string, std::string>& receiver_substitutions = {}
     );
     bool HasSymbolPrefix(std::string_view prefix) const;
     bool MayExtendTrailingIdentifier(std::string_view identifier) const;
@@ -3304,14 +3371,12 @@ ExprResult ExpressionTyper::CheckSignatures(
     bool closed,
     const std::string& expected,
     int depth,
-    const std::unordered_map<std::string, std::string>& receiver_substitutions,
-    bool strict_generic
+    const std::unordered_map<std::string, std::string>& receiver_substitutions
 ) {
     std::string first_error;
     bool over_arity_fallback = false;
     for (const FunctionSig& sig : signatures) {
         if (!explicit_types.empty() && explicit_types.size() != sig.type_params.size()) {
-            if (getenv("CJ_TRACE")) std::cerr << "CS generic-arity reject: " << sig.name << " expl=" << explicit_types.size() << " tp=" << sig.type_params.size() << "\n";
             if (first_error.empty()) first_error = "wrong generic arity";
             continue;
         }
@@ -3325,7 +3390,6 @@ ExprResult ExpressionTyper::CheckSignatures(
             // trailing numeric prefix).  Record it as a fallback; promote it
             // at the end only when every candidate was over-arity.
             if (!closed && arguments.size() > sig.param_types.size()) {
-                if (getenv("CJ_TRACE")) std::cerr << "CS over-arity fb: " << sig.name << " nargs=" << arguments.size() << " nparams=" << sig.param_types.size() << "\n";
                 over_arity_fallback = true;
             } else if (first_error.empty()) {
                 first_error = "wrong argument arity";
@@ -3337,27 +3401,10 @@ ExprResult ExpressionTyper::CheckSignatures(
             substitutions[sig.type_params[index]] = CompactType(explicit_types[index]);
         }
         std::unordered_set<std::string> type_params(sig.type_params.begin(), sig.type_params.end());
-        // strict_generic: bare calls to generic GLOBAL functions (min/max).
-        // The official checker never instantiates T from the expected result
-        // nor from the arguments, so every such call fails ("expected T, got
-        // X") at the first locked argument.  Skip both bindings so the arg
-        // pattern stays the unbound variable and the Compatible check fails.
-        const bool strict = strict_generic && !sig.type_params.empty();
-        if (!expected.empty() && !strict) BindTypeVariables(sig.result, expected, type_params, &substitutions);
+        if (!expected.empty()) BindTypeVariables(sig.result, expected, type_params, &substitutions);
         bool rejected = false;
         std::size_t positional = 0;
         std::unordered_set<std::size_t> used;
-        // The re-attached trailing empty slot from `f(1,` marks a comma that
-        // still waits for more arguments.  It participates in arity checks
-        // (so `print("x",` over-arity fires at the comma) but must NOT revoke
-        // the trailing-argument rescues: `f(1,` with a wrong-but-continuable
-        // literal stays extendable via `.toString()` before the comma.
-        auto trailing_empty_slots = [&](std::size_t from) {
-            for (std::size_t k = from; k < arguments.size(); ++k) {
-                if (!Trim(arguments[k]).empty()) return false;
-            }
-            return true;
-        };
         for (std::size_t argument_number = 0; argument_number < arguments.size(); ++argument_number) {
             const std::string& raw_argument = arguments[argument_number];
             if (raw_argument.empty()) continue;
@@ -3398,14 +3445,6 @@ ExprResult ExpressionTyper::CheckSignatures(
             const std::string pattern = ApplySubstitution(sig.param_types[parameter_index], substitutions);
             ExprResult actual = InferImpl(argument, pattern, depth + 1);
             if (actual.error) {
-                // Implicit-generic bare calls (min/max): T never binds, so
-                // even an array literal vs Array<T> (InferImpl cannot
-                // resolve Array<T> without T) must NOT lock the error at
-                // this comma -- defer to the closing paren where candidate
-                // matching finally rejects the call.
-                if (!closed && strict) {
-                    continue;
-                }
                 rejected = true;
                 if (first_error.empty()) first_error = actual.message;
                 break;
@@ -3418,27 +3457,15 @@ ExprResult ExpressionTyper::CheckSignatures(
                 continue;
             }
             if (actual.known) {
-                if (!strict) {
-                    BindTypeVariables(sig.param_types[parameter_index], actual.type, type_params, &substitutions);
-                }
+                BindTypeVariables(sig.param_types[parameter_index], actual.type, type_params, &substitutions);
                 const std::string want = ApplySubstitution(sig.param_types[parameter_index], substitutions);
                 if (!Compatible(actual.type, want, model_)) {
-                    // Implicit-generic bare calls (min/max): the official
-                    // checker never instantiates T from the arguments, so
-                    // EVERY call fails candidate matching at the closing
-                    // paren ("no matching call candidate").  An argument
-                    // mismatch inside an unclosed call must therefore NOT
-                    // lock the error position at this comma/literal -- defer
-                    // to the ')' where the candidate is finally rejected.
-                    if (!closed && strict) {
-                        continue;
-                    }
-                    if (!closed && actual.suffix_may_change_type && !strict &&
-                        trailing_empty_slots(argument_number + 1)) {
+                    if (!closed && actual.suffix_may_change_type &&
+                        argument_number + 1 == arguments.size()) {
                         continue;
                     }
                     if (!closed && MayExtendTrailingIdentifier(trimmed_argument) &&
-                        trailing_empty_slots(argument_number + 1)) continue;
+                        argument_number + 1 == arguments.size()) continue;
                     if (IsInteger(actual.type) && IsInteger(want) &&
                         IsDecimalIntegerText(Trim(argument))) {
                         continue;
@@ -3450,20 +3477,14 @@ ExprResult ExpressionTyper::CheckSignatures(
             }
         }
         if (!rejected) {
-            if (getenv("CJ_TRACE")) std::cerr << "CS accepted: " << sig.name << " nargs=" << arguments.size() << "\n";
             ExprResult result;
             result.type = ApplySubstitution(sig.result, substitutions);
             result.known = result.type.find_first_of("?") == std::string::npos;
             return result;
         }
     }
-    if (!first_error.empty()) {
-        if (getenv("CJ_TRACE")) std::cerr << "CS-error: " << first_error << " args=[" << [&]() { std::string s; for (auto& a : arguments) { if (!s.empty()) s += "|"; s += a; } return s; }() << "]\n";
-        return {"?", false, true, first_error};
-    }
-    if (over_arity_fallback && !strict_generic) {
-        return {"?", false, true, "wrong argument arity"};
-    }
+    if (!first_error.empty()) return {"?", false, true, first_error};
+    if (over_arity_fallback) return {"?", false, true, "wrong argument arity"};
     return {};
 }
 
@@ -3478,23 +3499,19 @@ ExprResult ExpressionTyper::InferCall(
 ) {
     std::vector<std::string> args = SplitTopLevel(arguments, ',');
     if (args.size() == 1 && args.front().empty()) args.clear();
+    // NOTE: do NOT drop a trailing empty arg from an unclosed call like
+    // `f(1,`.  The comma locks the preceding argument: `HashMap<String,
+    // Int64>(1,` can no longer be extended to a valid program (the literal
+    // cannot pick up `.toString()` past the comma), so the comma is already
+    // the first non-continuable token.  Keeping the empty slot makes the
+    // arity/argument checks reject at the comma instead of deferring to the
+    // closing paren.
     if (base.empty()) {
         std::vector<FunctionSig> candidates;
-        // Bare call to a generic global function without explicit type args
-        // (min/max): official checker never instantiates T, so the call fails
-        // at the first locked argument.  Constructor candidates keep their
-        // normal inference, so any nominal candidate clears the flag.
-        bool strict_generic = explicit_types.empty();
         if (const auto function = model_.functions.find(name); function != model_.functions.end()) {
             candidates.insert(candidates.end(), function->second.begin(), function->second.end());
-            strict_generic = strict_generic &&
-                std::any_of(function->second.begin(), function->second.end(),
-                            [](const FunctionSig& sig) { return !sig.type_params.empty(); }) &&
-                std::all_of(function->second.begin(), function->second.end(),
-                            [](const FunctionSig& sig) { return sig.from_context; });
         }
         if (const auto nominal = model_.nominals.find(name); nominal != model_.nominals.end() && !nominal->second.is_interface) {
-            strict_generic = false;
             candidates.insert(candidates.end(), nominal->second.constructors.begin(), nominal->second.constructors.end());
         }
         if (candidates.empty() && !name.empty() && name.front() == '{') {
@@ -3513,7 +3530,7 @@ ExprResult ExpressionTyper::InferCall(
         }
         if (candidates.empty()) return {};
         return WithExtendablePostfix(
-            CheckSignatures(candidates, explicit_types, args, closed, expected, depth, {}, strict_generic)
+            CheckSignatures(candidates, explicit_types, args, closed, expected, depth)
         );
     }
 
@@ -4715,6 +4732,153 @@ void CollectTopLevelDeclarationsBefore(
     }
 }
 
+// --- Adjacent same-line expressions -------------------------------------
+// Cangjie accepts several whitespace-separated expressions on one line as
+// multiple statements ("{ i 1 }").  When a whole statement does not parse
+// but its head parses and it ends in a top-level atom, split it so each
+// part is checked on its own.
+std::vector<std::size_t> TopLevelSpacePositions(std::string_view text) {
+    std::vector<std::size_t> positions;
+    int paren = 0;
+    int bracket = 0;
+    int brace = 0;
+    bool in_string = false;
+    bool triple_string = false;
+    bool escaped = false;
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        const char ch = text[index];
+        if (in_string) {
+            if (triple_string) {
+                if (index + 2 < text.size() &&
+                    text.substr(index, 3) == "\"\"\"") {
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '"') {
+            triple_string = index + 2 < text.size() &&
+                text.substr(index, 3) == "\"\"\"";
+            in_string = true;
+            if (triple_string) index += 2;
+        } else if (ch == '(') ++paren;
+        else if (ch == ')' && paren > 0) --paren;
+        else if (ch == '[') ++bracket;
+        else if (ch == ']' && bracket > 0) --bracket;
+        else if (ch == '{') ++brace;
+        else if (ch == '}' && brace > 0) --brace;
+        else if (std::isspace(static_cast<unsigned char>(ch)) &&
+                 paren == 0 && bracket == 0 && brace == 0) {
+            if (positions.empty() || positions.back() + 1 != index) {
+                positions.push_back(index);
+            }
+        }
+    }
+    return positions;
+}
+
+bool IsAtomExpression(std::string_view tail) {
+    if (tail.empty()) return false;
+    if (tail.front() == '"') {
+        if (tail.size() >= 6 && tail.substr(0, 3) == "\"\"\"" &&
+            tail.substr(tail.size() - 3) == "\"\"\"") {
+            return true;
+        }
+        if (tail.size() >= 2 && tail.back() == '"') {
+            bool escaped = false;
+            for (std::size_t index = 1; index + 1 < tail.size(); ++index) {
+                if (escaped) escaped = false;
+                else if (tail[index] == '\\') escaped = true;
+                else if (tail[index] == '"') return false;
+            }
+            return !escaped;
+        }
+        return false;
+    }
+    static const std::regex atom_pattern(
+        R"(([A-Za-z_][A-Za-z0-9_]*)|(true|false)|(0[xXoObB][0-9A-Fa-f]+[A-Za-z0-9_]*)|([0-9]+(\.[0-9]+)?[A-Za-z0-9_]*))"
+    );
+    return std::regex_match(std::string(tail), atom_pattern);
+}
+
+// A trailing binary operator (or "=" / "(" / ".") means the head is not a
+// complete expression; the incrementality machinery deliberately returns
+// the stable left-hand type for unfinished tails like "i +", so the split
+// must not rely on Infer alone for this check.
+bool EndsWithIncompleteToken(std::string_view text) {
+    static const std::vector<std::string> operators = {
+        "+", "-", "*", "/", "%", "&&", "||", "==", "!=", "<", ">", "<=", ">=",
+        "..", "..=", "=>", "=", "(", ".", "?", "??", "&", "|", "^", "<<", ">>"
+    };
+    const std::string trimmed = Trim(text);
+    if (trimmed.empty()) return true;
+    for (const std::string& op : operators) {
+        if (trimmed.size() >= op.size() &&
+            trimmed.compare(
+                trimmed.size() - op.size(), op.size(), op
+            ) == 0) {
+            // "x++" ends in '+', but the ++ suffix is complete; require a
+            // non-identifier boundary before the operator.
+            const std::size_t before = trimmed.size() - op.size();
+            if (before == 0 || !IsIdentContinue(
+                    static_cast<unsigned char>(trimmed[before - 1]))) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Right-to-left: pick the first top-level boundary whose tail is an atom
+// expression and whose head already parses (assignment or inferable
+// expression).  Guard against call syntax like "f (x)": a head that is a
+// bare identifier naming a function/class stays glued to its argument
+// group, and "(...)" / "[...]" tails are never split off.
+std::vector<std::string> ExpandTrailingAtoms(
+    const std::string& statement,
+    const Model& model,
+    const FunctionContext& context,
+    std::string_view full_source
+) {
+    std::vector<std::string> result = {statement};
+    const std::vector<std::size_t> spaces = TopLevelSpacePositions(statement);
+    if (spaces.empty()) return result;
+    ExpressionTyper probe(model, context, full_source);
+    for (auto it = spaces.rbegin(); it != spaces.rend(); ++it) {
+        const std::string tail = Trim(
+            std::string_view(statement).substr(*it + 1)
+        );
+        if (tail.empty() || tail.front() == '(' || tail.front() == '[') continue;
+        if (!IsAtomExpression(tail)) continue;
+        const std::string head = Trim(
+            std::string_view(statement).substr(0, *it)
+        );
+        if (head.empty() || EndsWithIncompleteToken(head)) continue;
+        bool head_ok = false;
+        if (const auto assignment = ParseReassignment(head)) {
+            // The right-hand side must itself be complete: "i = i +"
+            // would otherwise be treated as a finished assignment.
+            const ExprResult rhs_result = probe.Infer(assignment->second);
+            head_ok = rhs_result.known;
+        } else {
+            const ExprResult head_result = probe.Infer(head);
+            head_ok = head_result.error || head_result.known;
+        }
+        if (head_ok) {
+            if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
+                std::cerr << "[ExpandTrailingAtoms] split '" << statement
+                          << "' -> '" << head << "' | '" << tail << "'\n";
+            }
+            return {head, tail};
+        }
+    }
+    return result;
+}
+
 CheckStatus CheckCompletedLoopsRecursive(
     std::string_view region,
     const Model& model,
@@ -4836,7 +5000,13 @@ CheckStatus CheckLoopStatementSequence(
     bool require_unit_tail,
     ExprResult* tail_result
 ) {
-    const std::vector<std::string> statements = TopLevelLoopStatements(body);
+    std::vector<std::string> statements;
+    for (const std::string& statement : TopLevelLoopStatements(body)) {
+        std::vector<std::string> expanded = ExpandTrailingAtoms(
+            statement, model, loop_context, full_source
+        );
+        statements.insert(statements.end(), expanded.begin(), expanded.end());
+    }
     ExprResult synthesized_tail{"Unit", true, false, {}};
     for (std::size_t index = 0; index < statements.size(); ++index) {
         const std::string& statement = statements[index];
@@ -4906,7 +5076,7 @@ CheckStatus CheckLoopStatementSequence(
         }
         if (statement == "break" || statement == "continue" ||
             statement == "return" || StartsWith(statement, "return ") ||
-            IsStatementPrefix(statement)) {
+            IsUnfinishedKeywordPrefix(statement)) {
             synthesized_tail = {"Unit", true, false, {}};
             continue;
         }
@@ -6448,7 +6618,9 @@ CheckStatus CheckConstructorFieldInitialization(std::string_view source) {
         const auto fields = ScanTopLevelSourceFieldsMasked(masked_body);
         std::unordered_set<std::string> uninitialized;
         for (const auto& [name, field] : fields) {
-            if (!field.mutable_field && !field.is_static && !field.has_initializer) {
+            // Both let and var instance fields without an initializer must
+            // be assigned by every constructor (official E_DECL_FIELD_UNINIT).
+            if (!field.is_static && !field.has_initializer) {
                 uninitialized.insert(name);
             }
         }
@@ -7260,15 +7432,19 @@ CheckStatus CheckConstructorsFromRecords(
             class_open + 1,
             class_close ? *class_close - class_open - 1 : owned.size() - class_open - 1
         );
-        for (std::sregex_iterator init_it(body.begin(), body.end(), init_pattern), init_end;
+        // Mask strings/comments before scanning for constructors: a literal
+        // like "init(x: Int64) { this.a = 1 }" inside a field initializer
+        // must not be treated as a real constructor header.
+        const std::string masked_body = MaskNonCodeText(body);
+        for (std::sregex_iterator init_it(masked_body.begin(), masked_body.end(), init_pattern), init_end;
              init_it != init_end; ++init_it) {
             const std::size_t init_open = static_cast<std::size_t>(
                 (*init_it).position() + (*init_it).length() - 1
             );
-            const auto init_close = MatchingDelimiter(body, init_open, '{', '}');
-            const std::string init_body = body.substr(
+            const auto init_close = MatchingDelimiter(masked_body, init_open, '{', '}');
+            const std::string init_body = masked_body.substr(
                 init_open + 1,
-                init_close ? *init_close - init_open - 1 : body.size() - init_open - 1
+                init_close ? *init_close - init_open - 1 : masked_body.size() - init_open - 1
             );
             if (std::regex_search(init_body, return_value)) {
                 return {false, "constructor cannot return a value"};
@@ -7317,15 +7493,18 @@ CheckStatus CheckConstructorsRegex(std::string_view source, const Model& model) 
             class_open + 1,
             class_close ? *class_close - class_open - 1 : owned.size() - class_open - 1
         );
-        for (std::sregex_iterator init_it(body.begin(), body.end(), init_pattern), init_end;
+        // Same masking as CheckConstructorsFromRecords: strings/comments may
+        // not contain constructor-shaped text.
+        const std::string masked_body = MaskNonCodeText(body);
+        for (std::sregex_iterator init_it(masked_body.begin(), masked_body.end(), init_pattern), init_end;
              init_it != init_end; ++init_it) {
             const std::size_t init_open = static_cast<std::size_t>(
                 (*init_it).position() + (*init_it).length() - 1
             );
-            const auto init_close = MatchingDelimiter(body, init_open, '{', '}');
-            const std::string init_body = body.substr(
+            const auto init_close = MatchingDelimiter(masked_body, init_open, '{', '}');
+            const std::string init_body = masked_body.substr(
                 init_open + 1,
-                init_close ? *init_close - init_open - 1 : body.size() - init_open - 1
+                init_close ? *init_close - init_open - 1 : masked_body.size() - init_open - 1
             );
             if (std::regex_search(init_body, return_value)) {
                 return {false, "constructor cannot return a value"};
@@ -8017,12 +8196,6 @@ CheckStatus AnalyzeSource(
             snapshot.explicit_functions_multiline_only.size();
         const bool first_open_source_function = source_function_count == 1 &&
             snapshot.strict_nominals.empty();
-        // The trailing expression is checked against the declared return type
-        // (Unit included) at its closure: an atom closes at itself, a closed
-        // call at its ')' (the statement ends with ')'), anything else when
-        // the function closes.  The official checker rejects every non-Unit
-        // trailing expression of a Unit function at the expression's closure
-        // (err_return_type_mismatch: `true` at the atom; abs(1) at the ')').
         const bool implicit_result_stable =
             active_statement.boundary == ActiveStatementCache::Boundary::FunctionClose ||
             (atomic && !first_open_source_function);
@@ -8030,7 +8203,7 @@ CheckStatus AnalyzeSource(
         const bool concrete_result = KnownDeclaredType(
             context.result, model, no_type_parameters
         );
-        if (implicit_result_stable && concrete_result &&
+        if (implicit_result_stable && concrete_result && context.result != "Unit" &&
             expression.known &&
             !trailing_numeric_prefix &&
             !Compatible(expression.type, context.result, model)) {
@@ -8088,6 +8261,10 @@ class IncrementalSemanticEngine::Impl {
     std::size_t source_bytes_ = 0;
     std::size_t model_source_bytes_ = 0;
     std::size_t context_source_bytes_ = 0;
+    // True between the delta that introduced a var/let keyword and the next
+    // line terminator: the declaration finishes across several deltas, so
+    // the context must keep rebuilding until the line is complete.
+    bool context_decl_pending_ = false;
     std::string last_partial_;
     ActiveStatementCache statement_cache_;
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -8229,8 +8406,21 @@ CheckStatus IncrementalSemanticEngine::Probe(
 #endif
         impl_->model_source_bytes_ = source.size();
     }
+    const bool has_var_let = HasBareVarLetKeyword(delta);
+    const bool name_in_delta = has_var_let && HasDeclNameAfterKeyword(delta);
+    // A var/let declaration is collected by CollectLocalVariables only once
+    // its "var NAME : TYPE =" shape is complete, so neither the keyword delta
+    // nor the name delta is rebuilt on its own: the pending flag stays set
+    // until the declaration's "=" arrives (a ;}/newline that terminates the
+    // declaration still triggers the {}\n\r; marker rebuild).  Holding the
+    // pending flag across every delta of a multi-delta declaration rebuilt
+    // the context once per token and made scale cases quadratic.
+    const bool decl_completed =
+        impl_->context_decl_pending_ &&
+        delta.find('=') != std::string_view::npos;
     const bool context_dirty = impl_->context_source_bytes_ == 0 ||
-        delta.find_first_of("{}\n\r;") != std::string_view::npos;
+        delta.find_first_of("{}\n\r;") != std::string_view::npos ||
+        decl_completed || name_in_delta;
     if (context_dirty) {
 #ifdef CANGJIE_ENABLE_PROFILE
         ProfileScopeTimer context_timer(profile ? &profile->context_rebuild_ns : nullptr);
@@ -8243,6 +8433,12 @@ CheckStatus IncrementalSemanticEngine::Probe(
             source, impl_->active_model_, impl_->declaration_snapshot_
         );
         impl_->context_source_bytes_ = source.size();
+        // A rebuild collects every var/let already present in `source`, so a
+        // pending declaration that reached its "=" is resolved here; only a
+        // keyword that still lacks its name carries the pending flag forward.
+        impl_->context_decl_pending_ = has_var_let && !name_in_delta;
+    } else if (has_var_let) {
+        impl_->context_decl_pending_ = true;
     }
     impl_->source_bytes_ = source.size();
     impl_->last_partial_ = partial.text;

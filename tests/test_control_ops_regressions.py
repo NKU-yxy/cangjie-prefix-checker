@@ -164,6 +164,12 @@ INVALID_CASES = (
         "class P { var a: Int64 func a(): Int64 { return 1 } }",
         10,
     ),
+    InvalidCase(
+        "var fields without initializer must be assigned by a constructor",
+        "class Point { var x: Float64 var y: Float64 "
+        "func dist(): Float64 { return x * x + y * y } }",
+        28,
+    ),
 )
 
 
@@ -245,11 +251,6 @@ VALID_CASES = (
     ValidCase(
         "compact constructor initializes a let field",
         "class Point { let x: Int64 init(x: Int64) { this.x = x; } }",
-    ),
-    ValidCase(
-        "legacy bare fields do not require constructor initialization",
-        "class Point { x: Float64 y: Float64 "
-        "func dist(): Float64 { return x * x + y * y } }",
     ),
     ValidCase(
         "adjacent compact constructor assignments preserve field types",

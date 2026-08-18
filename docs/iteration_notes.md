@@ -255,3 +255,218 @@ v2（02:58 提交）→ **CE**；v3 首发（09:34）→ **WA 0 分（通过列�
 ### 存档
 
 - `results/results_20260818_v5.md`（含建议动作：联系平台 + 定期重试）。
+
+---
+
+## v6 语义优化（2026-08-18）—— 队友交接文档方向
+
+### 来源
+
+队友交接文档 `CANGJIE_FINAL_SEMANTIC_HANDOFF_20260817.md` 的"可能的优化方向"：裸标识符 loop body、同行 var/let 声明后立即使用、字符串/注释伪构造器、var 字段 ctor 初始化。
+
+### 修复（`cpp/native_semantic.cpp`）
+
+1. **Bug A — 同行 var/let 声明后立即使用**：`HasBareVarLetKeyword`（whole-word 检测）+ `HasDeclNameAfterKeyword`；context 重建新增 pending 机制：var/let 关键字 delta 置 pending（不重建），声明 `=` 出现时重建一次（`CollectLocalVariables` 正则要求 `var NAME : TYPE =` 完整形态才入表）。修复 `var i: Int64 = 0 while (i < 10) { ... }` 同行场景 i 未入上下文。
+2. **Bug B — 裸标识符 loop body**：`IsUnfinishedKeywordPrefix`（完整标识符 ≠ 未完成关键字前缀），替换 `IsStatementPrefix`；loop body 序列拆分 `TopLevelSpacePositions` + `ExpandTrailingAtoms`（尾部原子表达式且 head 可解析才拆，`EndsWithIncompleteToken` 防 `i +` 误拆）。
+3. **Bug C — 字符串/注释伪构造器**：`CheckConstructorsFromRecords`/`CheckConstructorsRegex` 用 `MaskNonCodeText` 掩码文本扫描。
+4. **新缺口 D — var 字段无 initializer 必须被 ctor 赋值**（官方 `E_DECL_FIELD_UNINIT`）。
+
+### 性能修复（scale 2× 回退）
+
+- v6 初版 pending 死循环：`context_decl_pending_` 在声明完成前恒 true → **每 token 一次全量 context 重建**（300-locals 实测 `context_rebuilds=3304`≈tokens），规模例全线 2× 变慢（300-locals 13.9s、8KB-string 34.6s）。
+- 修复：关键字 delta 只置 pending 不重建，名字 delta 不重建，**声明 `=` delta 重建一次**并清 pending → 重建 3304→604（≈每声明 2 次，线性）。300-locals 13.9→7.4s、8KB-string 34.6→15.1s，与冻结版 A 持平。
+
+### 验证
+
+| 门禁 | 结果 |
+|---|---|
+| wrong/ + wrong2/（官方 harness） | **100/100**（13.0s + 11.3s） |
+| 8fec 定向矩阵（同行声明/构造器/伪声明） | **52/52** |
+| test_native_solution + hidden_fuzz + grammar_shadow + incremental_semantic/lexer | 26/26 OK |
+| test_control_ops_regressions | 2/2 OK |
+| 提交包解压 → build.sh → 100/100 | PASS（solution md5 14285d6c） |
+
+### 性能（官方 50，容器 aarch64 冷进程 A/B/A）
+
+- A = 冻结版（v1-v5，同参数重建 md5 991c1385）、B = v6（14285d6c）
+- SUM：A1=5221.1ms、B 多轮 5084–5522ms（首轮 5522 为环境噪声，后两轮 5084/5229）、A2=5252.0ms
+- A1/A2 漂移 **0.59%**（<3% 契约 ✓）；B 相对 A 平均 ≈ **-1.5% 无回退**（≤+1% ✓）
+- 容器 100/100 全量：wrong sum=13.0s mean=0.26s；wrong2 sum=11.3s mean=0.23s
+
+### scale/RSS 诊断（9 例，B 与冻结版 A 一致，均为历史遗留）
+
+| 例 | 耗时 | 备注 |
+|---|---|---|
+| eight-kilobyte-string | 15.1s / **RSS≈57GB** | 历史遗留（A 同款 15.9s/56.8GB），卡死级资源问题 |
+| three-hundred-local-declarations | 7.4s | 契约 G1 记录 448ms，历史回退（G1 后引入） |
+| late-error-after-250-declarations | 5.5s / 答案数 2765<2771 | A/B 行为一致，历史遗留 |
+| 其余 6 例 | 0.03–5.5s | 与 A 持平 |
+
+v6 未引入新的规模问题（初版 2× 已修回）；上述三项为独立历史问题，不在本次修复范围。
+
+### 交付
+
+- `cangjie-checker_v6_20260818.zip`（986,321 B < 1MB），含 solution.aarch64.xz（md5 14285d6c）、build.sh（解压式，exit 0）、grammar/、generated/context.bin、assets/cl100k_base.bin.xz。较 v5 精简掉 build.sh 不读的 context.json（-43.6KB）以容纳更大的二进制。
+- 判题端 CE 问题（v5 实锤）与 v6 无关，上传前先确认官网环境恢复。
+
+---
+
+## v6 提交修正（2026-08-18 12:28）—— zip 目录前缀导致 0 分
+
+### 判题端反馈（2026-08-18 12:26 提交）
+
+```
+得分：0.00
+JSON格式错误!
+chmod: cannot access 'build.sh': No such file or directory
+```
+
+组委会回复：官方环境没问题，问题在打包。
+
+### 根因
+
+v6 zip 用 `zip -r xxx.zip v6zip` 打包，zip 内所有文件带 **`v6zip/` 顶层前缀**：
+`v6zip/build.sh`。判题端解压后执行 `chmod +x build.sh` 找不到根目录文件 → 流程异常 → 平台显示 JSON 格式错误。
+
+v1-v5 的 zip 均为**平铺结构**（build.sh 在根），本次打包失误。
+
+### 修复
+
+- 重新打包：`cd v6zip && zip -r ../xxx.zip .`（平铺，build.sh 在根）
+- zip：`cangjie-checker_v6_20260818.zip`，986,073 B < 1MB
+- sha256：`2c8b808cc05e9fb592e4954b070a1ae6f2b1009bcf10842f3e5a9aae53a832ee`
+- solution.aarch64.xz 不变（md5 14285d6c，与已验证 100/100 的 B 相同）
+
+### 判题端模拟（容器内全链路）
+
+```
+解压 → chmod +x build.sh ✓ → ./build.sh ✓ → solution 14285d6c ✓ → harness 100/100 ✓
+```
+
+### 结论
+
+- 判题端环境已恢复（v5 的 CE 实锤为当时环境故障；本次反馈能给出具体命令错误，说明链路正常）。
+- 判题端协议与官方 harness 一致：首个错误位置输出 1、其余输出 0（与赛题文档示例相反，以 harness/判题端为准，本地 100/100 已验证）。
+- 重新上传平铺版 v6 zip 即可；若需对照，v5 的平铺结构同此。
+
+## v6b（2026-08-18 12:36）— 恢复源码+编译型打包，根治判题端 CE
+
+### 背景
+
+12:30 平铺 v6（2c8b808c，预编译+解压型 build.sh）仍 CE，详情与 v2-v5 相同的三路径
+（finals harness / wrong_error_positions.json / testdata/wrong）。用户提供 test_v1.zip
+（v1 打包，可正常评测）要求对比。
+
+### 对比结论：v1 与 v6 的打包差异 = CE 根因
+
+| 维度 | test_v1.zip（v1，可评测） | v5/v6（CE） |
+|---|---|---|
+| 源码 | **含完整源码**（cpp/ src/ tools/ third_party/xgrammar_core/） | **无源码**（仅预编译二进制） |
+| build.sh | **编译型**：判题端 c++ 编译出 solution | 解压型：python3 lzma 解压 |
+| context.json | 有 | v6 无（v5 有） |
+
+- 赛题明文要求"提交 zip **包含源码** + build.sh 用于**编译**"；判题端对无源码包
+  在构建阶段直接拒绝 → CE 三路径（构建失败配置行格式）。
+- 时间线自洽：00:21 v1（源码）出分 60/100 → 09:34 v3 首发（源码）正常出 WA →
+  09:48 v3 二次起全部 CE（v5/v6 为无源码预编译包；判题端当时亦异常）→
+  test_v1.zip（源码）现在可正常评测。
+- 12:26 带 v6zip/ 前缀的"JSON格式错误"是顶层目录问题的独立故障，与源码缺失无关。
+
+### 修复
+
+- v6b = v4 同构（源码 + 硬化编译型 build.sh，判题端验证过的结构），仅将
+  cpp/native_semantic.cpp 替换为 v6 最终版（8562 行，12:15）。
+- zip：`cangjie-checker_v6b_20260818.zip`，891,077 B < 1MB
+- sha256：`ed5a927f37db715ae5a0a42f7ceea48b52e787f4c2681d2390dc1adc81839ae9`
+
+### 判题端模拟（容器内全链路）
+
+```
+python3 zipfile 解压 → chmod +x build.sh ✓ → ./build.sh（现场编译 18 个 xgrammar .cc + 3 cpp）✓
+→ solution 1,629,528 B（md5 14285d6c，与 v6 预编译二进制逐字节一致）→ harness 100/100 ✓
+```
+
+编译产物 md5 与已验证 v6 二进制相同 ⇒ 100/100、52/52、A/B/A 性能数据全部沿用。
+
+### 结论
+
+- CE 根因 = 打包不含源码（预编译+解压型包被判题端构建阶段拒绝）；源码+编译型
+  （v1/v4/v6b 同构）是判题端唯一验证过的工作模式。
+- 上传 v6b 即应按 v1 同样方式正常评测。
+
+## v6 官网结果（2026-08-18 12:40:36 提交）— 57/100，较 v1 回退 3 例
+
+结果存档：`results/results_20260818_v6.md`（57 例全部通过时间 0.367–0.658s，均值 0.459s）。
+
+### 对比分析（v1 60/100 → v6 57/100）
+
+**丢失 3 例**（均为 v1 通过、v6 未通过）：
+
+| 用例 | 类别 | v1 来源 |
+|---|---|---|
+| err_min_mixed_family | min 混合参数 | v1 修正 arg_type 混合推断（cf43d7e） |
+| err_max_clamp_family | max/clamp 混合 | v1 修正 |
+| err_infer_witness_trio | infer 泛型推断 | v1 修正 |
+
+**新增 0 例**：v6 通过的 57 例 ⊆ v1 通过的 60 例。
+
+### 根因：v2/v3 strict_generic 机制（本会话定论）
+
+- v2/v3 引入 strict_generic：对裸调用的泛型全局函数（min/max，T 绑定失败）跳过
+  BindTypeVariables，**全部参数错误延迟到右括号 `)` 处**，动机来自 vendored
+  typechecker（third_party/cangjie_typechecker）fuzzer 校准。
+- 官方判题端不同意该行为：v1（无 strict_generic）官方 60/100 证明 min/max 族
+  GT 错误位在**参数位置**，而非 `)`。
+- 本地复现（协议级 battery，41 模式 × v1/v6）：
+
+| 模式 | v1 首错位 | v6 首错位 |
+|---|---|---|
+| m_arg0/arg1/mix0/mix1/x_arg1/x_mix1 | 14（参数位） | 20（`)`） |
+| m_long/x_long（超参） | 20 | 23 |
+| **m_ok/x_ok（合法 min(1,1,[1,2])）** | **ALL0** | **20 —— v6 对合法调用误报** |
+
+- v6 的 m_ok/x_ok 误报意味着官方隐藏集里若出现合法 min/max 调用，v6 必然报错
+  直接 0 分；v1 行为正确。
+- 结论：v2/v3/v6 全部改动在官方集净收益为零、净损失 3 例；strict_generic 应
+  整体回退。
+
+## v7（2026-08-18 13:09）— v1 语义核心 + v6 非 generic 修复，找回 3 例并保留 v6 增益
+
+### 方案
+
+v7 = **v1（cf43d7e）语义核心** + v6 中与 strict_generic 无关的 Bug A-D/待办修复
+（IsIdentifierText、IsStatementPrefix、CollectTopLevelDeclarationsBefore、
+CheckLoopStatementSequence、CheckConstructorFieldInitialization、
+CheckConstructorsFromRecords/Regex、IncrementalSemanticEngine::Probe），
+11 个 hunk 全部无冲突应用（8503 行），strict_generic 整体移除。
+
+### 本地验证（三重证据链）
+
+1. **协议级 battery（41 模式）**：zip 构建的 v7 solution 与 v1 **41/41 逐例一致**
+   ——m_arg0/arg1/mix0/mix1/x_arg1/x_mix1=14（参数位）、m_long/x_long=20、
+   **m_ok/x_ok=ALL0（合法调用不再误报）**。clamp/abs/print 三版本一致。
+   ⇒ v7 找回 v1 的 min/max 官方行为（+3 例）。
+2. **官网 harness 100/100**：wrong 50/50（sum 12.586s）+ wrong2 50/50（sum 10.429s）。
+3. **8fec 矩阵（52 语义用例，context-capable 官方 typechecker 打标）**：
+   - 标签分布：14 VALID / 25 INVALID / 13 ERROR（reference-upstream 版 typechecker
+     支持 context="final"；容器镜像 /opt/cangjie-fragment-checker 的 typechecker
+     为旧版无 context 参数，**容器内矩阵结果全部无效**，此前的"52/52"系
+     TypeError→ERROR 标签无条件放行的假阳性）。
+   - **v7 = 52/52**，且与 v6 状态行逐例一致；**v1 = 41/52**，FAIL 11 例：
+     8 例 VALID 误报（same-line 多字段、字符串/注释伪声明、func/init 紧邻、
+     双构造器、var 字段免初始化、while 体）+ 3 例 INVALID 漏报。
+     ⇒ v6 的 Bug A-D 修复是真实正确性增益，v7 完整保留。
+
+### 交付
+
+- zip：`cangjie-checker_v7_20260818.zip`，895,741 B < 1MB
+- 容器全链路：zip 解压 → build.sh → solution（1,645,912 B）→ battery 41/41 == v1 ✓
+- 宿主项目 cpp/native_semantic.cpp 已同步为 v7（8503 行）；v6 源码备份
+  /tmp/host_native_semantic_v6_backup.cpp（sha256 257dd99755866970）。
+
+### 预期
+
+- 找回 v1 的 60 例（min/max/clamp/infer 三族恢复参数位/合法调用正确性）；
+- Bug A-D 修复在官方隐藏集上的收益未定（v6 已含这些修复但被 strict_generic
+  拖累 3 例；若官方集含 same-line/ctor 族，v7 可能 >60）；
+- 上传 v7 后以官网结果为准进入下一轮。
