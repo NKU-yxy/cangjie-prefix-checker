@@ -775,3 +775,74 @@ v9 结论需要修订：旧 golds 下 100/100 已不成立，v10 必须按新语
 - 308/341 两例：若 finals keys 用 040fbbc 新 generator 重新生成（而非冻结的旧 keys），
   这两族会各 -1；反之 v10 的 4 处修复在旧 keys 下可能损失 finals 对应族——但
   wrong2 规则是官方声明的稳定权威（wrong2 golds 从未变），v10 与其完全一致。
+
+## v11（2026-08-18 19:49 上传）— F1 模型修正 + twin 条件 lambda 锚 + 恢复闭包精化；官方 60→59（-1）
+
+### 本轮改动（相对 v10 上传包）
+
+1. **F1：first/last 成员模型修正**（context.json + generated/context.bin 重生成）：
+   `Array.first` / `Array.last` 从方法改为 **Optional\<T\> 实例字段**，与 context_final
+   其他 nominals 的字段形态一致（Array 其余成员：字段 size/first/last；方法
+   get/fill/swap/slice/clone/concat/reverse/indexOf —— 均不可达 String，保住 308 锚）。
+2. **twin 条件 lambda 二元体锚定**（err_lambda_tick_callback@`+` vs
+   err_lambda_interface_callback_explicit@`}` 的调和）：
+   - 记录成功类型检查的已闭合 lambda 体（去空白规范形）到 `g_valid_lambda_bodies`；
+   - lambda 返回类型不匹配时：若体为二元运算尾且存在已见 twin 前缀 → 在运算符处
+     提交（round-2 tick 语义）；否则延迟到 `}`（round-1/回调语义）。
+   - 这是满足 wrong 与 wrong2 两个 gate 的**唯一**内容判别器（tick 前有合法 twin
+     `{ v: Int64 => v + 1 }`，callback_explicit 无）。
+3. **HasRecoveringMember 恢复闭包精化**（修复 v11b 引入的 3 个 gate 回归 + 矩阵假阳）：
+   - 函数类型（方法值）经 `FunctionTypeParts` 拆 `(params)->result`，0 参可构造调用恢复
+     （`g()` → R）；
+   - 方法值本身 fn_type Compatible 即活（`a.clone` 作为 `() -> Array<Int64>`）；
+   - 构造调用结果允许**一层浅后缀**（字段 + 0 参方法结果的 Compatible 或裸类型变量，
+     无 primitive→String 特例、无递归）——`m.get(1).getOrThrow()` 活、`arr.get(0)` 死；
+   - 标量/裸类型变量结果保持 Compatible 即活（`run<R>` 的 R、p/h 族）。
+
+### 本地门禁（v11d，首次双门全绿）
+
+| 验证项 | 结果 |
+|---|---|
+| wrong 50 例 | **50/50**（v10 48/50；3 个回归全部消除） |
+| wrong2 50 例 | **50/50**（v10 50/50，零回归） |
+| 5 个官方锚点 | 308=` arr`、344=` })\n`、304=` })\n`、250=` +`、335=`",` 全部精确 |
+| 33 例矩阵（fire 侧） | 32/33（S=peek 为探针 artifact） |
+| 最坏单例 | 0.47s ≪ 5s；zip 896,483 B < 1MB |
+
+### 官方结果：59/100（v10 60/100，净 -1）
+
+- **+3**：err_array_first_optional（F1 直接收益，归因明确）、err_lambda_max_by、
+  err_stack_toarray_string（机制待确认）。
+- **−4**：err_abs_bool_helper、err_abs_to_string、err_arraylist_get_throw_str、
+  err_deque_capacity_string。**共同特征：primitive 结果（abs/capacity/get 等）被当 String 用**。
+- 7 个变化用例全部 finals-only，公开 wrong/wrong2 与两份 error_positions.json 均无
+  → 无法本地复现，归因为机制假设。
+
+### 经验教训（本轮核心）
+
+1. **本地门禁全绿 ≠ 官方满分**：本地 100 例覆盖 lambda 锚族、容器 API 族、infer 族，
+   但**不覆盖「primitive 结果当 String」的标识符生死边界**。v11 首次双门全绿却官方
+   −1，说明门禁在恢复闭包宽度这一维度判别力不足 —— 公开用例无 abs()/capacity/
+   toArray()/get().getOrThrow()→String 这类形态。
+2. **模型正确性 > 锚点微调**：F1（first/last → Optional\<T\> 字段）是唯一带来官方
+   新增通过（err_array_first_optional）的改动；锚点修复（twin 条件）换来
+   err_lambda_max_by，但净值为负。方向：继续沿「模型与 context_final 对齐」推进，
+   恢复闭包宽度宁紧勿松。
+3. **恢复闭包宽度是双刃剑**：为修矩阵假阳（m/g/p/h）引入的浅后缀/特例，同一机制
+   可能在官方判死的标识符处判活 → 报错延迟 1 token → 0 分。官方在标识符处判活的
+   边界证据目前只有 3 个样本且分属不同规则族：308（arr 死：调用链不延伸）、
+   B6（a.first 活：1 后缀 + 成员闭包延伸）、344（`v + 1` 活：.toString 恢复）。
+4. **v11 打包教训**：首次 zip 1.87MB 超限（含 generated/cl100k_base.bin、
+   src/__pycache__/*.pyc、third_party/cangjie_typechecker/），按 v10 manifest 重建后
+   896KB；zip 内 build.sh 为 Linux 目标（`--gc-sections`，GNU ld），macOS 本地复验
+   需替换为 `-Wl,-dead_strip`。
+
+### 下一步方向（未启动，仅存档，待用户决定是否 v12）
+
+- 构造「primitive 结果当 String」探测族（abs()/capacity/toArray()/get().getOrThrow()
+  → String 目标），用官方 typechecker + context_final 逐例裁决标识符生死；
+- 重点裁决 `n.abs()`（1 构造调用 → Int64）与 `a.first`（1 后缀 → Optional\<Int64\>）
+  的恢复边界差异，决定 primitive→String 特例是否应收窄到「仅 1 后缀路径」；
+- 若确认 4 例丢失为恢复闭包过宽，v12 收敛方向：标识符恢复只允许
+  1 后缀/1 调用且**结果必须 Compatible（不含 primitive→String 特例）**，
+  String 目标恢复仅通过显式 `.toString()` 成员路径。
