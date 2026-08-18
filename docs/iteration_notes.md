@@ -235,3 +235,23 @@ v2（02:58 提交）→ **CE**；v3 首发（09:34）→ **WA 0 分（通过列�
 
 1. 上传 `cangjie-checker_v5_20260818.zip`（项目根目录，985,455 B，sha256 `7b5e8f48a529722cf2d2bf6c6860c6d68c62fb4fce08b50c1a9fd9b9870bcbfc`）。
 2. 按 CE 详情三种走向分别处理（见上）。
+
+---
+
+## v5 提交结果（2026-08-18 10:38:29）—— 官网判题端问题实锤
+
+### 事实
+
+- v5（预编译 aarch64 二进制 + 无条件 exit 0 build.sh）上传后**仍 CE**，详情与 v2/v3/v4 **逐字相同**（三路径：finals harness / wrong_error_positions.json / testdata/wrong）。
+- 五次 CE（不同 zip）同详情 + v5 无任何我方失败可能性 ⇒ **官网判题端环境损坏，与参赛包无关**。
+
+### 证据链（归档版）
+
+1. v5 build.sh 无条件 exit 0、零编译 ⇒ 我方无 CE 触发点；CE 详情无 `solution executable` ⇒ solution 在判题端存在且可执行。
+2. 缺失路径全部位于判题系统目录（`/opt/cangjie-fragment-checker-finals/`、`/coursegrader/testdata/`），参赛包不含这些路径，zip 内容无法影响。
+3. 四次内容互异的 zip ⇒ 相同 CE 详情 ⇒ CE 与 zip 解耦。
+4. 时间线：00:21 v1 出分 60/100 → 09:34 出 WA（判题端数据在）→ 09:48 起连续 CE。
+
+### 存档
+
+- `results/results_20260818_v5.md`（含建议动作：联系平台 + 定期重试）。
