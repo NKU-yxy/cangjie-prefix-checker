@@ -618,3 +618,95 @@ CheckConstructorsFromRecords/Regex、IncrementalSemanticEngine::Probe），
    arith/logical/index/for/eq 家族（err_arith_mixed_family 等未出现在任何
    通过名单）—— 需要官方锚点实测这些家族在 context_final 下的形态。
 3. 若环境允许，重传 v8 同包确认 60 稳定后，再专攻名单外家族。
+
+---
+
+## v9.1（2026-08-18）— 官方 checker 重大更新：判题语义地面真相到手
+
+### 发生了什么
+
+官方仓库更新两个 commit（`e026ff7` + `040fbbc`，本地已 merge 至 `040fbbc`）：
+- **发布官方 typechecker + finals context（`typechecker/typechecker/context_final.json`）+ wrong2 完整数据集**；
+- **发布两份位置审计文档**：`scripts/error_position_audit.md`（wrong 50 例，1008 行）、
+  `scripts/error_position_audit_wrong2.md`（wrong2 50 例，799 行）——每例给出"第一个
+  不可延续 token"及理由，这是判题锚点唯一权威来源；
+- **发布权威双向类型规则** `typechecker/typing-rules.md`（1334 行），Layout 模型见下；
+- **wrong golds 对齐 continuability（12 处改动）**：err_assign_let 425→427、
+  err_return_type_mismatch 18→20、err_arraylist_toarray_assign 309→308、
+  err_eq_incomparable 296→298、err_rel_mixed_numeric 281→285、
+  err_lambda_interface_callback_explicit 341→344。
+
+**v8/v9 二进制在新 golds 下：wrong 44/50（丢 6 例），wrong2 仍 50/50。**
+v9 结论需要修订：旧 golds 下 100/100 已不成立，v10 必须按新语义修。
+
+### 官方延续模型（typing-rules.md §Layout，判题唯一权威）
+
+- 换行是 **token 分隔符，不是语句终结符**（subset 无分号）；块 = 节点序列。
+- **member postfix（`.`）与 infix 运算符可跨换行延续**：`let x: Int64 = name`
+  换行后接 `.size` 仍是同一 initializer；`true && 1` 换行后接 `== 0` 仍是同一条件。
+  ⇒ **换行本身不提交类型不匹配**；错误锚点延迟到"不能再延续的 token"：
+  新语句起点（如 `println`）、换行后的 call/index 起点、`)`、块 `}`。
+- **call `(...)` 与 index `[...]` 不跨换行延续**（`{ => 1 }` 换行后 `(5)` 是两个节点）。
+- 锚点 = 第一个不可延续 token（前缀 0..i 无法扩展成可编译程序，0..i-1 可以）；
+  扩展只允许**追加后缀**，不允许插入/改写。
+- 提交点总结：arity → `)`；arg 类型 → 出错字面量尾（含 `",`/`")\n` 融合 token）；
+  RHS 类型错误可经 `.size`/`.toString` 恢复 → 延迟到 println；函数体最后表达式
+  不匹配 → 延迟到 `}`（函数体可继续加语句）；运算符类（`%`、`<`、`==`、`+` 等）
+  → 运算符提交当无恢复路径。
+
+### 官方 typechecker 裁决（/tmp/probe_v10.py，context_final 实测）
+
+| 探针 | 结果 | 结论 |
+|---|---|---|
+| `func f(): Int64 { true\n9 }` | NO ERROR | 函数体多语句延续合法 ⇒ return 锚 `}` ✓ |
+| `{ v: Int64 => v + 1\n "ok" }` | **UnexpectedToken 期望 RBRACE** | **lambda `=>` 体是单表达式，非块** ⇒ 体错误锚 `+`（wrong2 语义）|
+| `let s: String = arr.size.toString()` | NO ERROR | `.size.toString()` 是合法恢复 ⇒ 官方 308 与模型矛盾 |
+| `n = "x".size` / `1 == "x".size` / `1 < 1.0.toString().size` / 跨行 `.size` | NO ERROR | assign/eq/rel 延迟到 println 成立 ✓ |
+
+### 官方数据内部矛盾（3 处，v10 处理策略）
+
+1. **lambda 体错误锚点**：wrong2/err_lambda_tick_callback 锚 ` +`（= 官方 parser 语义，
+   v8 已匹配 ✓）；wrong/err_lambda_interface_callback_explicit 新锚 ` })\n`（344）——
+   其 audit 声称"lambda body 可作块延续"，但 parser 实测拒绝 ⇒ **344 是官方数据 bug，
+   不接受**。v10 保持 v8 现状（`+`）。
+2. **err_arraylist_toarray_assign**：官方新锚 308（` arr`）声称 Array 无恢复路径，
+   但 typechecker 实测 `arr.size.toString()` 合法 ⇒ 308 违反官方自己的 Layout 模型
+   （换行不提交）。模型指向 println(~310)。v10 按模型实现，该例接受与 gold 偏差。
+3. **err_assign_let / err_eq_incomparable / err_rel_mixed_numeric**：官方新锚 println
+   与模型一致（换行不提交、member 延续跨行），v8 现状（`"\n` / `.`）过时。
+
+### v8 源码根因（implicit return 检查带函数序号依赖）
+
+`native_semantic.cpp:8236-8254`：`implicit_result_stable = FunctionClose || (atomic &&
+!first_open_source_function)`。`first_open_source_function`（文件内函数计数==1）导致
+**同构代码行为不一致**：wrong2/err_func_body_return（badBody 为第 1 个函数）延迟到
+`}\n\n`（=gold ✓）；wrong/err_return_type_mismatch（f 为第 2 个函数）在 ` true` 即报
+（≠gold 20 ✗）。官方语义无此依赖——函数体永远可延续，锚点只在 `}`。
+
+### v10 改动清单（按模型，经 typechecker 裁决）
+
+1. **return 延迟到 `}`**：删除 `(atomic && !first_open_source_function)` 分支
+   （连带 first_open_source_function 变量），implicit_result_stable 仅 FunctionClose。
+   ⇒ err_return_type_mismatch 18→20 ✓；wrong2 err_func_body_return 保持 ✓。
+2. **assign/eq/rel RHS 错误延迟到 println**（换行不提交）：
+   - `n = "x"`（assignment 分支 8204-8211）：`"x"` 可 `.size` 恢复 ⇒ 延迟过换行到 println；
+   - `1 == "x"`：同（`.size` 恢复）⇒ println；
+   - `1 < 1.0`：`.` 可开启 member 延续（`1.0.toString().size` 恢复）⇒ 不再在 `.` 报，
+     延迟到 println。
+   机制：should_defer_expression_error 对"可恢复类型"（String/Int64/Float64 存在
+   member 路径到期望类型）且错误 token 为融合 `\n`（newline 未提交）时继续延迟。
+3. **lambda 体错误保持 `+`**（v8 现状 = wrong2 语义 ✓，不改）。
+4. **err_arraylist_toarray_assign** 按模型到 println（接受与 gold 308 偏差）。
+
+### 验证流程（v10 完成标准）
+
+- 新 golds 门禁：wrong ≥ 49/50（允许 arr 例偏差）、wrong2 50/50；
+- firepos 抽查 6 个变更用例的新锚；statement fuzzer 回归；官方 typechecker
+  + context_final 差分（finals 风格用例生成已可行——官方发布了 context_final）；
+- zip < 1MB、单用例 ≤5s、commit 只署用户。
+
+### 工具更新
+
+- `official-reference` 已 merge 至 `040fbbc`（含 typechecker/context_final/audit 文档）。
+- `/tmp/probe_v10.py`：context_final + 官方 typechecker 探针（探针脚本，非二进制）。
+- 本地旧 wrong2 备份在 `/tmp/wrong2_local_backup`（内容 = 官方版，无差异）。
