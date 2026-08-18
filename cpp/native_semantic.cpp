@@ -776,137 +776,18 @@ std::pair<std::vector<std::string>, std::string> FunctionTypeParts(std::string_v
     return {params, normalized.substr(arrow + 2)};
 }
 
-void AddBuiltinModel(Model* model) {
-    auto add_function = [&](std::string name, std::string param, std::string result) {
-        FunctionSig sig;
-        sig.name = name;
-        sig.param_names = {"value"};
-        sig.param_types = {std::move(param)};
-        sig.result = std::move(result);
-        sig.required = 1;
-        model->functions[name].push_back(std::move(sig));
-    };
-    for (const std::string& name : {"println", "print", "eprintln", "eprint"}) {
-        add_function(name, "String", "Unit");
-        add_function(name, "Int64", "Unit");
-        add_function(name, "Float64", "Unit");
-    }
-
-    auto add_nominal = [&](std::string name, std::vector<std::string> params) -> NominalInfo& {
-        NominalInfo info;
-        info.name = name;
-        info.type_params = std::move(params);
-        return model->nominals.emplace(name, std::move(info)).first->second;
-    };
-    auto add_method = [](
-        NominalInfo* info,
-        std::string name,
-        std::vector<std::string> params,
-        std::string result,
-        std::vector<std::string> param_names = {}
-    ) {
-        FunctionSig sig;
-        sig.name = name;
-        sig.param_types = std::move(params);
-        sig.param_names = std::move(param_names);
-        while (sig.param_names.size() < sig.param_types.size()) {
-            sig.param_names.push_back("arg" + std::to_string(sig.param_names.size()));
-        }
-        sig.result = std::move(result);
-        sig.required = sig.param_types.size();
-        info->methods[name].push_back(std::move(sig));
-    };
-    auto add_ctor = [](
-        NominalInfo* info,
-        std::vector<std::string> params,
-        std::vector<std::string> names = {}
-    ) {
-        FunctionSig sig;
-        sig.name = info->name;
-        sig.type_params = info->type_params;
-        sig.param_types = std::move(params);
-        sig.param_names = std::move(names);
-        while (sig.param_names.size() < sig.param_types.size()) {
-            sig.param_names.push_back("arg" + std::to_string(sig.param_names.size()));
-        }
-        sig.required = sig.param_types.size();
-        sig.result = info->name;
-        if (!info->type_params.empty()) {
-            sig.result += "<";
-            for (std::size_t i = 0; i < info->type_params.size(); ++i) {
-                if (i) sig.result += ",";
-                sig.result += info->type_params[i];
-            }
-            sig.result += ">";
-        }
-        info->constructors.push_back(std::move(sig));
-    };
-
-    NominalInfo& array = add_nominal("Array", {"T"});
-    array.fields["size"] = "Int64";
-    add_ctor(&array, {"Int64", "T"}, {"size", "repeat"});
-    add_ctor(&array, {"Array<T>"});
-    add_ctor(&array, {"Int64"}, {"size"});
-    add_method(&array, "fill", {"T"}, "Unit", {"value"});
-    add_method(&array, "get", {"Int64"}, "Optional<T>");
-    array.fields["first"] = "Optional<T>";
-    array.fields["last"] = "Optional<T>";
-    add_method(&array, "toString", {}, "String");
-
-    NominalInfo& list = add_nominal("ArrayList", {"T"});
-    list.fields["size"] = "Int64";
-    list.fields["capacity"] = "Int64";
-    add_ctor(&list, {});
-    add_ctor(&list, {"Array<T>"});
-    add_ctor(&list, {"Int64"});
-    add_method(&list, "add", {"T"}, "Unit", {"value"});
-    add_method(&list, "add", {"ArrayList<T>"}, "Unit");
-    add_method(&list, "toArray", {}, "Array<T>");
-    add_method(&list, "isEmpty", {}, "Bool");
-    add_method(&list, "toString", {}, "String");
-
-    NominalInfo& map = add_nominal("HashMap", {"K", "V"});
-    map.fields["size"] = "Int64";
-    map.fields["capacity"] = "Int64";
-    add_ctor(&map, {});
-    add_ctor(&map, {"Int64"});
-    add_ctor(&map, {"Array<(K,V)>"});
-    add_ctor(&map, {"HashMap<K,V>"});
-    add_method(&map, "add", {"K", "V"}, "Unit", {"key", "value"});
-    add_method(&map, "get", {"K"}, "Optional<V>", {"key"});
-    add_method(&map, "keys", {}, "KeysView<K>");
-    add_method(&map, "values", {}, "ValuesView<V>");
-    add_method(&map, "toString", {}, "String");
-
-    NominalInfo& set = add_nominal("HashSet", {"T"});
-    set.fields["size"] = "Int64";
-    add_ctor(&set, {});
-    add_ctor(&set, {"Int64"});
-    add_ctor(&set, {"Array<T>"});
-    add_method(&set, "add", {"T"}, "Bool", {"value"});
-    add_method(&set, "contains", {"T"}, "Bool");
-    add_method(&set, "toArray", {}, "Array<T>");
-    add_method(&set, "toString", {}, "String");
-
-    NominalInfo& string = add_nominal("String", {});
-    string.fields["size"] = "Int64";
-    for (const std::string& name : {"contains", "startsWith", "endsWith"}) {
-        add_method(&string, name, {"String"}, "Bool", {"value"});
-    }
-    add_method(&string, "isEmpty", {}, "Bool");
-    add_method(&string, "get", {"Int64"}, "Optional<Rune>");
-    add_method(&string, "compare", {"String"}, "Int64");
-    add_method(&string, "toString", {}, "String");
-
-    NominalInfo& optional = add_nominal("Optional", {"T"});
-    add_method(&optional, "getOrThrow", {}, "T");
-    NominalInfo& keys = add_nominal("KeysView", {"K"});
-    keys.fields["size"] = "Int64";
-    NominalInfo& values = add_nominal("ValuesView", {"V"});
-    values.fields["size"] = "Int64";
-    NominalInfo& range = add_nominal("Range", {"T"});
-    range.fields["size"] = "Int64";
-}
+// AddBuiltinModel was deleted in v14-AORTA Patch 1 (Context Canonical IR
+// single-sourcing).  The official context JSON (context_final.json) is the
+// single source of truth for every nominal, member, constructor, global
+// function and global variable; generated/context.bin carries it into the
+// runtime via LoadContextTable.  The hand-maintained nominal/API table here
+// duplicated that data (all of it was overwritten by context.bin, and its
+// println/print/eprintln/eprint overloads were appended on top of the
+// official ones), and it invented members the official context does not have
+// (toString on Array/ArrayList/HashMap/HashSet/String).  Per V14_Plan §5.2,
+// only language-intrinsic rules that the official context does not cover may
+// live in code (primitive operators, primitive toString); those are handled
+// by the checker rules themselves, not by a model table.
 
 class ContextTableReader {
  public:
@@ -8352,7 +8233,7 @@ class IncrementalSemanticEngine::Impl {
             profile_.BeginTypeGeneration();
         }
 #endif
-        AddBuiltinModel(&preload_);
+        // V14 Patch 1: generated/context.bin is the single context source.
         LoadContextTable(context_path_, &preload_);
         active_model_ = preload_;
     }
@@ -8363,6 +8244,10 @@ class IncrementalSemanticEngine::Impl {
         if (g_profile == &profile_) g_profile = nullptr;
     }
 #endif
+
+    // V14 Patch 1: serialize the preloaded context model as canonical
+    // Context IR JSON (context-ir-v1) for tools/compare_context_ir.py.
+    void DumpContextIrJson(std::ostream& os) const;
 
     std::string context_path_;
     Model preload_;
@@ -8383,6 +8268,154 @@ class IncrementalSemanticEngine::Impl {
     ProfileCounters profile_;
 #endif
 };
+
+namespace {
+
+// Canonical Context IR (context-ir-v1) JSON serializers.  The emitted schema
+// mirrors tools/export_official_context_ir.py exactly: sig keys in the order
+// (name, return_type, type_params, param_names, param_types, required_params),
+// overload lists keep model declaration order, name maps sorted.
+
+void JsonWriteString(std::ostream& os, std::string_view value) {
+    static const char kHex[] = "0123456789abcdef";
+    os << '"';
+    for (unsigned char c : value) {
+        switch (c) {
+            case '"': os << "\\\""; break;
+            case '\\': os << "\\\\"; break;
+            case '\n': os << "\\n"; break;
+            case '\r': os << "\\r"; break;
+            case '\t': os << "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    os << "\\u00" << kHex[(c >> 4) & 0xF] << kHex[c & 0xF];
+                } else {
+                    os << c;
+                }
+        }
+    }
+    os << '"';
+}
+
+void JsonWriteTexts(std::ostream& os, const std::vector<std::string>& texts) {
+    os << '[';
+    for (std::size_t index = 0; index < texts.size(); ++index) {
+        if (index) os << ", ";
+        JsonWriteString(os, texts[index]);
+    }
+    os << ']';
+}
+
+void DumpSignatureJson(std::ostream& os, const FunctionSig& sig) {
+    os << "{\"name\": ";
+    JsonWriteString(os, sig.name);
+    os << ", \"return_type\": ";
+    JsonWriteString(os, sig.result);
+    os << ", \"type_params\": ";
+    JsonWriteTexts(os, sig.type_params);
+    os << ", \"param_names\": ";
+    JsonWriteTexts(os, sig.param_names);
+    os << ", \"param_types\": ";
+    JsonWriteTexts(os, sig.param_types);
+    os << ", \"required_params\": " << sig.required << '}';
+}
+
+void DumpSignatureListJson(std::ostream& os, const std::vector<FunctionSig>& sigs) {
+    os << '[';
+    for (std::size_t index = 0; index < sigs.size(); ++index) {
+        if (index) os << ", ";
+        DumpSignatureJson(os, sigs[index]);
+    }
+    os << ']';
+}
+
+void DumpSignatureMapJson(
+    std::ostream& os,
+    const std::unordered_map<std::string, std::vector<FunctionSig>>& map
+) {
+    os << '{';
+    std::vector<std::string> names;
+    names.reserve(map.size());
+    for (const auto& entry : map) names.push_back(entry.first);
+    std::sort(names.begin(), names.end());
+    bool first = true;
+    for (const std::string& name : names) {
+        if (!first) os << ", ";
+        first = false;
+        JsonWriteString(os, name);
+        os << ": ";
+        DumpSignatureListJson(os, map.at(name));
+    }
+    os << '}';
+}
+
+void DumpFieldMapJson(
+    std::ostream& os,
+    const std::unordered_map<std::string, std::string>& map
+) {
+    os << '{';
+    std::vector<std::string> names;
+    names.reserve(map.size());
+    for (const auto& entry : map) names.push_back(entry.first);
+    std::sort(names.begin(), names.end());
+    bool first = true;
+    for (const std::string& name : names) {
+        if (!first) os << ", ";
+        first = false;
+        JsonWriteString(os, name);
+        os << ": ";
+        JsonWriteString(os, map.at(name));
+    }
+    os << '}';
+}
+
+void DumpNominalJson(std::ostream& os, const NominalInfo& info) {
+    os << "{\"is_interface\": " << (info.is_interface ? "true" : "false")
+       << ", \"type_params\": ";
+    JsonWriteTexts(os, info.type_params);
+    os << ", \"supers\": ";
+    JsonWriteTexts(os, info.supers);
+    os << ", \"fields\": ";
+    DumpFieldMapJson(os, info.fields);
+    os << ", \"static_fields\": ";
+    DumpFieldMapJson(os, info.static_fields);
+    os << ", \"methods\": ";
+    DumpSignatureMapJson(os, info.methods);
+    os << ", \"static_methods\": ";
+    DumpSignatureMapJson(os, info.static_methods);
+    os << ", \"constructors\": ";
+    DumpSignatureListJson(os, info.constructors);
+    os << '}';
+}
+
+void DumpModelJson(std::ostream& os, const Model& model) {
+    os << "{\"schema\": \"context-ir-v1\", \"globals\": ";
+    DumpFieldMapJson(os, model.globals);
+    os << ", \"functions\": ";
+    DumpSignatureMapJson(os, model.functions);
+    os << ", \"nominals\": ";
+    os << '{';
+    std::vector<std::string> names;
+    names.reserve(model.nominals.size());
+    for (const auto& entry : model.nominals) names.push_back(entry.first);
+    std::sort(names.begin(), names.end());
+    bool first = true;
+    for (const std::string& name : names) {
+        if (!first) os << ", ";
+        first = false;
+        JsonWriteString(os, name);
+        os << ": ";
+        DumpNominalJson(os, model.nominals.at(name));
+    }
+    os << '}';
+    os << '}';
+}
+
+}  // namespace
+
+void IncrementalSemanticEngine::Impl::DumpContextIrJson(std::ostream& os) const {
+    DumpModelJson(os, preload_);
+}
 
 IncrementalSemanticEngine::IncrementalSemanticEngine(std::string context_path)
     : impl_(std::make_unique<Impl>(std::move(context_path))) {}
@@ -8587,6 +8620,10 @@ void IncrementalSemanticEngine::Rollback(const Checkpoint& checkpoint) {
     }
     impl_->source_bytes_ = checkpoint.source_bytes;
     impl_->statement_cache_.Reset();
+}
+
+void IncrementalSemanticEngine::DumpContextIrJson(std::ostream& os) const {
+    impl_->DumpContextIrJson(os);
 }
 
 NativeSemanticChecker::NativeSemanticChecker(std::string context_path)
