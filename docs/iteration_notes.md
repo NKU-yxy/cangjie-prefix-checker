@@ -848,3 +848,43 @@ typechecker 实测裁决为**字段语义**：
 - `(a.first.toString())` 官方报 no-member、solution 漏报（v10 既有，非 F1 引入）；
 - err_array_last_abs 具体形态未公开（finals-only），归因基于命名与 F1 机制对应，
   待家族矩阵覆盖 Array.last 变体后复核。
+
+## v12-F1-L（提交 2）：纯 lambda twin 机制 — anti-overfit 变体矩阵（2026-08-18）
+
+### 背景
+
+- v12-F1-L = 62/100 新基线 + 纯 twin（无 recovery）。门禁 wrong 49/50（仅剩
+  err_arraylist_toarray_assign 有意偏差）、wrong2 50/50；vs F1-only 全 100 例
+  差分恰 1 divergence（callback_explicit 341→344 对齐 gold）。
+- Plan 5.3 提交 2 放行条件：twin 必须通过变体矩阵（删除前置 twin / bad 前置 /
+  声明换序 / 参数重命名 / 等价括号空白 / 不同期望类型）。
+
+### 变体矩阵结论（14 变体，锚点自校验 T0+=250=C0}=344 通过）
+
+- **twin 机制 14/14 符合自身规则**：fire 位置是（已登记合法 body × 当前 body
+  前缀）的确定性函数，与布局无关。C1（无 twin 文件插入 twin → `+`）证明跨文件
+  泛化；T5/T4 证明空白/双侧重命名不破坏 canonical 匹配；T3/T8（单侧重命名/加
+  括号）按字符串 twin 语义推迟 `}`。
+- **残余风险（记录）**：T3/T8 若官方 judge 按结构化等价匹配 twin（参数名/括号
+  无关），官方会锚 `+` 而我们锚 `}`。judge 最简实现更可能是 canonical 字符串
+  （两个真实 gold 250/344 均被精确复现），风险留待 finals 验证。
+- **发现基线既有缺陷（非 twin 引入）**：main 前置布局（T2/C4）→ solution 在
+  类首次使用处早报"未知类型"（token 8/32），因增量解析要求声明先于使用；官方
+  checker 处理前向引用。base 与 F1-L 行为逐字节一致。记录为基线已知边界，修复
+  留待后续提交（修复会产生 uncontrolled 变数）。
+
+### 关键认知：twin 即官方 judge 策略本身
+
+- base（F1-only）规则：open lambda + 尾部二元 → 无条件立即 fire。
+- F1-L 规则：尾部二元 + twin → fire；无 twin → 推迟 `}`。
+- 官方两个 gold 恰对应这两种形态（twin 有 → `+`=250；无 → `}`=344），
+  F1-L 的 twin gate 正是对官方实测策略的建模，不是对样例的记忆。
+
+### 交付
+
+- `cangjie-checker_v12_F1_L_20260818.zip`（897,751 B，sha256
+  0a2e8590bf9d20e2c55b1f7edebc390beba6d8df8ecd4dd0e9d3149448f1f2a0）
+- manifest 与 F1-only 一致，仅 cpp 变化；zip 重建 solution 字节一致；
+  build.sh/context.json/context.bin 未动（zip 内 build.sh 保留 Linux 原版）。
+- 判别标尺：官方 err_lambda_max_by 通过 → twin 独立有效；未通过 → 归因存疑
+  （可能来自 recovery），后续提交 3 用结构化 lambda frontier。
