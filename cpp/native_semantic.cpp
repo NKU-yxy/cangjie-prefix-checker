@@ -3502,6 +3502,146 @@ RecoveryWitness FindRecoveryWitness(
     return result;
 }
 
+// Patch 5 activation (plan §6.2/§6.3): a let-decl initializer that is a bare
+// identifier commits AT the identifier when no continuation can reach the
+// declared type — the official anchor for `let s: String = arr` is the `arr`
+// token itself ("Array<Int64> has no member or operator path to String; the
+// identifier commits; the following newline is too late"), while an
+// extendable RHS (`a.toArray()`, `s.contains(1)`, `m.get(1).getOrThrow()`,
+// `p.add(0, 0)`, `h.run({...})`) keeps the legacy deferral.
+//
+// Model-based by design: primitives are not nominals in the official
+// context, so they have no members (in particular no synthesized toString —
+// `.size` is Int64 and that is a dead end, per the audit).  Function-type
+// parameters are always constructible (a lambda can be written), and a
+// member result still carrying an unbound type parameter (e.g. Host.run<R>
+// → R) counts as reachable — conservative defer, never a new fire.
+bool LetRhsRecoverable(
+    std::string_view source_type,
+    std::string_view expected,
+    const FunctionContext& context,
+    const Model& model
+) {
+    const std::string source(source_type);
+    const bool debug = std::getenv("CANGJIE_TRACE_WITNESS") != nullptr;
+    if (debug) {
+        std::cerr << "[let-rhs-witness] " << source << " -> " << expected << "\n";
+    }
+    if (source.empty() || !KnownType(source, model)) {
+        if (debug) {
+            std::cerr << "[let-rhs-witness]   unknown source " << source
+                      << " -> Dead (fire at identifier)\n";
+        }
+        return false;
+    }
+    // Operator continuation: equatable/orderable operands reach Bool via
+    // `==` / relational operators (`let bad: Bool = a` defers — the audit:
+    // "after `a` the prefix is still extendable (`a == b`, `a + b`)").
+    if (expected == "Bool" &&
+        (source == "Int64" || source == "Float64" || source == "Rune" ||
+         source == "String")) {
+        if (debug) {
+            std::cerr << "[let-rhs-witness]   operator path to Bool -> Alive\n";
+        }
+        return true;
+    }
+    struct State {
+        std::string type;
+        std::size_t cost = 0;
+    };
+    std::vector<State> states;
+    states.push_back({source, 0});
+    std::size_t visited = 0;
+    while (!states.empty() && visited < 32) {
+        std::size_t best = 0;
+        for (std::size_t index = 1; index < states.size(); ++index) {
+            if (states[index].cost < states[best].cost) best = index;
+        }
+        State state = states[best];
+        states.erase(states.begin() + best);
+        ++visited;
+        if (state.cost > 0) {
+            if (Compatible(state.type, expected, model)) {
+                if (debug) {
+                    std::cerr << "[let-rhs-witness]   path to " << state.type
+                              << " -> Alive (defer)\n";
+                }
+                return true;
+            }
+            if (!KnownType(state.type, model)) {
+                if (debug) {
+                    std::cerr << "[let-rhs-witness]   symbolic " << state.type
+                              << " -> Alive (defer)\n";
+                }
+                return true;  // symbolic → reachable
+            }
+        }
+        if (state.cost >= 3) continue;
+        const std::string head = TypeHead(state.type);
+        const auto nominal_it = model.nominals.find(head);
+        if (nominal_it == model.nominals.end()) continue;
+        const NominalInfo& info = nominal_it->second;
+        const std::vector<std::string> inst_args = TypeArgs(state.type);
+        auto subst = [&](const std::string& type) {
+            return SubstituteTypeArgs(type, info.type_params, inst_args);
+        };
+        auto push = [&](const std::string& result, std::size_t step_cost) {
+            if (state.cost + 1 > 3) return;
+            states.push_back({subst(result), state.cost + step_cost});
+        };
+        for (const auto& field : info.fields) {
+            push(field.second, 1);
+        }
+        for (const auto& member : info.methods) {
+            for (const FunctionSig& sig : member.second) {
+                if (sig.param_types.empty()) {
+                    push(sig.result, 1);
+                    continue;
+                }
+                bool constructible = true;
+                for (const std::string& param : sig.param_types) {
+                    const std::string pt = subst(param);
+                    if (IsFunctionType(pt)) continue;  // a lambda can be written
+                    if (ConstructibleArg(pt, context, model).empty() &&
+                        !pt.empty() && pt != "Unit") {
+                        constructible = false;
+                        break;
+                    }
+                }
+                if (constructible) push(sig.result, 2);
+            }
+        }
+        if (IsFunctionType(state.type)) {
+            const auto parts = FunctionTypeParts(state.type);
+            bool constructible = true;
+            for (const std::string& param : parts.first) {
+                if (IsFunctionType(param)) continue;
+                if (ConstructibleArg(param, context, model).empty() &&
+                    !param.empty() && param != "Unit") {
+                    constructible = false;
+                    break;
+                }
+            }
+            if (constructible) push(parts.second, 1);
+        }
+        // Index edges (mirror FindRecoveryWitness).
+        const std::vector<std::string> args = TypeArgs(state.type);
+        if (head == "Array" || head == "ArrayList" || head == "ArrayDeque" ||
+            head == "Range") {
+            if (!args.empty()) push(args.front(), 2);
+        } else if (head == "String") {
+            push("Rune", 2);
+        } else if (head == "HashMap" && args.size() >= 2) {
+            push(args[1], 2);
+        }
+    }
+    if (debug) {
+        std::cerr << "[let-rhs-witness]   no path after " << visited
+                  << " states -> Dead (fire at identifier)\n";
+    }
+    return false;
+}
+
 // Orchestrator: expected type → completion witness (mid-identifier) → open
 // call witness → postfix BFS.  Cached by (source|target|tail|boundary).
 RecoveryWitness ComputeShadowWitness(
@@ -9446,8 +9586,16 @@ CheckStatus AnalyzeSource(
             return {false, actual.message};
         }
         static const std::regex incomplete_float(R"([0-9]+\.[0-9]*)");
+        // Plan §6.2/§6.3 (CommitVerdict): a bare-identifier initializer defers
+        // only while a continuation can still reach the declared type
+        // (Alive — `a.toArray()`, `s.contains(1)`, `m.get(1)`, `h.run({…})`);
+        // when no member/operator path exists (Dead, complete evidence — the
+        // audit: "no postfix recovers to String … the identifier commits; the
+        // following newline is too late") the mismatch fires at the identifier
+        // itself, the official anchor (gold=308 for `let s: String = arr`).
         const bool defer_atom = !committed && !soft_newline && (
-            IsIdentifierText(declaration->second) ||
+            (IsIdentifierText(declaration->second) && actual.known &&
+             LetRhsRecoverable(actual.type, declaration->first, context, model)) ||
             (!declaration->second.empty() && declaration->second.front() == '"') ||
             trailing_numeric_prefix || unclosed_string ||
             trailing_open_paren ||
