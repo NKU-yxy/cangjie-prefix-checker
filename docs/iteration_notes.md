@@ -499,3 +499,60 @@ CheckConstructorsFromRecords/Regex、IncrementalSemanticEngine::Probe），
   且 v7 证明源码齐全+构建成功仍 CE。CE 的稳定解释是**判题端环境路径缺失**。
 - 行动：重传同一 v7 zip（sha256 c5980ddb7410e57dfaf0ca49123a0ca5c29e8f6bb9d52f59639a930e2abb9e1e）；
   若官网反馈附带 build 日志等更多 detail，再贴出分析。
+
+## v8：差分 fuzzer 定点修复（2026-08-18 16:14 打包，未上传）
+
+### 背景
+
+- v7 官方 = 60/100（0.00 WA），与 v1 持平；v6 的 Bug A-D 修复在隐藏集无增益。
+- 说明官方 60 例基线之外，40 例失败与 v1 时代相同；前几轮改的是合法路径
+  （min/max/infer），本轮改**错误路径的报错时机**——用 statement 级差分
+  fuzzer 枚举官方报错族（arith/rel/mod/logical/index/lambda/call-arg/ctor），
+  逐族实测官方锚点后定点修。
+
+### 官方锚点实测（本轮核心依据）
+
+- mod-non-Int64 锚在 `%`；rel-unordered 锚在 `<`；range 锚在 `..`；
+  lambda-arity 锚在 `=>`；call-ARG 不匹配锚在 arg 尾（`,`/`)`）；
+  call-RETURN 锚在 callee 名；no-member 锚在成员名。
+- **mixed-family 算术（err_arith_mixed_family）与非 Bool 逻辑
+  （err_logical_non_bool）延迟到下一语句**（官方样例锚在 println）。
+- arith-non-numeric 族锚在首个被判定操作数（String/Bool LHS 时 = 运算符
+  前一 token，解决方案需两操作数，最接近可达点为运算符本身 → 1-off 不可达）。
+- 索引错误 `array index must be Int64` 在 `.`/`(`/运算符可延续时延迟到 `]`。
+
+### 修复（cpp/native_semantic.cpp，+50/-6）
+
+1. `should_defer_expression_error`：`!committed` 时 mixed/logical 延迟
+   （FIX A）——此前只在 soft_newline 延迟，同一行内会提前报。
+2. `defer_mixed_mismatch`：实参/形参（含 var 注解）仅数值族不同且表达式
+   可延续时延迟（FIX B）。
+3. 字符串拼接错误锚在换行（FIX C），不再拖到 `}\n`。
+4. 索引错误只在尾部为延续符时延迟到 `]`（FIX E）；mod/rel/range/lambda/
+   call-arg 保持锚定运算符/分隔符——**FIX E 修复了 v8 初版 blanket
+   延迟（9 门禁失败）**。
+
+### 验证
+
+- 门禁 wrong/ + wrong2/ = 100/100；9 官方族锚点用例逐一比对预期位。
+- ctx_stmt fuzzer：34 → 31 分歧（3 修复 + 2 位置逼近），context_api 12
+  分歧不变（min/max 模型官方即延迟到 `)`，保持）。
+- 剩余 31 分歧类别：oracle 1-off 不可达（7）、容器 API arg 尾锚（7）、
+  跨语句 oracle 位置偏差（6）、call-arg 双 token 合并（4）、
+  `HashMap` ctor 误报（1）、`for` 迭代目标 1-off（3）、等 —— 均无法从
+  单边修正或会破坏锚点，判为不可修。
+
+### 经验（沉淀）
+
+- **报错时机是独立于合法路径的得分维度**：合法路径全对（60 例基线）后，
+  错误用例的得分取决于报错位与官方是否一致，两者必须分开修。
+- 官方锚点按"首个不可延续 token"和"语句边界"两类分族：运算符类
+  （mod/rel/range/lambda）锚运算符本身，值类（arith-non-numeric/mixed/
+  logical）锚语句边界或下一语句——先分族实测再动手，避免 blanket 规则。
+- 打包流程固定：v7 zip 为模板 → 只换 cpp/native_semantic.cpp → 文件集
+  逐项 diff 校验 → 从 stage 重建二进制 → 门禁 100/100 → 记录 sha256。
+
+### 交付
+
+- `cangjie-checker_v8_20260818.zip`（891,032 B，sha256 a4e9f06c…）；
+- `results/results_20260818_v8.md`。上传后以官网结果对比 60 基线。

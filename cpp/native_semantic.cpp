@@ -7975,6 +7975,20 @@ CheckStatus AnalyzeSource(
 #endif
     const bool unclosed_string = HasUnclosedString(source);
     const bool trailing_open_paren = !source.empty() && source.back() == '(';
+    // The expression is still incomplete when the source ends with a binary
+    // operator, a comma, or a member dot, so a suffix could still rescue the
+    // statement (e.g. `arr[1.` -> `arr[1.toInt64()]`).  Only the index error
+    // gets this deferral: official evidence anchors the modulo (err_mod_non_
+    // int64 at `%`), relational (err_rel_unordered at `<`), range (err_range_
+    // non_int at `..`), lambda (`=>`) and call-argument (err_hashmap_key_type
+    // at `,`) errors AT the trailing token, so those must keep firing.
+    // Whitespace between tokens does not close the expression.
+    const std::size_t source_last_nonspace = source.find_last_not_of(" \t\r\n");
+    const bool trailing_continuation = source_last_nonspace != std::string::npos && (
+        std::string_view("+-*/%<>=!&|.,").find(source[source_last_nonspace]) !=
+            std::string_view::npos ||
+        source[source_last_nonspace] == '('
+    );
     const bool defer_expression_error = trailing_numeric_prefix || unclosed_string ||
         trailing_open_paren || (!context.is_main && !committed && !soft_newline);
     auto should_defer_expression_error = [&](const ExprResult& result) {
@@ -7986,13 +8000,41 @@ CheckStatus AnalyzeSource(
         // valid `a.clone()`, so keep deferring while the source ends in `(`.
         if (result.message == "wrong argument arity" && !trailing_open_paren)
             return false;
-        return defer_expression_error || (soft_newline &&
-            (result.message == "mixed numeric arithmetic" ||
-             result.message == "logical operands require Bool" ||
-             result.message == "string concatenation requires String")) ||
-            (!committed && !source.empty() &&
+        // Official evidence anchors mixed-family arithmetic (err_arith_mixed_
+        // family) and non-Bool logical (err_logical_non_bool) errors at the
+        // NEXT statement: they defer while the statement is still open
+        // (mid-expression and at the newline, where the pending mechanism
+        // re-checks at the next statement's first token), and only fire once
+        // the statement is committed (semicolon / function close).  A float
+        // literal index is continuable (`arr[1.` -> `arr[1.toInt64()]`), so
+        // the index error defers past a trailing operator to the `]`.  String
+        // concatenation errors belong to the arith-non-numeric class (first
+        // non-continuable token), which is the statement end when the
+        // offending operand could still be extended (`.size`, `.toString()`,
+        // ...), so they must not defer past the statement newline.
+        return defer_expression_error ||
+            (!committed && trailing_continuation &&
+             result.message == "array index must be Int64") ||
+            (!committed &&
+             (result.message == "mixed numeric arithmetic" ||
+              result.message == "logical operands require Bool")) ||
+            (!committed && !soft_newline && !source.empty() &&
              std::isspace(static_cast<unsigned char>(source.back())) &&
              result.message == "string concatenation requires String");
+    };
+    // A numeric-family mismatch behind a trailing operator (`let z: Int64 =
+    // f + 1` with Float64 `f`) is the mixed-family arithmetic class, which
+    // the official anchors at the NEXT statement, so defer it while the
+    // statement is still open.  Non-numeric lhs mismatches (`s +`, `b +`)
+    // stay firing at the operator: that is the closest the checker can get
+    // to the official operand anchor, and the statement is already doomed
+    // there (every completion of `s +` fails the Int64 target).
+    auto defer_mixed_mismatch = [&](const std::string& actual_type,
+                                    const std::string& target_type) {
+        return !committed && trailing_continuation &&
+            (actual_type == "Int64" || actual_type == "Float64") &&
+            (target_type == "Int64" || target_type == "Float64") &&
+            actual_type != target_type;
     };
     const std::string line = Trim(RemoveLoopComments(active_statement.text));
     if (!active_statement.pending_text.empty()) {
@@ -8128,7 +8170,8 @@ CheckStatus AnalyzeSource(
         const bool defer_suffix = !committed && actual.suffix_may_change_type &&
             !IsFunctionType(actual.type);
         if (actual.known && !Compatible(actual.type, declaration->first, model) &&
-            !defer_atom && !defer_suffix) {
+            !defer_atom && !defer_suffix &&
+            !defer_mixed_mismatch(actual.type, declaration->first)) {
             return {false, "variable initializer type mismatch"};
         }
     } else if (const auto declaration = ParseAnyVariableDeclaration(line)) {
@@ -8139,6 +8182,7 @@ CheckStatus AnalyzeSource(
         const bool stable_initializer = committed || (soft_newline &&
             (!actual.suffix_may_change_type || IsFunctionType(actual.type)));
         if (!declaration->annotated_type.empty() && actual.known && stable_initializer &&
+            !defer_mixed_mismatch(actual.type, declaration->annotated_type) &&
             !Compatible(actual.type, declaration->annotated_type, model)) {
             return {false, "variable initializer type mismatch"};
         }
