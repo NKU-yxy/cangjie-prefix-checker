@@ -775,3 +775,47 @@ v9 结论需要修订：旧 golds 下 100/100 已不成立，v10 必须按新语
 - 308/341 两例：若 finals keys 用 040fbbc 新 generator 重新生成（而非冻结的旧 keys），
   这两族会各 -1；反之 v10 的 4 处修复在旧 keys 下可能损失 finals 对应族——但
   wrong2 规则是官方声明的稳定权威（wrong2 golds 从未变），v10 与其完全一致。
+
+## v12-F1-only（2026-08-18 打包，待上传）— 纯消融：v10 + F1 单一机制
+
+### 本轮改动（相对 v10，`git diff 8720cc0` 仅此两处）
+
+1. **context.json**：`Array.first` / `Array.last` 从 instance_methods 移入 instance_fields
+   （`Optional<T>`），与 v11 的 F1 完全一致；
+2. **cpp/native_semantic.cpp AddBuiltinModel**：`add_method(&array, "first"/"last", ...)`
+   → `array.fields["first"]/["last"] = "Optional<T>"`。
+3. 其余机制（lambda twin / HasRecoveringMember / HasShallowPostfix / dead_identifier）
+   **一律不带**——与 v10 逐字节一致。
+
+### 关键新证据：官方 typechecker 实测 = 字段语义
+
+官方 `context_final.json` 的 JSON 结构把 first/last 列在 instance_methods，但官方
+typechecker 实测裁决为**字段语义**：
+- `let s: String = a.first` → `expected String, got Optional<Int64>`（不是函数值类型）；
+- `a.first()` → `not callable Optional<Int64>`（字段不可调用）。
+即 v11/v12 的字段模型与官方裁决行为一致，JSON 归类仅是结构差异。F1 方向确认正确。
+
+### 本地门禁
+
+| 验证项 | 结果 |
+|---|---|
+| wrong 50（官方新 golds） | **48/50**（=v10 两个有意偏差原样：toarray_assign 309、lambda_callback 341） |
+| wrong2 50 | **50/50** |
+| v10 vs v12 100 例 fire 序列差分 | **0 divergences** |
+| zip 解压重建复验 | 48/50 + 50/50 |
+| F1 家族 8 形态 vs 官方 typechecker | 6/8 一致；2 个合法形态 v10 误报 → v12 修复（见 results 文档） |
+
+### 预期官方结果
+
+- 期望 +`err_array_first_optional`（v12 与 v11 在 `let s: String = a.first` 上同锚点
+  fire=29 println；v11 官方通过该例），不丢失 v10 的 4 个 String/helper 家族（F1 与
+  它们零交集，100 例差分零差异佐证）→ 预期 61/100。
+- 若结果偏离预期，按 Plan 5.3 提交 1 决策规则执行（61 升基线 / 60 同集保留记录 /
+  <60 查双源冲突——已预检加载顺序 AddBuiltinModel → LoadContextTable 整体覆盖，无冲突）。
+
+### 教训与记录
+
+1. **官方 JSON 归类 ≠ 官方裁决语义**：context_final.json 把零参成员列在 methods，
+   但 typechecker 按字段值裁决。判断官方模型必须以 typechecker 实测为准，不能只看 JSON。
+2. **门禁判别力**：公开 100 例不含 first/last 家族（公开集对 F1 完全不敏感），F1 收益
+   只能靠 finals 验证；本地 F1 家族探针（/tmp/probe_f1_v12.py）补上了这一盲区。
