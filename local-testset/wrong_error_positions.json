@@ -1,0 +1,205 @@
+{
+  "_comment": "first_error_token_index is 0-based into tiktoken.encode(file_text, encoding=cl100k_base). Each index is the first token whose inclusive prefix cannot be extended to a fully compilable program while the prior prefix still can. Computed by samples/scripts/compute_wrong_error_positions.py using manual continuability analysis (not cjc/typechecker line-column).",
+  "wrong_examples": [
+    {
+      "name": "err_undefined",
+      "first_error_token_index": 374
+    },
+    {
+      "name": "err_assign_let",
+      "first_error_token_index": 425
+    },
+    {
+      "name": "err_arity",
+      "first_error_token_index": 374
+    },
+    {
+      "name": "err_if_not_bool",
+      "first_error_token_index": 306
+    },
+    {
+      "name": "err_break",
+      "first_error_token_index": 356
+    },
+    {
+      "name": "err_type_mismatch",
+      "first_error_token_index": 346
+    },
+    {
+      "name": "err_continue_outside_loop",
+      "first_error_token_index": 347
+    },
+    {
+      "name": "err_return_type_mismatch",
+      "first_error_token_index": 18
+    },
+    {
+      "name": "err_duplicate_var",
+      "first_error_token_index": 54
+    },
+    {
+      "name": "err_arraylist_toarray_assign",
+      "first_error_token_index": 309
+    },
+    {
+      "name": "err_unary_minus_non_numeric",
+      "first_error_token_index": 293
+    },
+    {
+      "name": "err_eq_incomparable",
+      "first_error_token_index": 296
+    },
+    {
+      "name": "err_rel_mixed_numeric",
+      "first_error_token_index": 281
+    },
+    {
+      "name": "err_mod_non_int64",
+      "first_error_token_index": 272
+    },
+    {
+      "name": "err_range_non_int",
+      "first_error_token_index": 285
+    },
+    {
+      "name": "err_for_not_iterable",
+      "first_error_token_index": 279
+    },
+    {
+      "name": "err_for_pattern_map_bad",
+      "first_error_token_index": 308
+    },
+    {
+      "name": "err_array_index_not_int64",
+      "first_error_token_index": 367
+    },
+    {
+      "name": "err_array_fill_type",
+      "first_error_token_index": 345
+    },
+    {
+      "name": "err_string_contains_arg",
+      "first_error_token_index": 312
+    },
+    {
+      "name": "err_ctor_call_mismatch",
+      "first_error_token_index": 347
+    },
+    {
+      "name": "err_generic_arity",
+      "first_error_token_index": 329
+    },
+    {
+      "name": "err_interface_not_implemented",
+      "first_error_token_index": 57
+    },
+    {
+      "name": "err_interface_sig_mismatch",
+      "first_error_token_index": 32
+    },
+    {
+      "name": "err_no_member",
+      "first_error_token_index": 279
+    },
+    {
+      "name": "err_unknown_named_arg",
+      "first_error_token_index": 298
+    },
+    {
+      "name": "err_index_non_array",
+      "first_error_token_index": 270
+    },
+    {
+      "name": "err_unary_not_non_bool",
+      "first_error_token_index": 258
+    },
+    {
+      "name": "err_while_not_bool",
+      "first_error_token_index": 280
+    },
+    {
+      "name": "err_arraylist_add_type",
+      "first_error_token_index": 293
+    },
+    {
+      "name": "err_hashmap_key_type",
+      "first_error_token_index": 297
+    },
+    {
+      "name": "err_bound_var_mismatch",
+      "first_error_token_index": 273
+    },
+    {
+      "name": "err_rel_unordered",
+      "first_error_token_index": 270
+    },
+    {
+      "name": "err_interface_as_value",
+      "first_error_token_index": 240
+    },
+    {
+      "name": "err_arith_non_numeric",
+      "first_error_token_index": 347
+    },
+    {
+      "name": "err_lambda_arg_arity_explicit",
+      "first_error_token_index": 340
+    },
+    {
+      "name": "err_lambda_return_type_explicit",
+      "first_error_token_index": 314
+    },
+    {
+      "name": "err_lambda_zero_body_explicit",
+      "first_error_token_index": 258
+    },
+    {
+      "name": "err_lambda_hof_explicit",
+      "first_error_token_index": 380
+    },
+    {
+      "name": "err_lambda_interface_callback_explicit",
+      "first_error_token_index": 341
+    },
+    {
+      "name": "err_lambda_in_class_static_explicit",
+      "first_error_token_index": 264
+    },
+    {
+      "name": "err_lambda_param_narrow_explicit",
+      "first_error_token_index": 306
+    },
+    {
+      "name": "err_lambda_infer_ambiguous_1",
+      "first_error_token_index": 307
+    },
+    {
+      "name": "err_lambda_infer_ambiguous_2",
+      "first_error_token_index": 353
+    },
+    {
+      "name": "err_lambda_infer_wrong_return_1",
+      "first_error_token_index": 255
+    },
+    {
+      "name": "err_lambda_infer_wrong_return_2",
+      "first_error_token_index": 348
+    },
+    {
+      "name": "err_lambda_infer_collection_1",
+      "first_error_token_index": 289
+    },
+    {
+      "name": "err_lambda_infer_collection_2",
+      "first_error_token_index": 308
+    },
+    {
+      "name": "err_lambda_infer_class_helper",
+      "first_error_token_index": 278
+    },
+    {
+      "name": "err_lambda_infer_interface_helper",
+      "first_error_token_index": 304
+    }
+  ]
+}
