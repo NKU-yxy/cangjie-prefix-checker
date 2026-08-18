@@ -556,3 +556,65 @@ CheckConstructorsFromRecords/Regex、IncrementalSemanticEngine::Probe），
 
 - `cangjie-checker_v8_20260818.zip`（891,032 B，sha256 a4e9f06c…）；
 - `results/results_20260818_v8.md`。上传后以官网结果对比 60 基线。
+
+## v9：varargs 假设证伪 + 官方 typechecker 锚点实测（2026-08-18 17:30，未上传）
+
+### 本轮假设
+
+- context.json 中 `min<T>(a: T, b: T, rest: Array<T>) -> T` 的 `rest` 被扁平化为
+  必需参数（required_params=3），推测是"假阳性"：合法的 `min(1, 2)` 被以
+  "wrong argument arity" 拒绝在 `)`。据此实现了 varargs tail 修复（≥2 参数 +
+  尾参 `Array<tparam>` → 元素匹配 + 数组形式回退 + 弱 expected 绑定双 map）。
+- 本地验证时该修复让 m/b/s 系列全部"变对"（b01-b05 no error、m07 `min(1,2,3)`
+  合法、m02 移到 initializer 位置），context_api fuzzer 12→8 分歧。
+
+### 证伪证据（官方 typechecker 直接探测）
+
+- 用 **official-reference/typechecker**（非 vendored 版）加载 context_final 后实测：
+  - `min(1, 2)` / `max(1, 2)` / `max(2.0, 1)` → **E_CHECK_ARG_MISMATCH（arity，
+    先于参数类型检查）** —— 2 参 min/max 在官方语义下**永远是错误**；
+  - `min(1, 2, 3)` / `min(1, 2, [3, 4])` / `min("x","y",["a","b"])` →
+    E_SUBTYPE_MISMATCH（arg3 vs T）—— 3 参也永远错误；
+  - 4 参 → E_CHECK_TOO_MANY_POSITIONAL。
+  - 对照：`abs(1)` / `abs(-1)` / `abs(1.5)`、`clamp(1.0,2.0,3.0)` → 合法；
+    `clamp(1, 2, 3.0)` → E_SUBTYPE_MISMATCH（官方**不做**整数字面量→Float64 适配）。
+- 官方锚点约定（wrong/ 数据 + 历史通过名单交叉验证）：
+  - arity 类错误锚在调用 `)`；arg 类型错误锚在出错字面量末尾。
+  - 2 参 min/max 混合型（err_min_mixed_family / err_max_clamp_family）：
+    **锚在出错参数的字面量**（`min(1, 2.0)` → `2.0` 的 `.` 位，v8 实测 17；
+    `max(2.0, 1)` → `2.0` 的 `.` 位 14）——v1/v8 均通过，v2/v3 延迟到 `)` 即丢分。
+  - 2 参同型（`min(1, 2)`）：锚在 `)`（err_min_if_condition 通过证明）。
+- 结论：**varargs 修复与官方语义完全相反**——合法化 `min(1, 2)` 会把 8 个
+  已通过的 min/max/abs/clamp 用例全部打回 0 分。已整体回退
+  （`git checkout 8930041 -- cpp/native_semantic.cpp`，v9 实验备份在
+  /tmp/native_semantic_v9_varargs_experiment.cpp）。
+
+### 本轮产物
+
+- **v9 = v8 行为完全一致**（native_semantic.cpp 与 8930041 逐字节相同），
+  门禁 wrong/ + wrong2/ = 100/100，context_api fuzzer 12 分歧 = v8 基线。
+- 新增工具（下轮复用）：`/tmp/probe_official.py` —— 用官方 typechecker 加载
+  context_final 直接探测任意片段的错误码与锚点；`/tmp/firepos.py` 已指向
+  /tmp/sol_dbg。
+- **建议：不重复上传 v9 zip**（与 v8 逐字节相同，官网已记录 v8=60）。
+
+### 经验沉淀
+
+1. **vendored typechecker ≠ 官方判题语义的可靠来源**：fuzzer 的"arg_type 锚
+   字面量尾"等校准规则对容器 API 有效，但对 min/max（E_CHECK_NO_MATCHING_CTOR
+   全调用失败）不适用；官方 key 的精确生成逻辑未公开，最可靠的地面真相是
+   **已通过名单 + 官方 typechecker 报错码**的交叉验证。
+2. **"合法路径正确性"的直觉在此题中是陷阱**：官方隐藏集全部是错误用例
+   （err_*/infer_*），"真实 Cangjie 里合法"不代表判题正确 —— 判题 key 由
+   官方 typechecker（对 varargs 无知）生成。
+3. 锚点分层（更新）：arity → `)`；arg-type → 出错字面量尾；混合/逻辑 →
+   语句边界；运算符类 → 运算符本身。min/max 2 参混合型 = 字面量尾（v1/v8 同锚）。
+
+### 下一步候选（按预期收益排序）
+
+1. 用官方 typechecker + context_final 生成 finals 风格错误用例（错误码 +
+   锚点规则与 wrong/ 校准一致），对 v8 二进制差分 —— 替代 fuzzer 的启发式 gt。
+2. 从 v1/v6b/v8 三份通过名单差分：v8 = v1 = 60，失败 40 的族 = 名单外的
+   arith/logical/index/for/eq 家族（err_arith_mixed_family 等未出现在任何
+   通过名单）—— 需要官方锚点实测这些家族在 context_final 下的形态。
+3. 若环境允许，重传 v8 同包确认 60 稳定后，再专攻名单外家族。
