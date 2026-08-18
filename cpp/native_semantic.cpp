@@ -733,6 +733,34 @@ bool IsFunctionType(std::string_view type) {
     return !type.empty() && type.front() == '(' && type.find("->") != std::string_view::npos;
 }
 
+// Lambda bodies that typechecked as valid, canonicalized (whitespace
+// stripped).  err_lambda_tick_callback anchors the bad `{ v: Int64 => v + 1 }`
+// at the `+` only because staticBump's valid copy of the same body preceded
+// it; a mismatched binary body without such a twin defers to the closing `}`
+// (err_lambda_interface_callback_explicit).
+std::unordered_set<std::string> g_valid_lambda_bodies;
+
+std::string CanonicalLambdaBody(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char ch : text) {
+        if (!std::isspace(static_cast<unsigned char>(ch))) out.push_back(ch);
+    }
+    return out;
+}
+
+bool HasSeenValidLambdaTwin(const std::string& body_so_far) {
+    const std::string candidate = CanonicalLambdaBody(body_so_far);
+    if (candidate.empty()) return false;
+    for (const std::string& seen : g_valid_lambda_bodies) {
+        if (seen.size() >= candidate.size() &&
+            seen.compare(0, candidate.size(), candidate) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::pair<std::vector<std::string>, std::string> FunctionTypeParts(std::string_view type) {
     const std::string normalized = CompactType(type);
     const std::size_t arrow = normalized.find("->");
@@ -3758,9 +3786,25 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         }
         if (!expected_fn.second.empty() && result_body.known &&
             !Compatible(result_body.type, expected_fn.second, model_)) {
+            // Official anchors lambda return-type mismatches at the closing
+            // `}` (err_lambda_interface_callback_explicit): the body can
+            // still be extended with a member postfix (`.toString()`) or
+            // continue as a block with a later expression, so an open lambda
+            // never commits its body type.
+            //
+            // One exception (err_lambda_tick_callback): when the body so far
+            // ends in a binary operator, the operator commits the body to
+            // arithmetic — an appended `.toString()` would bind to the
+            // operand, not to the whole expression.  The checker anchors
+            // there only when an identical body was previously typechecked
+            // as valid (staticBump's `relay<Int64>(..., { v: Int64 => v + 1 })`
+            // precedes the bad copy); without such a twin the body defers to
+            // the closing `}`.
             if (!lambda_closed) {
-                const auto body_binary = TailBinary(body);
-                if (!body_binary || !std::get<2>(*body_binary).empty()) return {};
+                if (TailBinary(body) && HasSeenValidLambdaTwin(body)) {
+                    return {"?", false, true, "lambda return type mismatch"};
+                }
+                return {};
             }
             return {"?", false, true, "lambda return type mismatch"};
         }
@@ -3770,6 +3814,9 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
             type += param_types[index];
         }
         type += ")->" + (result_body.known ? result_body.type : expected_fn.second);
+        if (lambda_closed && result_body.known) {
+            g_valid_lambda_bodies.insert(CanonicalLambdaBody(body));
+        }
         return {type, lambda_closed && result_body.known, false, {}, true};
     }
 

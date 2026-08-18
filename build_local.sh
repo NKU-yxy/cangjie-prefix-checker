@@ -34,7 +34,7 @@ verify_sha256() {
 }
 
 verify_sha256 \
-  "facb628ab01a52d7ef8f2fe36ca463ccd381e02e45282c82803b793730068303" \
+  "b7d248af346c73d674843d49320bab2856767a08295a4e8ca9ac891c4ced45cd" \
   "context.json"
 
 token_table_archive="assets/cl100k_base.bin.xz"
@@ -78,7 +78,7 @@ if [[ ! -s generated/context.bin ]]; then
   run_quiet python3 tools/generate_context_table.py context.json generated/context.bin
 fi
 verify_sha256 \
-  "2cf015b7f60f4d6fbb89a805e4d11daeaae0e70061f6a5813c94dcf0586ec113" \
+  "4c592b1abc1a9c59e3bfb8d61ea303bed4f628392ec669f300b3fe4ba6f5ceb7" \
   "generated/context.bin"
 
 xgrammar_root="third_party/xgrammar_core"
