@@ -1093,6 +1093,30 @@ Args parse_args(int argc, char** argv) {
     return result;
 }
 
+std::string json_escape(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size() + 8);
+    for (const char ch : raw) {
+        switch (ch) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(ch) < 0x20) {
+                    constexpr char kHex[] = "0123456789abcdef";
+                    out += "\\u00";
+                    out += kHex[(ch >> 4) & 0xF];
+                    out += kHex[ch & 0xF];
+                } else {
+                    out += ch;
+                }
+        }
+    }
+    return out;
+}
+
 bool parse_token_id(const std::string& line, std::int64_t* output) {
     std::size_t first = line.find_first_not_of(" \t\r");
     if (first == std::string::npos) {
@@ -1191,6 +1215,7 @@ int main(int argc, char** argv) {
 #endif
 
         std::string line;
+        std::size_t tokens_seen = 0;
         while (std::getline(std::cin, line)) {
             std::int64_t token_id = -1;
             std::string_view fragment;
@@ -1225,8 +1250,14 @@ int main(int argc, char** argv) {
                 std::cerr << "native semantic rejection: " << semantic_status.message << '\n';
             }
             const bool ok = syntax_ok && semantic_ok;
+            if (!ok && std::getenv("CANGJIE_TRACE_FIRE")) {
+                std::cerr << "{\"event\":\"fire\",\"token\":" << tokens_seen
+                          << ",\"syntax_ok\":" << (syntax_ok ? "true" : "false")
+                          << ",\"message\":\"" << json_escape(semantic_status.message) << "\"}\n";
+            }
             emit(ok, args.competition_output);
             if (!ok) break;
+            ++tokens_seen;
         }
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
