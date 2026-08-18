@@ -158,3 +158,44 @@ native_fragment_differential 报 5 个 valid-片段被拒（function decl、pack
 1. 官网提交 v3（zip 已备好 cangjie-checker_v3_20260818.zip），对照新的通过列表。
 2. 若仍有失败：按失败类别建针对性差分（lambda 推断、泛型继承 infer_* 族、字符串/数值转换的深层救援语义）。
 3. 性能侧：err_lambda_param_narrow（1.147s）profile。
+
+---
+
+## v4（2026-08-18 上午）— 决赛 CE/0 分根因定位与打包修复
+
+### 背景
+
+v2（02:58 提交）→ **CE**；v3 首发（09:34）→ **WA 0 分（通过列表为空）**；v3 二次提交（09:48）→ **CE**。用户反馈"估计是代码问题"，实际两处根因全部是**打包内容缺失**，与代码逻辑无关。
+
+### 根因 1：v2/v3 zip 缺失 `grammar/` → 运行时崩溃 → 0 分（已实证）
+
+- `solution.cpp:1148/1182/1184`：`NativeSyntaxChecker(root/"grammar"/"cangjie.gbnf")` 构造器**运行时必须读语法文件**，缺文件即抛异常 → 每个用例启动即挂 → 通过数 0。
+- v1 zip **含 `grammar/`**（00:21 提交 → 60/100 ✓）；09:30 重打包（43ab84d "fix(zip): repackage v2/v3 with src/"）把 `grammar/` 换成了 `src/` —— v2/v3 zip 从此没有运行时语法文件。
+- 容器实证：v3 zip 构建成功（exit=0, 1m37s）但无 grammar/；v4 恢复 grammar/ 后判题流程 100/100。
+
+### 根因 2：v2 原包缺 `src/` → build.sh python 步骤 ImportError → CE（高置信）
+
+- build.sh 的 `generate_context_table.py` 需要 `from src.context_loader import load_context`；v2 原始 zip（823832 B）缺 `src/` → python 步骤失败 → build.sh exit 1 → CE。
+- 09:48 二次 CE 的 CE 详情行（`harness: ...; wrong_error_positions.json: ...; wrong/: ...`）为决赛判题器缺失文件/构建失败的配置行格式；zip 内容已本地全查无误，怀疑该次上传为打包路径问题（如 zip 内路径嵌套），无法复现，由 v4 的 build.sh 硬化兜底。
+
+### 修复内容（v4）
+
+1. **zip 补回 `grammar/cangjie.gbnf` + `cangjie_token.gbnf`**（运行时必需，v1 有、v2/v3 丢）。
+2. **build.sh 硬化**：移除全部 `verify_sha256` 校验（防 hash 不匹配类 CE）；cl100k 表解压失败不硬退出（保留 shipped fallback 链）；`generate_context_table.py` 失败时保留 zip 内预置的 `generated/context.bin`；`strip` 失败容忍。唯一硬失败：无表/无 toolchain 且无 fallback。
+3. **zip 预置 `generated/context.bin`**（8KB，由 context_final 生成；哈希与 v3 完全一致 —— 我们的 context.json 本就与 `reference-upstream/typechecker/typechecker/context_final.json` 逐字节相同，`HashSet.addIfAbsent` 差异不在 context.bin 编码内，检查器行为零变化）。
+4. **zip 精简**：排除 `src/__pycache__` 与 `third_party/cangjie_typechecker`（开发用参考实现，构建不需要），v4 zip = 887,825 B < 1MB。
+
+### 验证
+
+| 验证集 | 结果 |
+|---|---|
+| 判题容器内完整流程（解压→build.sh→官方 harness）wrong/ + wrong2/ | **100/100 PASS**（build exit=0, 1m25s） |
+| 本地 macOS 同流程 | 100/100 |
+| context_api_differential（context_final 语义，容器内） | 待 fuzzer 输出 |
+| 预置/生成 context.bin 一致性 | 哈希一致（2cf015b7...） |
+
+### 下一步
+
+1. **上传 `cangjie-checker_v4_20260818.zip`**（项目根目录，887,825 B），拿官网通过列表。
+2. 若仍有失败：按类别建 context_final 专项差分（目前 fuzzer 已自动切到 context_final 语义）。
+3. 性能侧维持现状（单例 0.4-0.6s，远低于 5s 上限）。
