@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -65,6 +66,10 @@ class IncrementalSemanticEngine {
     Checkpoint Save() const;
     void Rollback(const Checkpoint& checkpoint);
 
+    // Dump the preloaded context model as canonical Context IR JSON
+    // (context-ir-v1, same schema as tools/export_official_context_ir.py).
+    void DumpContextIrJson(std::ostream& os) const;
+
  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
@@ -74,6 +79,7 @@ class NativeSemanticChecker {
  public:
     explicit NativeSemanticChecker(std::string context_path = {});
     CheckStatus Check(std::string_view bytes);
+    void DumpContextIrJson(std::ostream& os) const { engine_.DumpContextIrJson(os); }
 
  private:
     IncrementalLexer lexer_;

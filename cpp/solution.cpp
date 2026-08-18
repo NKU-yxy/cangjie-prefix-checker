@@ -1063,6 +1063,7 @@ std::string decode_hex_fragment(std::string_view line) {
 struct Args {
     std::string context_path;
     bool competition_output = false;
+    bool dump_context_ir = false;
 #ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
     bool grammar_shadow_fragments = false;
 #endif
@@ -1076,6 +1077,8 @@ Args parse_args(int argc, char** argv) {
             result.context_path = argv[++index];
         } else if (arg == "--competition-output") {
             result.competition_output = true;
+        } else if (arg == "--dump-context-ir") {
+            result.dump_context_ir = true;
         } else if (arg == "--pure-cpp-semantic") {
             // Accepted as a no-op for experimental-package compatibility.
 #ifdef CANGJIE_ENABLE_GRAMMAR_SHADOW
@@ -1086,7 +1089,8 @@ Args parse_args(int argc, char** argv) {
                     arg == "--cangjie-file") && index + 1 < argc) {
             ++index;  // accepted for compatibility with the existing entry
         } else if (arg == "-h" || arg == "--help") {
-            std::cout << "Usage: solution_cpp [--context PATH] [--competition-output]\n";
+            std::cout << "Usage: solution_cpp [--context PATH] [--competition-output]"
+                         " [--dump-context-ir]\n";
             std::exit(0);
         }
     }
@@ -1188,6 +1192,10 @@ int main(int argc, char** argv) {
         auto phase_started = PhaseProfiler::Clock::now();
 #endif
         cangjie::NativeSemanticChecker native_semantic(native_context.string());
+        if (args.dump_context_ir) {
+            native_semantic.DumpContextIrJson(std::cout);
+            return 0;
+        }
 #ifdef CANGJIE_ENABLE_PROFILE
         if (phase_profile.enabled()) {
             phase_profile.semantic_init_ns += PhaseProfiler::Elapsed(phase_started);
