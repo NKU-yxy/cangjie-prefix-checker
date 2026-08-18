@@ -819,3 +819,32 @@ typechecker 实测裁决为**字段语义**：
    但 typechecker 按字段值裁决。判断官方模型必须以 typechecker 实测为准，不能只看 JSON。
 2. **门禁判别力**：公开 100 例不含 first/last 家族（公开集对 F1 完全不敏感），F1 收益
    只能靠 finals 验证；本地 F1 家族探针（/tmp/probe_f1_v12.py）补上了这一盲区。
+
+## v12-F1-only 官方结果（2026-08-18 22:40:41 提交）— **62/100，净 +2，升为新基线**
+
+### 结果与三方差分
+
+- 得分 **62.00** WA；v10 = 60，v11 = 59。
+- **v12 vs v10：+2 / -0**：
+  - +err_array_first_optional（F1 first 字段模型，v11 同款收益保留）；
+  - +err_array_last_abs（**F1 第二收益**——Array.last + abs 组合形态，v10/v11 均未通过）；
+  - v10 的 60 例全部保留，0 丢失。
+- **v12 vs v11：+5 / -2**（机制归因修正）：
+  - v12 独有 5 = 4 个 String/helper 找回（abs_bool_helper/abs_to_string/get_throw_str/
+    capacity_string）+ err_array_last_abs；→ **证实 v11 的 4 例丢失 100% 来自 recovery 机制**；
+  - v11 独有 2 = err_lambda_max_by、err_stack_toarray_string → **两者均非 F1 贡献**
+    （max_by 依赖 twin lambda 或 recovery；stack_toarray_string 依赖 recovery）。
+
+### 决策（Plan 13：net>0 且无关键家族回退）
+
+- v12-F1-only **升为新基线 62/100**；
+- F1 独立收益修正为 +2，是当前唯一强对应机制，进入主干候选；
+- 下一步提交 2：v12-F1-L（新基线 + 纯 lambda twin，**不含 recovery**）；
+  err_lambda_max_by 是 twin 独立有效性的唯一判别标尺（拿到 → twin 有独立收益；
+  拿不到 → v11 中 max_by 归因存疑，可能来自 recovery）。
+
+### 已知边界（延续）
+
+- `(a.first.toString())` 官方报 no-member、solution 漏报（v10 既有，非 F1 引入）；
+- err_array_last_abs 具体形态未公开（finals-only），归因基于命名与 F1 机制对应，
+  待家族矩阵覆盖 Array.last 变体后复核。

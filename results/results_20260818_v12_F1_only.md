@@ -52,22 +52,39 @@
 `let s: String = a.first` 的 v12 fire=29（println，换行延续后新语句起点）与 v11 行为一致
 ——v11 官方通过 err_array_first_optional 的记录表明该锚点与官方 gold 匹配，v12 预期 +1。
 
-## 官方结果（待填写）
+## 官方结果（2026-08-18 22:40:41 提交）
 
-- 提交时间：___
-- 得分：___ /100（v10 = 60/100）
-- 通过名单变化：___
-- 归因：___
+- 得分：**62.00** WA（v10 = 60/100，净 **+2**）
+- 通过 62 例，耗时 0.242–0.307s，全部远低于 5s 上限
+- 完整通过名单：`/tmp/v12_official.txt`（62 行，已并入 git 记录见下）
 
-## 预期与决策规则（Plan 5.3 提交 1）
+## 三方差分（v10 60 / v11 59 / v12 62）
 
-- 期望新增 `err_array_first_optional`，不丢失 v10 的四个 String/helper 家族（err_abs_bool_helper、
-  err_abs_to_string、err_arraylist_get_throw_str、err_deque_capacity_string）；
-- 若 61：升为新基线；
-- 若 60 且通过集合不变：保留实验记录，不升基线（F1 需与其他机制交互）；
-- 若 <60：检查 context.json / AddBuiltinModel / context.bin 双源冲突（已预检：加载顺序
-  AddBuiltinModel → LoadContextTable 整体覆盖 nominals，运行时以 context.bin 为唯一事实源，
-  两源一致，无冲突）。
+### v12 vs v10：+2 / -0 —— 升为新基线
+
+| 方向 | 用例 | 归因 |
+|---|---|---|
+| + | err_array_first_optional | F1（first 字段模型），v11 同款收益保留 |
+| + | err_array_last_abs | **F1 第二收益**（last 字段模型；名字 = Array.last + abs 组合形态，v10/v11 均未通过） |
+| − | 无 | v10 的 60 例全部保留，0 丢失 |
+
+### v12 vs v11：+5 / -2（机制归因修正）
+
+| 方向 | 用例 | 归因 |
+|---|---|---|
+| + | err_abs_bool_helper / err_abs_to_string / err_arraylist_get_throw_str / err_deque_capacity_string | v11 recovery 机制过宽造成的 4 例丢失，v12 不带 recovery → 全部找回（**证实 v11 损失 100% 来自 recovery**） |
+| + | err_array_last_abs | F1 第二收益 |
+| − | err_lambda_max_by | **不在 v12** → 该例确非 F1 贡献，依赖 v11 twin lambda 或 recovery（v11 归因"机制待确认"收窄） |
+| − | err_stack_toarray_string | **不在 v12** → 该例非 F1 贡献，依赖 v11 recovery（v11 归因"待确认"收窄） |
+
+## 决策结果（Plan 5.3 提交 1 + Plan 13）
+
+- `net = +2 > 0` 且无关键家族回退（v10 60 例全保留）→ **v12-F1-only 升为新基线（62/100）**
+- F1 独立收益从预期 +1 修正为 **+2**（first_optional + last_abs），是当前唯一"单一机制 ↔
+  单一隐藏新增"强对应，F1 进入主干候选
+- 下一步：提交 2 = v12-F1-L（新基线 + 纯 lambda twin，不含 recovery）；err_lambda_max_by
+  是判别 twin 机制是否独立有效的唯一标尺（若 F1-L 拿到 max_by → twin 有独立收益；
+  拿不到 → twin 归因存疑，v11 中 max_by 可能来自 recovery）
 
 ## 已知边界（非 F1 引入，v10 既有）
 
