@@ -4799,6 +4799,12 @@ ExprResult ExpressionTyper::InferCall(
         return {};
     }
     const auto nominal = model_.nominals.find(TypeHead(receiver_type));
+    // NOTE: toString stays a blanket String-returning member here.  The
+    // official FINAL context has toString on Int64/Float64/Bool only, but
+    // its incremental behavior anchors mid-statement occurrences
+    // (println-arg `(tailHint(s)).toString()`, wrong corpus) PAST the call;
+    // only complete-let/return top-level RHS uses are rejected, which the
+    // statement layer handles (V15 Patch 6, see ParseVariableDeclaration).
     if (name == "toString") return {"String", true, false, {}, true};
     if (nominal == model_.nominals.end()) {
         if (std::getenv("CANGJIE_DEBUG_SEMANTIC")) {
@@ -4806,6 +4812,20 @@ ExprResult ExpressionTyper::InferCall(
                       << "', base '" << base << "'\n";
         }
         return {"?", false, true, "member on non-nominal"};
+    }
+    // V15 Patch 6, family A: field-first resolution on INSTANCE receivers.
+    // The official checker treats an instance field/method name collision as
+    // the field: `m.size()` on HashMap/HashSet reads the field and the call
+    // is not callable (official E_SYNTH_NOT_CALLABLE), while `m.size` is a
+    // valid field read (member-value path).  Only HashMap/HashSet collide
+    // (size/capacity).  Static receivers keep method resolution: the only
+    // static collision is String.empty, and the official checker accepts
+    // both `String.empty()` (method) and `String.empty` (field).
+    if (!type_receiver) {
+        const auto& fields = nominal->second.fields;
+        if (fields.find(name) != fields.end()) {
+            return {"?", false, true, "field is not callable"};
+        }
     }
     const auto& methods = type_receiver ? nominal->second.static_methods : nominal->second.methods;
     const auto method = methods.find(name);
@@ -5225,6 +5245,13 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
         }
     }
 
+    // Forward declarations: the array-element recovery check below needs
+    // these before their definitions later in this file.
+    bool MemberRecoversType(const Model& model, const std::string& type,
+                            const std::string& target, int depth = 0);
+    bool OperatorRecoversType(const Model& model, const std::string& type,
+                              const std::string& target);
+
     if (expression.front() == '[') {
         const bool array_closed = expression.back() == ']';
         std::string inner = expression.substr(1);
@@ -5250,8 +5277,18 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
                 depth + 1
             );
             if (element.error) return element;
+            // V15 Patch 6 family A: a still-open last element whose value
+            // can reach the element type via one postfix (member, operator,
+            // static member — `[String.empty]`, `[recv.capacity]`) defers
+            // instead of committing at the element token.  Once the literal
+            // closes (`]`) or the element is committed by a comma, the type
+            // is final and a mismatch commits at that boundary.
+            const bool last_open = !array_closed && index + 1 == elements.size();
             if (concrete_expected_element && element.known &&
-                !Compatible(element.type, expected_args.front(), model_)) {
+                !Compatible(element.type, expected_args.front(), model_) &&
+                (!last_open ||
+                 (!MemberRecoversType(model_, element.type, expected_args.front()) &&
+                  !OperatorRecoversType(model_, element.type, expected_args.front())))) {
                 return {"?", false, true, "array element type mismatch"};
             }
             if (!element.known) continue;
@@ -5555,6 +5592,167 @@ std::optional<std::pair<std::string, std::string>> ParseReassignment(std::string
 bool HasExplicitThisReceiver(std::string_view line) {
     static const std::regex pattern(R"(^\s*this\s*\.)");
     return std::regex_search(line.begin(), line.end(), pattern);
+}
+
+// V15 Patch 6 family A: does ONE postfix continuation of `type` produce a
+// value Compatible with `target`?  The official incremental commits a
+// let/var initializer at its RHS value when no single postfix recovers the
+// annotated type (gold err_arraylist_toarray_assign anchors `arr`), and
+// keeps the RHS extendable across the newline when one does (gold
+// err_assign_let anchors the next statement).  Two-step chains such as
+// `.size.toString()` do NOT count — the audit anchors the identifier before
+// them.  Counted continuations:
+//   - member access: field/method result types (instance side), recursing
+//     into supers with a depth cap; primitives have only the toString
+//     surface on Int64/Float64/Bool;
+//   - method reference: when `target` is a function type, a method's own
+//     signature (`(params)->result`) can be the value (`let f: () -> Int64 =
+//     recv.size` extends at `recv`);
+//   - call: a function-typed RHS can be applied, yielding its result
+//     (`let v: Int64 = f` extends via `f(1)`);
+//   - subscript: `Array<T>[i]` -> T, `ArrayList<T>[i]` -> T, `String[i]`
+//     -> Rune;
+//   - static member: `type:X` receivers check static fields/methods.
+//   A generic member whose result is still an unbound type parameter (e.g.
+//   `run<R>(f: () -> R): R`) can yield the annotated type once the call
+//   closes, so it counts as recoverable (gold err_lambda_infer_interface_
+//   helper anchors the call close, not the receiver).
+bool MemberRecoversType(
+    const Model& model,
+    const std::string& type,
+    const std::string& target,
+    int depth = 0
+) {
+    if (type.empty() || target.empty() || depth > 3) return false;
+    // A function-typed RHS can be called: its result type is one postfix
+    // away (`let v: Int64 = f` extends via `f(1)`).
+    if (IsFunctionType(type)) {
+        const auto parts = FunctionTypeParts(type);
+        return Compatible(parts.second, target, model);
+    }
+    const bool type_receiver = StartsWith(type, "type:");
+    const std::string nominal_text = type_receiver ? type.substr(5) : type;
+    const std::string head = TypeHead(nominal_text);
+    // Subscripts are one postfix: `Array<T>[i]` -> T, `ArrayList<T>[i]` -> T,
+    // `String[i]` -> Rune.
+    if (head == "Array" || head == "ArrayList") {
+        const std::vector<std::string> args = TypeArgs(nominal_text);
+        if (!args.empty() && Compatible(args.front(), target, model)) return true;
+    }
+    if (head == "String" && Compatible("Rune", target, model)) return true;
+    const auto found = model.nominals.find(head);
+    if (found == model.nominals.end()) {
+        if ((head == "Int64" || head == "Float64" || head == "Bool") &&
+            target == "String") {
+            return true;
+        }
+        return false;
+    }
+    const NominalInfo& info = found->second;
+    const std::vector<std::string> args = TypeArgs(nominal_text);
+    auto subst = [&](std::string text) {
+        if (args.empty()) return text;
+        std::unordered_map<std::string, std::string> subs;
+        for (std::size_t i = 0; i < info.type_params.size() && i < args.size(); ++i) {
+            subs[info.type_params[i]] = args[i];
+        }
+        return ApplySubstitution(std::move(text), subs);
+    };
+    auto sig_recovers = [&](const FunctionSig& sig) {
+        FunctionSig substituted = sig;
+        for (std::string& param : substituted.param_types) {
+            param = subst(param);
+        }
+        substituted.result = subst(sig.result);
+        // Method reference: for a function target the method's own signature
+        // is the value (`let f: (Int64) -> Optional<Int64> = recv.get`).
+        if (IsFunctionType(target) &&
+            Compatible(PostfixGraph::FunctionTypeOf(substituted), target, model)) {
+            return true;
+        }
+        // A generic member whose result is still an unbound type parameter
+        // (e.g. `run<R>(f: () -> R): R`) can yield the annotated type once
+        // the call closes, so it counts as recoverable (gold err_lambda_
+        // infer_interface_helper anchors the call close, not the receiver).
+        if (!KnownType(TypeHead(substituted.result), model)) return true;
+        return Compatible(substituted.result, target, model);
+    };
+    if (type_receiver) {
+        for (const auto& field : info.static_fields) {
+            if (Compatible(subst(field.second), target, model)) return true;
+        }
+        for (const auto& method : info.static_methods) {
+            for (const FunctionSig& sig : method.second) {
+                if (sig_recovers(sig)) return true;
+            }
+        }
+        return false;
+    }
+    for (const auto& field : info.fields) {
+        if (Compatible(subst(field.second), target, model)) return true;
+    }
+    for (const auto& method : info.methods) {
+        for (const FunctionSig& sig : method.second) {
+            if (sig_recovers(sig)) return true;
+        }
+    }
+    for (const std::string& super : info.supers) {
+        if (MemberRecoversType(model, subst(super), target, depth + 1)) return true;
+    }
+    return false;
+}
+
+// One binary-operator application can change the RHS type: equality ops
+// return Bool on every known non-function type (`recv == recv` makes
+// `let b: Bool = recv` extendable; the corpus's `recv.size == recv.size`
+// programs must not fire at the receiver).  Function types are not
+// comparable, and String/Rune have no ordering in the FINAL context
+// (err_rel_unordered anchors `<` on String at the operator), so Bool is the
+// only operator result that ever differs from the operand type.
+bool OperatorRecoversType(const Model& model, const std::string& type, const std::string& target) {
+    if (type.empty() || target.empty()) return false;
+    if (target != "Bool") return false;
+    if (IsFunctionType(type)) return false;
+    return KnownType(TypeHead(type), model);
+}
+
+// True when some member (field or method) of `type` has `prefix` as an
+// identifier prefix.  The official member-missing anchor is the first
+// member token (gold err_no_member anchors `.m`): a member name (or even a
+// partial one) that cannot prefix any real member makes the RHS dead at
+// that token.  toString is exempted mid-statement by the Infer blanket, but
+// the FINAL context has toString on Int64/Float64/Bool only, so a
+// non-primitive receiver makes `.toString`/`.to` dead too.  Primitives:
+// Int64/Float64/Bool have `toString`; Rune/Unit have none.
+bool HasMemberPrefix(const Model& model, const std::string& type, const std::string& prefix) {
+    if (prefix.empty()) return true;  // a bare trailing dot is still extendable
+    const bool type_receiver = StartsWith(type, "type:");
+    const std::string head = TypeHead(type);
+    const auto found = model.nominals.find(head);
+    if (found == model.nominals.end()) {
+        if ((head == "Int64" || head == "Float64" || head == "Bool") &&
+            StartsWith("toString", prefix)) {
+            return true;
+        }
+        return false;
+    }
+    const NominalInfo& info = found->second;
+    if (type_receiver) {
+        for (const auto& field : info.static_fields) {
+            if (StartsWith(field.first, prefix)) return true;
+        }
+        for (const auto& method : info.static_methods) {
+            if (StartsWith(method.first, prefix)) return true;
+        }
+        return false;
+    }
+    for (const auto& field : info.fields) {
+        if (StartsWith(field.first, prefix)) return true;
+    }
+    for (const auto& method : info.methods) {
+        if (StartsWith(method.first, prefix)) return true;
+    }
+    return false;
 }
 
 bool HasInvalidAssignmentTarget(std::string_view line) {
@@ -9446,19 +9644,91 @@ CheckStatus AnalyzeSource(
             return {false, actual.message};
         }
         static const std::regex incomplete_float(R"([0-9]+\.[0-9]*)");
+        // V15 Patch 6 family A: single-member recovery.  A let/var
+        // initializer whose value type cannot reach the annotated type via
+        // ONE member access commits at the value's first token (gold
+        // err_arraylist_toarray_assign anchors `arr`); a recoverable value
+        // stays extendable — across the newline too (gold err_assign_let
+        // anchors the next statement).  Numeric RHS literals always defer
+        // (they can extend as a longer literal or an operator application —
+        // gold err_eq_incomparable/err_rel_mixed_numeric anchor the NEXT
+        // statement for `1 == "x"`/`1 < 1.0`, and err_mod_non_int64 passes
+        // over `1.0` to anchor `%`); only identifiers and strings are gated
+        // on member recovery.
+        const bool recoverable = actual.known &&
+            (MemberRecoversType(model, actual.type, declaration->first) ||
+             OperatorRecoversType(model, actual.type, declaration->first));
+        // An unclosed `[` in the RHS makes the inferred type provisional
+        // (the literal's element type can still change via a postfix —
+        // `[recv.capacity]` after `[recv`), so the declaration check defers
+        // until the literal closes; committed `]`-closed literals re-check
+        // normally.
+        const bool trailing_open_bracket =
+            std::count(declaration->second.begin(), declaration->second.end(), '[') >
+            std::count(declaration->second.begin(), declaration->second.end(), ']');
         const bool defer_atom = !committed && !soft_newline && (
-            IsIdentifierText(declaration->second) ||
-            (!declaration->second.empty() && declaration->second.front() == '"') ||
-            trailing_numeric_prefix || unclosed_string ||
-            trailing_open_paren ||
+            ((IsIdentifierText(declaration->second) ||
+              (!declaration->second.empty() && declaration->second.front() == '"')) &&
+             recoverable) ||
+            trailing_numeric_prefix ||
+            unclosed_string || trailing_open_paren || trailing_open_bracket ||
             std::regex_match(declaration->second, incomplete_float)
         ) && declaration->second != "true" && declaration->second != "false";
         const bool defer_suffix = !committed && actual.suffix_may_change_type &&
-            !IsFunctionType(actual.type);
+            !IsFunctionType(actual.type) && recoverable;
+        // A closed lambda literal is final at its `}` — it cannot be invoked
+        // or extended (gold err_lambda_non_function_ctxt anchors the close,
+        // not the next statement), so the function-type call recovery must
+        // not defer it across the newline.  An OPEN lambda still defers
+        // (its body can extend: `{ => 1` -> `{ => 1.toString() }`).
+        const std::string rhs_text = Trim(declaration->second);
+        const bool rhs_closed_lambda =
+            rhs_text.size() >= 4 && rhs_text.front() == '{' &&
+            rhs_text.back() == '}' &&
+            rhs_text.find("=>") != std::string::npos;
         if (actual.known && !Compatible(actual.type, declaration->first, model) &&
             !defer_atom && !defer_suffix &&
+            !(soft_newline && recoverable && !rhs_closed_lambda) &&
             !defer_mixed_mismatch(actual.type, declaration->first)) {
             return {false, "variable initializer type mismatch"};
+        }
+        // V15 Patch 6 family A: a top-level RHS ending in `.member` on a
+        // known receiver whose member set cannot contain that member (even
+        // partially) commits at the member token (gold err_no_member
+        // anchors `.m`).  toString is exempted mid-statement by the Infer
+        // blanket (println-arg `(tailHint(s)).toString()`, err_string_
+        // contains_arg, stays legal — that statement is not a declaration),
+        // but the FINAL context has toString on Int64/Float64/Bool only, so
+        // a non-primitive receiver makes `.toString`/`.to` dead here.
+        if (!actual.error) {
+            const std::size_t dot = declaration->second.rfind('.');
+            if (dot != std::string::npos) {
+                const std::string member =
+                    Trim(std::string_view(declaration->second).substr(dot + 1));
+                if (!member.empty() && IsIdentifierText(member)) {
+                    const std::string receiver =
+                        Trim(std::string_view(declaration->second).substr(0, dot));
+                    // Only a simple dotted chain is a member check: a
+                    // receiver nested inside brackets/parens (`[String.empty`,
+                    // `f(x).m`) has its member resolved by the expression
+                    // inferrer, not here (gold err_no_member's `.m` is a
+                    // top-level receiver).
+                    const bool simple_receiver = !receiver.empty() &&
+                        receiver.find_first_of("[({") == std::string::npos;
+                    if (simple_receiver) {
+                        ExprResult recv = typer.Infer(receiver, {});
+                        if (recv.known && !recv.error) {
+                            const std::string head = TypeHead(recv.type);
+                            const bool tostring_primitive =
+                                (head == "Int64" || head == "Float64" || head == "Bool");
+                            if (!tostring_primitive &&
+                                !HasMemberPrefix(model, recv.type, member)) {
+                                return {false, "unknown member"};
+                            }
+                        }
+                    }
+                }
+            }
         }
     } else if (const auto declaration = ParseAnyVariableDeclaration(line)) {
         ExprResult actual = typer.Infer(declaration->expression, declaration->annotated_type);
