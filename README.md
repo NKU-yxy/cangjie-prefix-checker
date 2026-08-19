@@ -150,18 +150,18 @@ git pull --ff-only origin master
 
 | 项目 | 配置 |
 |---|---|
-| 镜像 ID | `0522_cangjie_fragment_checker` |
-| Docker 镜像 | `docker.educg.net/compiler_system_challenge/cjchecker:20260522` |
+| 镜像 ID | `cangjie_fragment_checker_final` |
+| Docker 镜像 | `docker.educg.net/compiler_system_challenge/cjchecker:v1.2` |
 | 操作系统 | Ubuntu 22.04 |
 | 服务器架构 | ARM |
 
+提交归档、Docker 验证和本地公开数据集验证的唯一操作说明见 [SUBMISSION.md](SUBMISSION.md)。提交归档中只保留一个 `build.sh`，执行后会在归档根目录生成 `solution`。
+
 本地构建需要：
 
-- Python 3.9 或更高版本；
-- `pip`；
+- Python 3（仅使用标准库）；
 - 支持 C++17 的 `c++`、`g++` 或 `clang++`；
-- Linux 或 macOS；
-- 首次安装依赖时可访问 Python 软件源。
+- Linux（正式评测）或 macOS（本地预检查）。
 
 ### 7.2 `requirements.txt`
 
@@ -182,7 +182,7 @@ typing-extensions>=4.9.0
 python3 -m pip install --user -r requirements.txt
 ```
 
-`build.sh` 还会检查 XGrammar C++ 头文件和共享库；环境中缺少 XGrammar 时，脚本会安装固定版本 `xgrammar==0.2.1`。仅希望构建竞赛程序时，也可以直接执行 `build.sh`，由脚本检查并补齐生产依赖。
+`requirements.txt` 仅供开发期 Python 差分工具使用；正式的 `build.sh` 不安装依赖、不访问网络，使用仓库内置的 XGrammar 源码、token 表压缩包和上下文生成工具。
 
 ## 8. 构建
 
@@ -195,11 +195,10 @@ chmod +x build.sh
 
 构建脚本会完成以下工作：
 
-1. 检查并安装必要的 Python 构建依赖；
-2. 生成 `cl100k_base` token 二进制查表；
-3. 将 `context.json` 转换为原生上下文表；
-4. 使用 C++17 和 `-O3` 编译纯 C++ 检查器；
-5. 将项目根目录的 `solution` 更新为可执行文件。
+1. 从内置压缩包生成 `cl100k_base` token 二进制查表；
+2. 将 `context.json` 转换为原生上下文表；
+3. 使用 C++17 和 `-O3` 编译纯 C++ 检查器；
+4. 在项目根目录生成可执行文件 `solution`。
 
 构建产物：
 

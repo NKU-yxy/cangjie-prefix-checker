@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # v4: hardened competition build.
 #
-# Runtime files (grammar/, generated/context.bin) are shipped in the submission
-# itself, so this script only provisions derived artifacts and compiles the
-# native checker. There are no hash pinning steps, no network accesses, and no
-# hard failure paths except when no runnable solution can be produced at all
-# (missing token table or missing toolchain with no fallback).
+# The submission contains all source inputs needed to generate its runtime
+# tables and compile the native checker. There are no network accesses; failure
+# means a required source input or toolchain is unavailable.
 
 set -euo pipefail
 
@@ -39,18 +37,13 @@ if [[ ! -s generated/cl100k_base.bin ]]; then
 fi
 
 # --- 2) context table (runtime: generated/context.bin) ---------------------
-# The submission ships the correct generated/context.bin. If context.json and
-# the generator are present, regenerate; on any failure keep the shipped one.
-if [[ -s context.json && -s tools/generate_context_table.py ]]; then
-  if run_quiet python3 tools/generate_context_table.py context.json generated/context.bin.tmp; then
-    mv -f generated/context.bin.tmp generated/context.bin
-  fi
-fi
-rm -f generated/context.bin.tmp
-if [[ ! -s generated/context.bin ]]; then
-  echo "missing context table: generated/context.bin" >&2
+# Generate the context table from the submitted final context definition.
+if [[ ! -s context.json || ! -s tools/generate_context_table.py ]]; then
+  echo "missing context.json or tools/generate_context_table.py" >&2
   exit 1
 fi
+run_quiet python3 tools/generate_context_table.py context.json generated/context.bin.tmp
+mv -f generated/context.bin.tmp generated/context.bin
 
 # --- 3) compile the native checker -----------------------------------------
 xgrammar_root="third_party/xgrammar_core"
@@ -77,6 +70,19 @@ xgrammar_sources=(
 
 native_cxx="${CXX:-c++}"
 native_compile_flags=("-std=c++17")
+native_link_flags=()
+case "$(uname -s)" in
+  Linux)
+    native_link_flags+=("-Wl,--gc-sections" "-ldl")
+    ;;
+  Darwin)
+    native_link_flags+=("-Wl,-dead_strip")
+    ;;
+  *)
+    echo "unsupported build host: $(uname -s)" >&2
+    exit 1
+    ;;
+esac
 if [[ "${CANGJIE_PROFILE_BUILD:-0}" == "1" ]]; then
   native_compile_flags+=("-DCANGJIE_ENABLE_PROFILE=1")
 fi
@@ -102,7 +108,7 @@ run_quiet "${native_cxx}" \
   cpp/call_frontier.cpp \
   cpp/continuation.cpp \
   "${xgrammar_sources[@]}" \
-  -Wl,--gc-sections -ldl \
+  "${native_link_flags[@]}" \
   -o solution
 
 # strip is a nicety, not a requirement

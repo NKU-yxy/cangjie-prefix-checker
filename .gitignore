@@ -1,7 +1,10 @@
 .venv/
+.vscode/
 __pycache__/
 .DS_Store
 local_results/
 generated/
+dist/
+solution
 solution_cpp
 baseline_results/20260815_g4_identifier_independent_acceptance/g4-029-identifier-independent-acceptance.tar.gz

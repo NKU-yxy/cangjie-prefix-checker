@@ -566,9 +566,7 @@
         "T"
       ],
       "instance_fields": {
-        "size": "Int64",
-        "first": "Optional<T>",
-        "last": "Optional<T>"
+        "size": "Int64"
       },
       "static_fields": {},
       "instance_methods": {
@@ -676,6 +674,30 @@
           "type_params": [],
           "params": [],
           "ret": "Unit"
+        },
+        "first": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
+        },
+        "last": {
+          "type_params": [],
+          "params": [],
+          "ret": {
+            "nominal": "Optional",
+            "args": [
+              {
+                "tparam": "T"
+              }
+            ]
+          }
         },
         "indexOf": {
           "type_params": [],
