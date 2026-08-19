@@ -104,3 +104,58 @@
 - **结论**：diff=0 是 §十二放行标准（"Behavioral Context 非 F1 偏差：发现则必须全部修复"），由 Patch 4-7 逐族修复后回验；Patch 2 阶段不改判定路径
 - gate 复验：wrong 49/50（仅 toarray_assign 刻意偏离）+ wrong2 50/50，与 Patch 0/1 逐字节一致
 - 提交：`c2f8dcd`
+
+---
+
+## Patch 3：Valid-Program Prefix Corpus — ✅ 完成（2026-08-19）
+
+### 工具：`tools/generate_valid_prefix_corpus.py`
+
+- 对全部 106 个成员生成 ≥8 种 use-shape 程序（13 个 call 版槽位 + 8 个 read 版槽位）：
+  let_init / arg / return / condition / binary / lambda_body / array_element /
+  index_result / ctor_arg / postfix / method_ref / for_in / paren /
+  double_let / array_repeat / nested_paren / value_read / read_arg /
+  read_condition / read_binary / read_lambda / read_paren / read_double /
+  read_ctor_arg / read_postfix
+- 语法节点 × 嵌套矩阵 41 个程序（if/if-else/while/for/lambda/array/index/range/
+  paren/binary/unary/return/call/string/loop_control/tuple，每类 ≥2 嵌套上下文）
+- 泛型推断来源 10 个程序（显式类型参数、lambda 反向推断、期望类型传播、
+  ctor 实参、接口继承替换、泛型嵌套、泛型 receiver 方法、方法引用+调用、
+  Optional 链、range step for-in）
+- 官方 ACCEPT-only 过滤 → 扫描 v15 solution（cl100k token 流 + CANGJIE_TRACE_FIRE
+  事件），记录 fire 索引 + 最短 fire 前缀（二分），按语义 cell 聚类
+  （message × symbol_kind × tail × boundary × receiver × cf_resolved × cf_closed）
+- 产物：`results/valid_prefix_corpus.json`（1497 程序全量 + member_stats +
+  clusters + gates）、`results/prefix_scan_report.md`
+
+### 生成器校准发现（探针构造，非运行时偏差）
+
+- **context.json 字符串类型需具体化**：Array.first/last 存为字符串
+  `"Optional<T>"`，`fmt_type` 直通 → 注解里的未知 T 被官方 checker 当作自由
+  类型变量 → 与具体值 mismatch。修复：对字符串类型做 `substitute(tvars)`
+- **`let x: Unit = expr` 官方 ACCEPT**（Unit 可绑定），但 `Unit == Unit` REJECT
+  → Unit-ret 成员（println 等）的 condition/binary 形状被官方过滤
+- **方法成员的官方属性化**：HashMap/HashSet size/capacity（field+method 同名）、
+  Collection.size（接口方法）——官方 field 优先，调用形式全拒、值读形式 ACCEPT
+  → 对方法成员补 read 版槽位形状（read_ctor_arg 补足 8 个）
+- **lambda 捕获官方 REJECT**：`{ => recv.size }` 闭包内引用外层局部变量不可用
+  → read_lambda 不计入覆盖
+- 扫描器只收 `event=fire` 的 stderr 事件行（solution 退出时打印的
+  `{"event":"stats"}` 统计行会污染聚类）
+- solution 对个别程序崩溃（BrokenPipe）→ 扫描器记录 crashed 而非中断
+
+### 扫描结果：244 个过早拒绝，7 个语义 cell
+
+| cell | 计数 | 说明 |
+|---|---|---|
+| `array element type mismatch`（local/value/statement） | **237** | 数组字面量元素槽位——所有成员的 array_element/index_result/array_repeat 形状。官方合法（元素是合法表达式），runtime 判定元素类型错 → **Patch 4 Alive-Only Override 主目标** |
+| `ambiguous overloaded member reference`（method/value/member_sel） | 4 | ArrayList.add、HashMap.remove、HashSet.add/remove 方法引用 overload 消歧 → Patch 7（族 B 相关） |
+| `argument type mismatch`（function/call/assign_rhs） | 1 | global__clamp__binary（clamp 双 overload Float64 比较） |
+| `variable initializer type mismatch`（primitive/value/statement） | 1 | `[1, 2][0]` 数组字面量 receiver 索引（非标识符 receiver 限制） |
+| `unknown receiver type`（unknown/value/member_sel） | 1 | `Array<Int64>(1, 0).first` receiver 解析限制 |
+
+- 最短 fire 前缀 = fire 索引本身（前 60 个验证）：fire 位置稳定，无更早触发点
+- 门禁：✅ 每 member ≥8 shapes（官方 error 成员豁免 3 个：ArrayList.of/min/max）、
+  ✅ 语法节点每类 ≥2、✅ 全部官方 ACCEPT、✅ 语料 1497、244 early fires 已聚类
+- gate 复验：wrong 49/50（仅 toarray_assign 刻意偏离）+ wrong2 50/50 不变
+- 提交：`<pending>`
