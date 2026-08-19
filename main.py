@@ -17,6 +17,7 @@ import os
 import argparse
 
 
+# 主入口：解析命令行，读取源码文件/代码串，调用检查器并打印结果
 def main():
     parser = argparse.ArgumentParser(
         description="Cangjie Syntax Checker - token-by-token validation using XGrammar"
@@ -91,6 +92,7 @@ def main():
     sys.exit(0 if result.passed else 1)
 
 
+# 运行内置测试用例（合法/非法样例逐一检查并统计通过数）
 def run_tests(grammar_path=None, verbose=False):
     """Run built-in test cases."""
     from src.syntax_checker import check_cangjie

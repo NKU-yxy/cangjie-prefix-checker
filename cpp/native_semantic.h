@@ -139,6 +139,7 @@ class IncrementalLexer {
         PartialLexeme partial;
     };
 
+    // 增量词法分析：输入新字节，返回已稳定的 token 序列与未完成词素
     Result Feed(std::string_view bytes);
 
  private:
@@ -153,9 +154,13 @@ class IncrementalSemanticEngine {
     IncrementalSemanticEngine(const IncrementalSemanticEngine&) = delete;
     IncrementalSemanticEngine& operator=(const IncrementalSemanticEngine&) = delete;
 
+    // 接受一个已稳定的 token（通常不报错，仅记录）
     CheckStatus Accept(const TokenEvent& event);
+    // 对当前源码前缀做一次完整语义检查（含未完成词素的保守判断）
     CheckStatus Probe(const PartialLexeme& partial, std::string_view source);
+    // 保存当前检查进度（已接受 token 数与源码字节数），供回滚使用
     Checkpoint Save() const;
+    // 回滚到之前保存的检查进度
     void Rollback(const Checkpoint& checkpoint);
 
     // Dump the preloaded context model as canonical Context IR JSON
@@ -187,7 +192,9 @@ class IncrementalSemanticEngine {
 
 class NativeSemanticChecker {
  public:
+    // 构造语义检查器并预加载上下文表
     explicit NativeSemanticChecker(std::string context_path = {});
+    // 检查一段新输入的字节：先增量词法，再对整体前缀做语义检查
     CheckStatus Check(std::string_view bytes);
     void DumpContextIrJson(std::ostream& os) const { engine_.DumpContextIrJson(os); }
     const FrontierInfo& LastFrontier() const { return engine_.LastFrontier(); }

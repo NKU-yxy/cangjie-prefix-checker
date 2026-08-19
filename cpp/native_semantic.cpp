@@ -261,6 +261,7 @@ struct ProfileCounters {
 
 ProfileCounters* g_profile = nullptr;
 
+// 构造缓存键（左右字符串用 '\0' 分隔）
 std::string ProfilePairKey(std::string_view left, std::string_view right) {
     std::string key;
     key.reserve(left.size() + right.size() + 1);
@@ -396,6 +397,7 @@ bool StartsWithKeyword(std::string_view text, std::string_view keyword) {
          !IsIdentContinue(static_cast<unsigned char>(text[keyword.size()])));
 }
 
+// 去掉字符串首尾空白
 std::string Trim(std::string_view input) {
     std::size_t first = 0;
     while (first < input.size() && std::isspace(static_cast<unsigned char>(input[first]))) {
@@ -408,6 +410,7 @@ std::string Trim(std::string_view input) {
     return std::string(input.substr(first, last - first));
 }
 
+// 压缩类型文本（去掉空白与修饰符），得到规范化类型表示
 std::string CompactType(std::string_view input) {
 #ifdef CANGJIE_ENABLE_PROFILE
     ProfileScopeTimer profile_timer(g_profile ? &g_profile->compact_type_ns : nullptr);
@@ -436,6 +439,7 @@ std::string CompactType(std::string_view input) {
     return output;
 }
 
+// 按分隔符切分字符串，但不切分括号/尖括号/引号内的内容（顶层切分）
 std::vector<std::string> SplitTopLevel(std::string_view input, char separator) {
     std::vector<std::string> parts;
     std::size_t start = 0;
@@ -484,6 +488,7 @@ std::vector<std::string> SplitTopLevel(std::string_view input, char separator) {
     return parts;
 }
 
+// 从给定位置开始找到匹配的成对定界符（如 {}、()、[]）的闭合位置
 std::optional<std::size_t> MatchingDelimiter(
     std::string_view text,
     std::size_t open,
@@ -559,6 +564,7 @@ std::optional<std::size_t> MatchingDelimiter(
     return std::nullopt;
 }
 
+// 在顶层（括号/引号之外）查找子串首次出现的位置
 std::size_t FindTopLevel(std::string_view input, std::string_view needle) {
     int paren = 0;
     int bracket = 0;
@@ -598,6 +604,7 @@ std::size_t FindTopLevel(std::string_view input, std::string_view needle) {
     return std::string_view::npos;
 }
 
+// 提取类型名（如 "Array<Int64>" -> "Array"）
 std::string TypeHead(std::string_view type) {
 #ifdef CANGJIE_ENABLE_PROFILE
     ProfileScopeTimer profile_timer(g_profile ? &g_profile->type_head_ns : nullptr);
@@ -616,6 +623,7 @@ std::string TypeHead(std::string_view type) {
     return normalized.substr(0, angle);
 }
 
+// 提取类型实参列表（如 "Array<Int64>" -> ["Int64"]）
 std::vector<std::string> TypeArgs(std::string_view type) {
 #ifdef CANGJIE_ENABLE_PROFILE
     ProfileScopeTimer profile_timer(g_profile ? &g_profile->type_args_ns : nullptr);
@@ -866,6 +874,7 @@ class ContextTableReader {
     std::size_t cursor_ = 0;
 };
 
+// 从二进制上下文表（generated/context.bin）加载预置的全局变量、函数与类型模型
 void LoadContextTable(const std::string& path, Model* model) {
     if (path.empty()) return;
     std::ifstream stream(path, std::ios::binary);
@@ -905,6 +914,7 @@ void LoadContextTable(const std::string& path, Model* model) {
 
 }  // namespace
 
+// 增量词法分析：把新字节并入缓冲，切出稳定 token，保留未完成的词素作为 partial
 IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
     pending_.append(bytes.data(), bytes.size());
     Result result;
@@ -1047,6 +1057,7 @@ IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
 
 namespace {
 
+// 解析泛型参数列表文本（"<T, U>" 形式，忽略 <: 上界）
 std::vector<std::string> ParseTypeParameters(std::string_view text) {
     std::string trimmed = Trim(text);
     if (!trimmed.empty() && trimmed.front() == '<') trimmed.erase(trimmed.begin());
@@ -1061,6 +1072,7 @@ std::vector<std::string> ParseTypeParameters(std::string_view text) {
     return result;
 }
 
+// 解析函数签名（泛型、参数列表、返回类型），生成 FunctionSig 记录
 FunctionSig ParseFunctionSignature(
     std::string name,
     std::string_view generic_text,
@@ -1088,6 +1100,7 @@ FunctionSig ParseFunctionSignature(
     return sig;
 }
 
+// 解析类型头部中的 "<:" 父类型/接口列表（以 & 分隔）
 std::vector<std::string> ParseSupers(std::string_view header) {
     const std::size_t marker = header.find("<:");
     if (marker == std::string::npos) return {};
@@ -1099,6 +1112,7 @@ std::vector<std::string> ParseSupers(std::string_view header) {
     return output;
 }
 
+// 判断源码中是否存在跨行的函数/init/main 头部
 bool HasMultilineFunctionHeader(std::string_view source) {
     std::size_t search_from = 0;
     while (search_from < source.size()) {
@@ -1283,6 +1297,7 @@ std::vector<DeclarationRecord> ScanDeclarationFamily(
     return records;
 }
 
+// 扫描源码构建声明快照：收集函数、类/接口、类型参数与成员记录
 DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
 #ifdef CANGJIE_ENABLE_PROFILE
     {
@@ -1613,6 +1628,7 @@ void VerifyDeclarationSnapshot(
 }
 #endif
 
+// 从声明快照收集所有函数（含方法、构造器）到模型，按名字分组
 void CollectFunctions(const DeclarationSnapshot& snapshot, Model* model) {
     auto collect = [&](const std::vector<DeclarationRecord>& records) {
         for (const DeclarationRecord& record : records) {
@@ -1657,6 +1673,7 @@ void CollectFunctionsRegex(std::string_view source, Model* model) {
 }
 #endif
 
+// 收集 import 语句暴露到当前作用域的符号名（全局/函数别名）
 void CollectImports(std::string_view source, Model* model) {
     static const std::regex import_pattern(
         R"(\bimport\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)*([A-Za-z_][A-Za-z0-9_]*))"
@@ -1762,6 +1779,7 @@ std::unordered_map<std::string, SourceFieldInfo> ScanTopLevelSourceFields(
     return ScanTopLevelSourceFieldsMasked(MaskNonCodeText(body));
 }
 
+// 从声明快照记录收集类/接口（含字段、方法、构造器、父类型）
 void CollectNominalsFromRecords(
     std::string_view source,
     const std::vector<DeclarationRecord>& records,
@@ -1849,6 +1867,7 @@ void CollectNominalsFromRecords(
     }
 }
 
+// 收集全部类/接口声明到模型（入口函数）
 void CollectNominals(
     std::string_view source,
     const DeclarationSnapshot& snapshot,
@@ -1950,6 +1969,7 @@ void CollectNominalsRegex(std::string_view source, Model* model) {
     }
 }
 
+// 比较两个函数签名是否完全一致（用于模型差分校验）
 bool SameFunctionSignature(const FunctionSig& left, const FunctionSig& right) {
     return left.name == right.name &&
         left.type_params == right.type_params &&
@@ -1985,6 +2005,7 @@ bool SameSignatureMap(
     return true;
 }
 
+// 比较两个类型（类/接口）信息是否完全一致
 bool SameNominalInfo(const NominalInfo& left, const NominalInfo& right) {
     return left.name == right.name &&
         left.is_interface == right.is_interface &&
@@ -1997,6 +2018,7 @@ bool SameNominalInfo(const NominalInfo& left, const NominalInfo& right) {
         SameSignatureVector(left.constructors, right.constructors);
 }
 
+// 比较两个模型（全局/函数/类型表）是否完全一致
 bool SameModel(const Model& left, const Model& right) {
     if (left.globals != right.globals ||
         !SameSignatureMap(left.functions, right.functions) ||
@@ -2043,6 +2065,7 @@ namespace {
 
 // Mask out string literals, char literals and comments so the frontier
 // identifier scan never lands inside them.
+// 把字符串/字符字面量与注释内容掩码为空白，只保留代码结构
 std::string MaskQuotedAndComments(std::string_view line) {
     std::string out(line);
     const std::size_t n = out.size();
@@ -2097,6 +2120,7 @@ struct FrontierScan {
 };
 
 // Position just after the '>' matching line[open], where line[open] == '<'.
+// 跳过类型实参列表（"<...>"，含嵌套），返回列表结束位置
 std::size_t SkipTypeArgumentList(std::string_view line, std::size_t open) {
     int depth = 0;
     for (std::size_t i = open; i < line.size(); ++i) {
@@ -2310,6 +2334,7 @@ FrontierVerdict MemberVerdict(
     return FrontierVerdict::Dead;
 }
 
+// 分类失败点（frontier）：定位语句末尾的标识符，判断其符号种类、尾部与边界
 FrontierInfo ClassifyFrontier(
     std::string_view source,
     const Model& model,
@@ -2401,6 +2426,7 @@ FrontierInfo ClassifyFrontier(
 
 }  // namespace
 
+// 从声明快照记录定位当前所在函数（含参数变量与返回类型）
 FunctionContext CurrentFunctionContextFromRecords(
     std::string_view source,
     const std::vector<DeclarationRecord>& single_line_records,
@@ -2454,6 +2480,7 @@ FunctionContext CurrentFunctionContextFromRecords(
     return best;
 }
 
+// 获取当前源码位置所在的函数上下文（入口，基于声明快照）
 FunctionContext CurrentFunctionContext(
     std::string_view source,
     const DeclarationSnapshot& snapshot
@@ -2542,6 +2569,7 @@ FunctionContext CurrentFunctionContextRegex(std::string_view source) {
 }
 #endif
 
+// 从函数体内收集 var/let 局部变量及其类型
 void CollectLocalVariables(FunctionContext* context) {
     static const std::regex declaration_pattern(
         R"(\b(let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^=;{}\n]+)\s*=)"
@@ -2553,6 +2581,7 @@ void CollectLocalVariables(FunctionContext* context) {
     }
 }
 
+// 收集当前仍处于打开状态的 lambda 的形参变量（含类型推断结果）
 void CollectActiveLambdaVariables(FunctionContext* context) {
     struct BraceFrame {
         std::size_t open = 0;
@@ -2660,6 +2689,7 @@ bool NominalSubtype(
     return false;
 }
 
+// 判断 got 类型是否与期望的 want 类型兼容（含数值族转换与泛型/继承关系）
 bool Compatible(std::string_view got, std::string_view want, const Model& model) {
 #ifdef CANGJIE_ENABLE_PROFILE
     ProfileScopeTimer profile_timer(g_profile ? &g_profile->compatible_ns : nullptr);
@@ -2690,6 +2720,7 @@ bool Compatible(std::string_view got, std::string_view want, const Model& model)
     return NominalSubtype(left, right, model, &visited);
 }
 
+// 判断一个类型是否为模型已知的类型（原始类型、命名类型或泛型实例）
 bool KnownType(std::string_view type, const Model& model) {
     const std::string normalized = CompactType(type);
     static const std::unordered_set<std::string> primitives = {
@@ -3504,6 +3535,8 @@ RecoveryWitness FindRecoveryWitness(
 
 // Orchestrator: expected type → completion witness (mid-identifier) → open
 // call witness → postfix BFS.  Cached by (source|target|tail|boundary).
+// 计算恢复见证（shadow）：期望类型 → 补全见证 → 开放调用见证 → 后缀 BFS，
+// 回答"该 frontier 还能否续写为合法程序"，带缓存
 RecoveryWitness ComputeShadowWitness(
     const FrontierInfo& frontier,
     const Model& model,
@@ -3561,6 +3594,7 @@ RecoveryWitness ComputeShadowWitness(
 // Pure shadow: the decision path never consults the result (activation is
 // Patch 5); completion standard: alive counts printable, every elimination
 // carries a reason.
+// 对失败点（frontier）为调用位置的场景，逐一分析被调函数各重载的候选存活状态
 CallFrontierResult ComputeCallFrontier(
     const FrontierInfo& frontier,
     const Model& model,
@@ -3762,6 +3796,7 @@ std::unordered_set<std::string> EnclosingNominalTypeParameters(
     return std::unordered_set<std::string>(nearest->begin(), nearest->end());
 }
 
+// 检查所有显式声明的函数/变量类型：类型参数冲突、已知性、类型兼容性
 CheckStatus CheckDeclaredTypesFromRecords(
     std::string_view source,
     const Model& model,
@@ -3935,6 +3970,7 @@ CheckStatus CheckDeclaredTypesRegex(std::string_view source, const Model& model)
 }
 #endif
 
+// 检查显式声明类型是否合法（入口，基于声明快照）
 CheckStatus CheckDeclaredTypes(
     std::string_view source,
     const Model& model,
@@ -3958,6 +3994,7 @@ CheckStatus CheckDeclaredTypes(
     return result;
 }
 
+// 判断语句是否以需要续行的操作符结尾（=、=>、+ 等）
 bool ContinuesAfterNewline(std::string_view statement) {
     const std::string trimmed = Trim(statement);
     if (trimmed.empty()) return false;
@@ -4177,6 +4214,7 @@ class ActiveStatementCache {
     bool pending_newline_ = false;
 };
 
+// 判断一行文本能否作为一条语句的开头（保守试探）
 bool IsStatementPrefix(std::string_view line) {
     static const std::vector<std::string> keywords = {
         "if", "else", "while", "for", "return", "let", "var", "break",
@@ -4200,6 +4238,7 @@ bool IsStatementPrefix(std::string_view line) {
 // that is not itself a statement keyword (e.g. "i" is not "if") is a finished
 // bare expression, so it must still flow through type inference instead of
 // being skipped as an unfinished keyword prefix.
+// 判断一行是否为未写完的关键字前缀（如 "ret" 可能是 "return"）
 bool IsUnfinishedKeywordPrefix(std::string_view line) {
     static const std::vector<std::string> keywords = {
         "if", "else", "while", "for", "return", "let", "var", "break",
@@ -4218,12 +4257,14 @@ bool IsUnfinishedKeywordPrefix(std::string_view line) {
     return false;
 }
 
+// 判断源码末尾是否以完整的标识符结束（否则可能仍可续写）
 bool HasCompleteTrailingIdentifier(std::string_view source) {
     if (source.empty()) return false;
     const unsigned char last = static_cast<unsigned char>(source.back());
     return !IsIdentContinue(last);
 }
 
+// 判断源码中是否存在未闭合的字符串字面量（此时前缀仍可续写）
 bool HasUnclosedString(std::string_view source) {
     bool in_string = false;
     bool triple_string = false;
@@ -4284,6 +4325,7 @@ struct ExprResult {
     bool suffix_may_change_type = false;
 };
 
+// 把可扩展后缀（如未写完的成员访问/调用）标记进表达式推断结果
 ExprResult WithExtendablePostfix(ExprResult result) {
     if (result.known && !result.error) result.suffix_may_change_type = true;
     return result;
@@ -4330,6 +4372,7 @@ class ExpressionTyper {
     std::string_view full_source_;
 };
 
+// 去掉表达式最外层的成对括号（仅当整体被括号包裹时）
 std::string StripOuterParens(std::string expression) {
     expression = Trim(expression);
     while (expression.size() >= 2 && expression.front() == '(') {
@@ -4448,6 +4491,7 @@ std::optional<std::tuple<std::string, std::string, std::string>> TailBinary(
     return std::nullopt;
 }
 
+// 在表达式尾部找到最近的函数调用 '('（含泛型实参前缀），判断其是否已闭合
 std::optional<std::size_t> FindCallOpen(std::string_view expression, bool* closed) {
     int total_parens = 0;
     bool scan_string = false;
@@ -4509,6 +4553,7 @@ std::optional<std::size_t> FindCallOpen(std::string_view expression, bool* close
     return paren > 0 ? candidate : std::nullopt;
 }
 
+// 解析显式调用目标：拆分 callee 名字与显式类型实参列表
 std::pair<std::string, std::vector<std::string>> ParseExplicitTypes(std::string callee) {
     callee = Trim(callee);
     if (callee.empty() || callee.back() != '>') return {callee, {}};
@@ -4525,6 +4570,7 @@ std::pair<std::string, std::vector<std::string>> ParseExplicitTypes(std::string 
     return {callee, {}};
 }
 
+// 判断前缀是否以运算符/特殊符号开头（表达式可能仍是这些符号的一部分）
 bool ExpressionTyper::HasSymbolPrefix(std::string_view prefix) const {
     for (const auto& [name, _] : context_.variables) if (StartsWith(name, prefix)) return true;
     for (const auto& [name, _] : model_.globals) if (StartsWith(name, prefix)) return true;
@@ -4533,6 +4579,7 @@ bool ExpressionTyper::HasSymbolPrefix(std::string_view prefix) const {
     return false;
 }
 
+// 判断尾部标识符是否还能继续扩展（如未写完的成员名或关键字）
 bool ExpressionTyper::MayExtendTrailingIdentifier(std::string_view identifier) const {
     if (!IsIdentifierText(identifier) || full_source_.empty()) return false;
     std::size_t end = full_source_.size();
@@ -4543,6 +4590,7 @@ bool ExpressionTyper::MayExtendTrailingIdentifier(std::string_view identifier) c
     return full_source_.substr(start, end - start) == identifier;
 }
 
+// 解析成员访问表达式（接收者类型 + 成员名），处理泛型实例与链式访问
 std::optional<std::pair<std::string, std::string>> ExpressionTyper::ParseMember(
     std::string_view expression
 ) const {
@@ -4612,6 +4660,7 @@ void BindTypeVariables(
     }
 }
 
+// 按函数签名集合检查一个调用：逐一匹配重载，核对实参个数与类型
 ExprResult ExpressionTyper::CheckSignatures(
     const std::vector<FunctionSig>& signatures,
     const std::vector<std::string>& explicit_types,
@@ -4736,6 +4785,7 @@ ExprResult ExpressionTyper::CheckSignatures(
     return {};
 }
 
+// 推断一次函数调用：解析目标与实参，按签名检查并做泛型实参替换
 ExprResult ExpressionTyper::InferCall(
     std::string base,
     std::string name,
@@ -4851,6 +4901,7 @@ ExprResult ExpressionTyper::InferCall(
     ));
 }
 
+// 找到表达式中第一个字符串字面量的结束位置（用于掩码处理）
 std::optional<std::size_t> FirstStringLiteralEnd(std::string_view expression) {
     if (expression.empty() || expression.front() != '"') return std::nullopt;
     if (StartsWith(expression, "\"\"\"")) {
@@ -4873,6 +4924,7 @@ std::optional<std::size_t> FirstStringLiteralEnd(std::string_view expression) {
     return std::nullopt;
 }
 
+// 表达式类型推断核心：递归处理字面量/标识符/调用/成员访问/运算符/数组/lambda
 ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string& expected, int depth) {
     if (depth > 64) return {};
     expression = Trim(expression);
@@ -5483,6 +5535,7 @@ ExprResult ExpressionTyper::InferImpl(std::string expression, const std::string&
     return {};
 }
 
+// 收集可从初始化表达式推断出类型的局部变量（var x = expr 形式）
 void CollectInferredLocalVariables(
     FunctionContext* context,
     const Model& model,
@@ -5511,6 +5564,7 @@ struct AnyVariableDeclaration {
     std::string expression;
 };
 
+// 解析任意变量声明行（var/let 带类型或不带类型），返回声明信息
 std::optional<AnyVariableDeclaration> ParseAnyVariableDeclaration(std::string_view line) {
     const std::string owned = Trim(line);
     std::size_t cursor = 0;
@@ -5571,6 +5625,7 @@ std::optional<AnyVariableDeclaration> ParseAnyVariableDeclaration(std::string_vi
     };
 }
 
+// 解析 "var 名字 = 值" 形式的变量声明，返回名字与初始化表达式
 std::optional<std::pair<std::string, std::string>> ParseVariableDeclaration(
     std::string_view line
 ) {
@@ -5579,6 +5634,7 @@ std::optional<std::pair<std::string, std::string>> ParseVariableDeclaration(
     return std::make_pair(declaration->annotated_type, declaration->expression);
 }
 
+// 解析赋值语句（目标 = 值），返回目标与右值表达式
 std::optional<std::pair<std::string, std::string>> ParseReassignment(std::string_view line) {
     static const std::regex pattern(
         R"(^\s*(?:this\s*\.\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)\s*(.*)$)"
@@ -5589,6 +5645,7 @@ std::optional<std::pair<std::string, std::string>> ParseReassignment(std::string
     return std::make_pair(match[1].str(), Trim(match[2].str()));
 }
 
+// 判断一行是否以显式的 this 接收者开头（this.member 形式）
 bool HasExplicitThisReceiver(std::string_view line) {
     static const std::regex pattern(R"(^\s*this\s*\.)");
     return std::regex_search(line.begin(), line.end(), pattern);
@@ -5709,6 +5766,7 @@ bool MemberRecoversType(
 // comparable, and String/Rune have no ordering in the FINAL context
 // (err_rel_unordered anchors `<` on String at the operator), so Bool is the
 // only operator result that ever differs from the operand type.
+// 判断运算符结果类型能否通过后续运算恢复为期望类型
 bool OperatorRecoversType(const Model& model, const std::string& type, const std::string& target) {
     if (type.empty() || target.empty()) return false;
     if (target != "Bool") return false;
@@ -5724,6 +5782,7 @@ bool OperatorRecoversType(const Model& model, const std::string& type, const std
 // the FINAL context has toString on Int64/Float64/Bool only, so a
 // non-primitive receiver makes `.toString`/`.to` dead too.  Primitives:
 // Int64/Float64/Bool have `toString`; Rune/Unit have none.
+// 判断某类型上是否存在以 prefix 开头的成员名（未完成成员访问的续写试探）
 bool HasMemberPrefix(const Model& model, const std::string& type, const std::string& prefix) {
     if (prefix.empty()) return true;  // a bare trailing dot is still extendable
     const bool type_receiver = StartsWith(type, "type:");
@@ -5755,6 +5814,7 @@ bool HasMemberPrefix(const Model& model, const std::string& type, const std::str
     return false;
 }
 
+// 检查赋值语句的目标是否为不可赋值的表达式（如字面量/函数调用）
 bool HasInvalidAssignmentTarget(std::string_view line) {
     const std::string owned = Trim(MaskNonCodeText(line));
     if (StartsWith(owned, "let ") || StartsWith(owned, "var ")) return false;
@@ -5797,6 +5857,7 @@ bool HasInvalidAssignmentTarget(std::string_view line) {
     return false;
 }
 
+// 提取源码中最后一个 if/while 的条件表达式
 std::optional<std::string> LastCondition(std::string_view source, std::string_view keyword) {
     const std::string marker = std::string(keyword) + " (";
     std::size_t position = source.rfind(marker);
@@ -5811,6 +5872,7 @@ std::optional<std::string> LastCondition(std::string_view source, std::string_vi
     return std::nullopt;
 }
 
+// 判断当前是否位于循环体内（break/continue 上下文检查用）
 bool InsideLoop(std::string_view body) {
     static const std::regex loop_pattern(R"(\b(?:for|while)\s*\([^{}]*\)\s*\{)");
     const std::string owned(body);
@@ -5821,6 +5883,7 @@ bool InsideLoop(std::string_view body) {
     return false;
 }
 
+// 判断一个类型是否可迭代（for-in 源）
 bool IsIterable(std::string_view type) {
     const std::string head = TypeHead(type);
     return head == "Array" || head == "ArrayList" || head == "HashSet" ||
@@ -5829,6 +5892,7 @@ bool IsIterable(std::string_view type) {
            type == "String";
 }
 
+// 提取可迭代类型的元素类型（Array<T> -> T）
 std::string IterableElement(std::string_view type) {
     if (type == "String") return "Rune";
     const auto args = TypeArgs(type);
@@ -5879,6 +5943,7 @@ std::size_t SkipLoopLineTrivia(std::string_view source, std::size_t cursor) {
     return cursor;
 }
 
+// 找出源码中所有已闭合的 for 循环（含头、体与边界）
 std::vector<CompletedLoop> FindCompletedLoops(std::string_view source) {
     std::vector<CompletedLoop> loops;
     bool in_string = false;
@@ -6344,6 +6409,7 @@ std::vector<std::string> ExpandTrailingAtoms(
     return result;
 }
 
+// 递归检查已闭合的 for 循环：迭代源、绑定模式、break/continue 与 if 分支
 CheckStatus CheckCompletedLoopsRecursive(
     std::string_view region,
     const Model& model,
@@ -6351,6 +6417,7 @@ CheckStatus CheckCompletedLoopsRecursive(
     std::string_view full_source
 );
 
+// 检查循环体内的语句序列（类型推断与连续性）
 CheckStatus CheckLoopStatementSequence(
     std::string_view body,
     const Model& model,
@@ -6360,6 +6427,7 @@ CheckStatus CheckLoopStatementSequence(
     ExprResult* tail_result
 );
 
+// 合并循环体内 if-else 两个分支的类型（分支合流推断）
 ExprResult JoinLoopIfBranchTypes(
     const ExprResult& left,
     const ExprResult& right,
@@ -6378,6 +6446,7 @@ ExprResult JoinLoopIfBranchTypes(
     return {"?", false, true, "if branch types cannot be joined"};
 }
 
+// 检查循环内 if 表达式（条件与分支类型）
 CheckStatus CheckLoopIfExpression(
     std::string_view statement,
     const Model& model,
@@ -6457,6 +6526,7 @@ CheckStatus CheckLoopIfExpression(
     return {};
 }
 
+// 检查循环体内的语句序列（类型推断与连续性）
 CheckStatus CheckLoopStatementSequence(
     std::string_view body,
     const Model& model,
@@ -6652,6 +6722,7 @@ std::optional<std::pair<std::size_t, std::size_t>> FindTopLevelInKeyword(
     return std::nullopt;
 }
 
+// 递归检查已闭合的 for 循环：迭代源、绑定模式、break/continue 与 if 分支
 CheckStatus CheckCompletedLoopsRecursive(
     std::string_view region,
     const Model& model,
@@ -6722,6 +6793,8 @@ CheckStatus CheckCompletedLoopsRecursive(
     return {};
 }
 
+// 检查所有已闭合循环的循环体（入口，逐个调用递归检查）
+// 检查所有已闭合循环的循环体（入口，逐个调用递归检查）
 CheckStatus CheckCompletedLoopBodies(
     std::string_view function_body,
     const Model& model,
@@ -6736,6 +6809,7 @@ CheckStatus CheckCompletedLoopBodies(
     );
 }
 
+// 检查函数参数是否存在重名
 CheckStatus CheckDuplicateParameter(std::string_view source) {
     const std::size_t func = source.rfind("func ");
     if (func == std::string::npos) return {};
@@ -6917,6 +6991,7 @@ std::string MaskNonCodeText(std::string_view text) {
     return masked;
 }
 
+// 检查类/接口成员（字段、方法、构造器）是否存在重名
 CheckStatus CheckClassMemberNameCollisions(std::string_view source) {
     static const std::regex class_pattern(
         R"(\bclass\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()]*>)?[^{}]*\{)"
@@ -7052,6 +7127,7 @@ std::vector<std::string> SplitAdjacentSimpleAssignments(
     return assignments;
 }
 
+// 检查一段连续的简单赋值语句序列（目标合法性与类型一致性）
 CheckStatus CheckCompletedSimpleAssignmentSequence(
     std::string_view statement,
     std::string_view source,
@@ -7096,6 +7172,7 @@ struct FieldFlowToken {
     std::string text;
 };
 
+// 把构造器体内的语句流切分为"字段访问 + 赋值"token 序列（用于字段初始化分析）
 std::vector<FieldFlowToken> TokenizeFieldFlow(std::string_view source) {
     std::vector<FieldFlowToken> tokens;
     std::size_t index = 0;
@@ -8040,6 +8117,7 @@ class ConstructorFieldFlowAnalyzer {
     State initial_;
 };
 
+// 提取构造器参数的名字集合（用于区分参数与字段）
 std::unordered_set<std::string> ConstructorParameterNames(std::string_view parameters) {
     std::unordered_set<std::string> result;
     for (const std::string& raw : SplitTopLevel(parameters, ',')) {
@@ -8055,6 +8133,7 @@ std::unordered_set<std::string> ConstructorParameterNames(std::string_view param
     return result;
 }
 
+// 检查构造器是否初始化了全部非默认字段（字段初始化完整性分析）
 CheckStatus CheckConstructorFieldInitialization(std::string_view source) {
     static const std::regex class_pattern(
         R"(\bclass\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()]*>)?[^{}]*\{)"
@@ -8201,6 +8280,7 @@ CheckStatus CheckConstructorFieldInitialization(std::string_view source) {
     return {};
 }
 
+// 检查类字段声明前缀规则（字段不能与参数/方法重名等）
 CheckStatus CheckClassFieldPrefixRules(std::string_view source) {
     static const std::regex class_pattern(
         R"(\bclass\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}()]*>)?[^{}]*\{)"
@@ -8265,6 +8345,7 @@ CheckStatus CheckClassFieldPrefixRules(std::string_view source) {
     return CheckConstructorFieldInitialization(source);
 }
 
+// 检查函数声明前缀的初始化器（默认参数等）是否合法
 CheckStatus CheckFunctionInitializerPrefix(
     std::string_view source,
     const Model& model
@@ -8301,6 +8382,7 @@ CheckStatus CheckFunctionInitializerPrefix(
     return {false, "function initializer cannot match annotated type"};
 }
 
+// 检查声明前缀：函数初始化器、类字段规则、重复参数与未定义类型
 CheckStatus CheckDeclarationPrefixes(std::string_view source, const Model& model) {
     const std::string owned(source);
     static const std::regex forbidden_func_main(
@@ -8371,6 +8453,7 @@ CheckStatus CheckDeclarationPrefixes(std::string_view source, const Model& model
     return CheckClassMemberNameCollisions(source);
 }
 
+// 检查函数体内局部变量是否存在重复声明
 CheckStatus CheckDuplicateLocalDeclarations(const FunctionContext& context) {
     if (!context.in_function || context.body.empty()) return {};
     std::vector<std::unordered_set<std::string>> scopes(1);
@@ -8487,6 +8570,7 @@ CheckStatus CheckDuplicateLocalDeclarations(const FunctionContext& context) {
     return {};
 }
 
+// 检查泛型前缀：泛型实参个数、类型已知性与替换后的类型兼容性
 CheckStatus CheckGenericPrefix(std::string_view source, const Model& model) {
     std::size_t end = source.size();
     while (end > 0 && std::isspace(static_cast<unsigned char>(source[end - 1]))) --end;
@@ -8527,6 +8611,7 @@ FunctionSig SubstituteSignature(
     return output;
 }
 
+// 判断接口实现方法签名是否满足接口要求（参数与返回类型匹配）
 bool SameInterfaceSignature(const FunctionSig& implementation, const FunctionSig& requirement) {
     if (implementation.type_params.size() != requirement.type_params.size() ||
         implementation.param_types.size() != requirement.param_types.size()) {
@@ -8639,6 +8724,7 @@ CheckStatus CheckInterfaceRequirementSet(
     return {};
 }
 
+// 从声明快照记录检查接口实现：每个接口方法要求都有匹配的实现
 CheckStatus CheckInterfacesFromRecords(
     const std::vector<DeclarationRecord>& class_records,
     const Model& model
@@ -8719,6 +8805,7 @@ CheckStatus CheckInterfacesRegex(std::string_view source, const Model& model) {
 }
 #endif
 
+// 检查接口实现完整性（入口，基于声明快照）
 CheckStatus CheckInterfaces(
     std::string_view source,
     const Model& model,
@@ -8737,6 +8824,7 @@ CheckStatus CheckInterfaces(
     return result;
 }
 
+// 检查 for 循环 range（起点..终点:步长）的类型：必须为整数且端点同型
 CheckStatus CheckRangeSteps(std::string_view source, const Model& model) {
     static const std::regex loop_pattern(R"(\bfor\s*\([^)]*\bin\s+([^)]*)\))");
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -8808,6 +8896,7 @@ CheckStatus CheckRangeSteps(std::string_view source, const Model& model) {
     return {};
 }
 
+// 检查 if-else 两个分支的表达式类型能否合流为同一类型
 CheckStatus CheckIfBranchJoins(std::string_view source, const Model& model) {
     static const std::regex if_pattern(
         R"(\bif\s*\([^{}]*\)\s*\{\s*([^{};]+?)\s*\}\s*else\s*\{\s*([^{};]+?)\s*\})"
@@ -8877,6 +8966,7 @@ CheckStatus CheckIfBranchJoins(std::string_view source, const Model& model) {
     return {};
 }
 
+// 从声明快照记录检查构造器：参数个数、类型与字段初始化
 CheckStatus CheckConstructorsFromRecords(
     std::string_view source,
     const Model& model,
@@ -8998,6 +9088,7 @@ CheckStatus CheckConstructorsRegex(std::string_view source, const Model& model) 
 }
 #endif
 
+// 检查所有构造器声明（入口，基于声明快照）
 CheckStatus CheckConstructors(
     std::string_view source,
     const Model& model,
@@ -9152,6 +9243,7 @@ CheckStatus CheckMalformedGenericConstructLinear(std::string_view source) {
     return {};
 }
 
+// 检查畸形泛型构造（如 Box<Int64(1) 缺少 ">" 或绑定不完整）
 CheckStatus CheckMalformedGenericConstruct(std::string_view source) {
     const CheckStatus result = CheckMalformedGenericConstructLinear(source);
 #ifdef CANGJIE_ENABLE_REGEX_SHADOW
@@ -9237,6 +9329,7 @@ FunctionContext PopulateFunctionContext(
 }
 
 #ifdef CANGJIE_ENABLE_REGEX_SHADOW
+// 比较两个函数上下文是否一致（shadow 差分校验用）
 bool SameFunctionContext(const FunctionContext& left, const FunctionContext& right) {
     return left.in_function == right.in_function &&
         left.is_main == right.is_main &&
@@ -9252,6 +9345,7 @@ bool SameFunctionContext(const FunctionContext& left, const FunctionContext& rig
 }
 #endif
 
+// 构建当前函数上下文：定位当前函数，填充局部变量/lambda 变量/类字段
 FunctionContext BuildFunctionContext(
     std::string_view source,
     const Model& model,
@@ -9298,6 +9392,8 @@ std::size_t EstimateContextPayloadBytes(const FunctionContext& context) {
 }
 #endif
 
+// 对当前源码前缀执行全部语义检查（声明、重复参数、类型、接口、构造器、
+// range、分支合流、泛型、循环体、表达式语句），按脏标记选择性跳过
 CheckStatus AnalyzeSource(
     std::string_view source,
     const Model& model,
@@ -9835,6 +9931,7 @@ CheckStatus AnalyzeSource(
 
 class IncrementalSemanticEngine::Impl {
  public:
+    // 构造引擎：加载上下文表作为预置模型，并构建后缀图（postfix graph）
     explicit Impl(std::string context_path) : context_path_(std::move(context_path)) {
 #ifdef CANGJIE_ENABLE_PROFILE
         if (profile_.enabled) {
@@ -9915,6 +10012,7 @@ namespace {
 // (name, return_type, type_params, param_names, param_types, required_params),
 // overload lists keep model declaration order, name maps sorted.
 
+// 把字符串写为 JSON 字符串（含转义）
 void JsonWriteString(std::ostream& os, std::string_view value) {
     static const char kHex[] = "0123456789abcdef";
     os << '"';
@@ -9936,6 +10034,7 @@ void JsonWriteString(std::ostream& os, std::string_view value) {
     os << '"';
 }
 
+// 把字符串数组写为 JSON 数组
 void JsonWriteTexts(std::ostream& os, const std::vector<std::string>& texts) {
     os << '[';
     for (std::size_t index = 0; index < texts.size(); ++index) {
@@ -9945,6 +10044,7 @@ void JsonWriteTexts(std::ostream& os, const std::vector<std::string>& texts) {
     os << ']';
 }
 
+// 把单个函数签名写为 JSON 对象（Context IR schema）
 void DumpSignatureJson(std::ostream& os, const FunctionSig& sig) {
     os << "{\"name\": ";
     JsonWriteString(os, sig.name);
@@ -9959,6 +10059,7 @@ void DumpSignatureJson(std::ostream& os, const FunctionSig& sig) {
     os << ", \"required_params\": " << sig.required << '}';
 }
 
+// 把函数签名列表写为 JSON 数组
 void DumpSignatureListJson(std::ostream& os, const std::vector<FunctionSig>& sigs) {
     os << '[';
     for (std::size_t index = 0; index < sigs.size(); ++index) {
@@ -10008,6 +10109,7 @@ void DumpFieldMapJson(
     os << '}';
 }
 
+// 把类型（类/接口）信息写为 JSON 对象
 void DumpNominalJson(std::ostream& os, const NominalInfo& info) {
     os << "{\"is_interface\": " << (info.is_interface ? "true" : "false")
        << ", \"type_params\": ";
@@ -10027,6 +10129,7 @@ void DumpNominalJson(std::ostream& os, const NominalInfo& info) {
     os << '}';
 }
 
+// 把整个模型（全局变量、函数、类型）写为 Context IR JSON
 void DumpModelJson(std::ostream& os, const Model& model) {
     os << "{\"schema\": \"context-ir-v1\", \"globals\": ";
     DumpFieldMapJson(os, model.globals);
@@ -10069,6 +10172,7 @@ void DumpModelJson(std::ostream& os, const Model& model) {
 // the line balanced; an open literal leaves a net '[', regardless of where
 // inside the element the frontier lands.  (Brackets inside string literals
 // are counted — they only ever bias toward "closed", the safe direction.)
+// 判断失败点是否位于未闭合的数组字面量内部（"[" 尚未闭合）
 bool ArrayLiteralOpenAt(std::string_view line, std::size_t frontier_end) {
     (void)frontier_end;
     int balance = 0;
@@ -10115,6 +10219,7 @@ std::string ArrayElementExpectedFromLine(
     return args.front();
 }
 
+// 从拒绝消息的关键词推断决策现场类别（array_element / let_initializer / ...）
 std::string SiteFromMessage(const std::string& message) {
     if (message.find("array element") != std::string::npos) return "array_element";
     if (message.find("initializer") != std::string::npos) return "let_initializer";
@@ -10133,6 +10238,7 @@ std::string SiteFromMessage(const std::string& message) {
     return "generic";
 }
 
+// 从失败信息与 shadow 结果构造决策上下文（供证明层与账本使用）
 DecisionContext MakeDecisionContext(
     const std::string& message,
     std::string_view source,
@@ -10176,6 +10282,8 @@ DecisionContext MakeDecisionContext(
 // Alive-only suffix search (ValidSuffix, open expressions never Dead) and
 // the hard-commit candidate exhaustion (ClosedWorldExhaustive, only at
 // `)`, `]`, `}`, commit operators and the next-statement boundary).
+// 计算续写证明：对数组元素开放场景给出 Alive（可续写），
+// 对已提交 ')' 且全部重载被淘汰的调用给出 Dead（ClosedWorldExhaustive）
 ContinuationProof ComputeProof(const DecisionContext& ctx) {
     ContinuationProof proof;
     // Patch 4: array-literal element fires (Alive-only override).
@@ -10222,6 +10330,8 @@ ContinuationProof ComputeProof(const DecisionContext& ctx) {
 // is the v12-F1-L decision; the proof layer may only override when
 // proof_kind != None: Alive+ValidSuffix → Continuable (defer), Dead+
 // OfficialAudit/ClosedWorldExhaustive → Error, everything else → baseline.
+// 决策统一入口：以基线决策为基础，仅在证明层给出有效证明时覆盖结果，
+// 并记录一条决策账本条目
 CheckStatus DecideWithProof(
     const CheckStatus& baseline,
     const DecisionContext& ctx,
@@ -10267,6 +10377,7 @@ CheckStatus DecideWithProof(
 
 }  // namespace
 
+// 把预加载的上下文模型序列化为 Context IR JSON（供外部工具对比）
 void IncrementalSemanticEngine::Impl::DumpContextIrJson(std::ostream& os) const {
     DumpModelJson(os, preload_);
 }
@@ -10276,6 +10387,7 @@ IncrementalSemanticEngine::IncrementalSemanticEngine(std::string context_path)
 
 IncrementalSemanticEngine::~IncrementalSemanticEngine() = default;
 
+// 接受一个稳定 token（记录到已接受列表，语义检查留待 Probe 阶段）
 CheckStatus IncrementalSemanticEngine::Accept(const TokenEvent& event) {
     impl_->accepted_.push_back(event);
 #ifdef CANGJIE_ENABLE_PROFILE
@@ -10284,6 +10396,8 @@ CheckStatus IncrementalSemanticEngine::Accept(const TokenEvent& event) {
     return {};
 }
 
+// 核心检查入口：按需重建模型/上下文，对整体前缀执行语义分析，
+// 失败时做 shadow 分类与证明覆盖，返回最终决策
 CheckStatus IncrementalSemanticEngine::Probe(
     const PartialLexeme& partial,
     std::string_view source
@@ -10527,10 +10641,12 @@ CheckStatus IncrementalSemanticEngine::Probe(
     return status;
 }
 
+// 保存检查进度（已接受 token 数与源码字节数）
 Checkpoint IncrementalSemanticEngine::Save() const {
     return {impl_->accepted_.size(), impl_->source_bytes_};
 }
 
+// 回滚到指定检查进度（截断已接受 token，并重置语句缓存）
 void IncrementalSemanticEngine::Rollback(const Checkpoint& checkpoint) {
     if (checkpoint.accepted_tokens < impl_->accepted_.size()) {
         impl_->accepted_.resize(checkpoint.accepted_tokens);
@@ -10567,6 +10683,7 @@ const std::vector<DecisionLedgerEntry>& IncrementalSemanticEngine::DecisionLedge
     return impl_->DecisionLedger();
 }
 
+// 枚举值到字符串的名称映射（SymbolKind）
 // V14 Patch 2: FrontierInfo name helpers (external linkage per the header).
 const char* SymbolKindName(SymbolKind kind) {
     switch (kind) {
@@ -10584,6 +10701,7 @@ const char* SymbolKindName(SymbolKind kind) {
     return "none";
 }
 
+// 枚举值到字符串的名称映射（TailKind）
 const char* TailKindName(TailKind kind) {
     switch (kind) {
         case TailKind::None: return "none";
@@ -10595,6 +10713,7 @@ const char* TailKindName(TailKind kind) {
     return "none";
 }
 
+// 枚举值到字符串的名称映射（BoundaryKind）
 const char* BoundaryKindName(BoundaryKind kind) {
     switch (kind) {
         case BoundaryKind::None: return "none";
@@ -10610,6 +10729,7 @@ const char* BoundaryKindName(BoundaryKind kind) {
     return "none";
 }
 
+// 枚举值到字符串的名称映射（FrontierVerdict）
 const char* FrontierVerdictName(FrontierVerdict verdict) {
     switch (verdict) {
         case FrontierVerdict::None: return "none";
@@ -10623,6 +10743,7 @@ const char* FrontierVerdictName(FrontierVerdict verdict) {
 NativeSemanticChecker::NativeSemanticChecker(std::string context_path)
     : engine_(std::move(context_path)) {}
 
+// 检查一段新字节：先增量词法切分，稳定 token 逐条 Accept，再对整体前缀 Probe
 CheckStatus NativeSemanticChecker::Check(std::string_view bytes) {
     if (failed_) return {false, failure_message_};
     source_.append(bytes.data(), bytes.size());

@@ -9,6 +9,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# 静默执行构建命令：成功时不输出，失败时打印完整日志并返回失败
 run_quiet() {
   local log_file="/tmp/cangjie_build_$$.log"
   if ! "$@" >"${log_file}" 2>&1; then

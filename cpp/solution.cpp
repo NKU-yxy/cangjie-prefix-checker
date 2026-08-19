@@ -143,6 +143,7 @@ class ShutdownObjectProfiler {
 constexpr char kTableMagic[8] = {'C', 'J', 'T', 'K', 1, 0, 0, 0};
 constexpr std::uint32_t kMissing = 0xFFFFFFFFu;
 
+// 从二进制数据中按小端序读取一个 4 字节无符号整数，并推进游标
 std::uint32_t read_u32(std::string_view data, std::size_t* cursor) {
     if (*cursor > data.size() || data.size() - *cursor < 4) {
         throw std::runtime_error("truncated cl100k table");
@@ -157,6 +158,7 @@ std::uint32_t read_u32(std::string_view data, std::size_t* cursor) {
 
 class TokenTable {
  public:
+    // 加载并校验 cl100k token 查表（magic、条目偏移与字节池）
     explicit TokenTable(const fs::path& path) {
         std::ifstream stream(path, std::ios::binary);
         if (!stream) {
@@ -194,6 +196,7 @@ class TokenTable {
         }
     }
 
+    // 把 token ID 解码为其对应的原始字节（返回是否找到）
     bool decode(std::int64_t token_id, std::string_view* decoded) const {
         if (token_id < 0 || static_cast<std::uint64_t>(token_id) >= entries_.size()) {
             return false;
@@ -211,6 +214,7 @@ class TokenTable {
     std::string blob_;
 };
 
+// 以二进制方式整体读取一个文本文件
 std::string read_text_file(const fs::path& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) {
@@ -240,6 +244,7 @@ bool starts_with(std::string_view value, std::string_view prefix) {
     return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
 }
 
+// 扫描 GBNF 文法源码，收集其中出现的所有标识符形状的字符串字面量
 std::vector<std::string> grammar_identifier_literals(std::string_view grammar_source) {
     std::vector<std::string> result;
     std::size_t cursor = 0;
@@ -296,6 +301,7 @@ std::vector<std::string> grammar_identifier_literals(std::string_view grammar_so
     return result;
 }
 
+// 从候选字符里挑一个不出现在任何文法字面量中的字符，作为通用标识符的代表字符
 std::string choose_canonical_identifier(const std::vector<std::string>& literals) {
     static constexpr std::string_view kCandidates =
         "zqjxvkbywghdpcnmfosaeutrilABCDEFGHIJKLMNOPQRSTUVWXYZ_";
@@ -310,6 +316,7 @@ std::string choose_canonical_identifier(const std::vector<std::string>& literals
     throw std::runtime_error("grammar has no safe canonical identifier representative");
 }
 
+// 计算文法中标识符字面量的最大长度（用于滚动缓冲窗口）
 std::size_t max_identifier_literal_length(const std::vector<std::string>& literals) {
     std::size_t result = 1;
     for (const std::string& literal : literals) result = std::max(result, literal.size());
@@ -328,9 +335,11 @@ class NativeSyntaxChecker {
     };
 #endif
 
+    // 从文法文件构造语法检查器（内部委托到内存文法构造函数）
     explicit NativeSyntaxChecker(const fs::path& grammar_path)
         : NativeSyntaxChecker(InMemoryGrammar{}, read_text_file(grammar_path)) {}
 
+    // 初始化 XGrammar 的 tokenizer、编译器与匹配器，并预计算字面量信息
     NativeSyntaxChecker(InMemoryGrammar, const std::string& grammar_source)
         : identifier_literals_(grammar_identifier_literals(grammar_source)),
           canonical_identifier_(choose_canonical_identifier(identifier_literals_)),
@@ -342,6 +351,7 @@ class NativeSyntaxChecker {
           compiled_(compiler_.CompileGrammar(grammar_source)),
           matcher_(compiled_) {}
 
+    // 增量语法检查：接收一段新字节，稳定部分立即提交给文法匹配器
     bool check(std::string_view fragment) {
 #ifdef CANGJIE_ENABLE_PROFILE
         const std::size_t prior_capacity = pending_.capacity();
@@ -456,6 +466,7 @@ class NativeSyntaxChecker {
         }
     }
 
+    // 把仍在缓冲的未完成标识符折叠成商形式探针文本（保留可续写成文法字面量的部分）
     std::string identifier_probe_text() const {
         // Build the quotient for the still-buffered suffix.  Keep source bytes
         // verbatim whenever they can still grow into a multi-character grammar
@@ -495,6 +506,7 @@ class NativeSyntaxChecker {
         return representative;
     }
 
+    // 把已稳定的文本交给文法匹配器，并（可选）追加一个未完成的探针后缀
     bool accept_normalized_and_probe(
         std::string normalized,
         bool has_probe,
@@ -546,6 +558,7 @@ class NativeSyntaxChecker {
         return true;
     }
 
+    // 标记缓冲区尾部与文法标识符字面量完全匹配的字符为"已覆盖"（保留原样）
     void mark_completed_identifier_literals() {
         // Preserve every character participating in an identifier-shaped
         // grammar terminal.  The canonical character occurs in no such
@@ -578,6 +591,7 @@ class NativeSyntaxChecker {
         );
     }
 
+    // 标识符结束时把缓冲内容冲刷到输出，并关闭未闭合的标识符缺口
     void finish_identifier(char following, std::string* output) {
         if (following == '\'' && !identifier_buffer_.empty() &&
             identifier_buffer_.back() == 'r') {
@@ -614,6 +628,7 @@ class NativeSyntaxChecker {
         raw_identifier_valid_ = true;
     }
 
+    // 词法模式状态机：把稳定字节规范化为文法可接受的形式（处理标识符/注释/字符串等）
     bool accept_stable(std::string_view input) {
         std::string normalized;
         normalized.reserve(input.size());
@@ -875,6 +890,7 @@ class LegacySyntaxChecker {
           compiled_(compiler_.CompileGrammar(grammar_source)),
           matcher_(compiled_) {}
 
+    // 对照版语法检查器：直接把稳定片段提交给 XGrammar 匹配器
     bool check(std::string_view fragment) {
         pending_.append(fragment.data(), fragment.size());
         std::size_t stable_size = pending_.size();
@@ -903,6 +919,7 @@ struct CapturedException {
     std::string message;
 };
 
+// 捕获并描述一个异常（类型名与消息），供 shadow 对比使用
 CapturedException describe_exception(std::exception_ptr pointer) {
     if (!pointer) return {};
     try {
@@ -936,6 +953,7 @@ class GrammarShadowSyntaxChecker {
         control_ = std::move(control.checker);
     }
 
+    // shadow 模式：同时用候选与对照检查器判断同一片段，逐 token 核对结果与首错位置
     bool check(std::string_view fragment) {
         CheckResult candidate = run_check(candidate_.get(), fragment);
         CheckResult control = run_check(control_.get(), fragment);
@@ -1042,6 +1060,7 @@ int hex_digit_value(char digit) {
     return -1;
 }
 
+// 把十六进制编码的 shadow 测试片段解码回原始字节
 std::string decode_hex_fragment(std::string_view line) {
     if (line.size() % 2 != 0) {
         throw std::runtime_error("grammar shadow fragment has odd-length hex input");
@@ -1069,6 +1088,7 @@ struct Args {
 #endif
 };
 
+// 解析命令行参数（--context / --competition-output / --dump-context-ir 等）
 Args parse_args(int argc, char** argv) {
     Args result;
     for (int index = 1; index < argc; ++index) {
@@ -1097,6 +1117,7 @@ Args parse_args(int argc, char** argv) {
     return result;
 }
 
+// 将字符串转义为合法的 JSON 字符串（用于 trace 输出）
 std::string json_escape(const std::string& raw) {
     std::string out;
     out.reserve(raw.size() + 8);
@@ -1121,6 +1142,7 @@ std::string json_escape(const std::string& raw) {
     return out;
 }
 
+// 把一行输入解析为十进制 token ID（忽略首尾空白，允许显式 '+'）
 bool parse_token_id(const std::string& line, std::int64_t* output) {
     std::size_t first = line.find_first_not_of(" \t\r");
     if (first == std::string::npos) {
@@ -1142,6 +1164,7 @@ bool parse_token_id(const std::string& line, std::int64_t* output) {
     return true;
 }
 
+// 定位可执行文件所在目录（据此找到 generated/ 与 grammar/ 的相对资源）
 fs::path executable_root(const char* argv0) {
     std::error_code error;
     fs::path path = fs::absolute(argv0 ? argv0 : "solution_cpp", error);
@@ -1152,6 +1175,7 @@ fs::path executable_root(const char* argv0) {
     return path.parent_path();
 }
 
+// 按协议输出一个判断结果（默认 0=可继续/1=错误，--competition-output 翻转）
 void emit(bool ok, bool competition_output) {
     const int value = competition_output ? (ok ? 1 : 0) : (ok ? 0 : 1);
     std::cout << value << '\n' << std::flush;
@@ -1159,6 +1183,8 @@ void emit(bool ok, bool competition_output) {
 
 }  // namespace
 
+// 主流程：初始化语义检查器、token 表与语法检查器，逐行读取 token ID，
+// 依次做语法与语义检查，首次失败即输出错误并结束
 int main(int argc, char** argv) {
     try {
 #ifdef CANGJIE_ENABLE_PROFILE

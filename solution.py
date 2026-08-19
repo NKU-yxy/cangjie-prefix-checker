@@ -10,22 +10,26 @@ import sys
 os.environ["TVM_FFI_BUILD_DOCS"] = "1"
 
 
+# 返回项目根目录（本文件所在目录）
 def _project_root() -> str:
     return os.path.dirname(os.path.abspath(__file__))
 
 
+# 返回运行时目录（打包环境下为可执行文件所在目录，否则为项目根目录）
 def _runtime_dir() -> str:
     if getattr(sys, "frozen", False):
         return os.path.dirname(os.path.abspath(sys.executable))
     return _project_root()
 
 
+# 把项目根目录加入 sys.path，保证内部模块可导入
 def _bootstrap_path() -> None:
     root = _project_root()
     if root not in sys.path:
         sys.path.insert(0, root)
 
 
+# 解析命令行参数（--context / --grammar / --semantic-mode / --competition-output）
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--context", default=None, help="Optional context.json path")
@@ -46,6 +50,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return args
 
 
+# 按协议输出一个判断结果（默认 0=可继续/1=错误，--competition-output 翻转）
 def _emit(ok: bool, *, competition_output: bool) -> None:
     if competition_output:
         print(1 if ok else 0, flush=True)
@@ -53,11 +58,13 @@ def _emit(ok: bool, *, competition_output: bool) -> None:
         print(0 if ok else 1, flush=True)
 
 
+# 输出一次错误结果并返回退出码（输入非法时调用）
 def _fail(args: argparse.Namespace) -> int:
     _emit(False, competition_output=args.competition_output)
     return 0
 
 
+# 主流程：逐行读取 token ID，解码后交给流式检查器，逐 token 输出判断结果
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     _bootstrap_path()

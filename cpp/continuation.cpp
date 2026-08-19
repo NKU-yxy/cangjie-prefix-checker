@@ -3,6 +3,7 @@
 
 namespace cangjie {
 
+// 续写状态枚举到字符串的名称映射
 const char* ContinuationStateName(ContinuationState state) {
     switch (state) {
         case ContinuationState::Alive: return "alive";
@@ -12,6 +13,7 @@ const char* ContinuationStateName(ContinuationState state) {
     return "unknown";
 }
 
+// 证明类型枚举到字符串的名称映射
 const char* ProofKindName(ProofKind kind) {
     switch (kind) {
         case ProofKind::None: return "none";

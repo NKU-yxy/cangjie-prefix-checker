@@ -10,6 +10,7 @@ namespace {
 // An unbound generic parameter in a parameter type ("T" or "Array<T>") means
 // the argument cannot be judged Dead by type mismatch (plan §8.2 rule 6:
 // symbolic type variables are neither alive-by-anything nor dead).
+// 判断参数类型中是否出现未绑定的泛型参数（出现则不能凭类型失配判死）
 bool HasUnboundTypeParam(std::string_view type, const std::vector<std::string>& tparams) {
     if (tparams.empty()) return false;
     const std::string text(type);
@@ -31,6 +32,7 @@ bool HasUnboundTypeParam(std::string_view type, const std::vector<std::string>& 
 
 }  // namespace
 
+// 分类调用点：对每个重载候选独立判断存活/等待/淘汰状态，给出淘汰原因
 CallFrontierResult CallFrontierClassifier::Classify(
     const std::string& callee,
     const std::vector<OverloadView>& overloads,
