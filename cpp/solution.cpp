@@ -1301,6 +1301,26 @@ int main(int argc, char** argv) {
                 }
                 std::cerr << "\"}\n";
             }
+            if (std::getenv("CANGJIE_TRACE_LEDGER")) {
+                // V15 Patch 1: proof-carrying decision ledger (trace-gated).
+                for (const cangjie::DecisionLedgerEntry& e :
+                     native_semantic.DecisionLedger()) {
+                    std::cerr << "{\"event\":\"ledger\",\"id\":\""
+                              << json_escape(e.decision_id) << "\""
+                              << ",\"site\":\"" << json_escape(e.site) << "\""
+                              << ",\"baseline\":\"" << json_escape(e.baseline) << "\""
+                              << ",\"frontier\":\"" << json_escape(e.frontier) << "\""
+                              << ",\"proof_kind\":\"" << json_escape(e.proof_kind) << "\""
+                              << ",\"symbol_kind\":\"" << json_escape(e.symbol_kind) << "\""
+                              << ",\"tail\":\"" << json_escape(e.tail_kind) << "\""
+                              << ",\"boundary\":\"" << json_escape(e.boundary) << "\""
+                              << ",\"candidate_count\":" << e.candidate_count
+                              << ",\"expected\":\"" << json_escape(e.expected_type) << "\""
+                              << ",\"actual\":\"" << json_escape(e.actual_type) << "\""
+                              << ",\"overridden\":" << (e.overridden ? "true" : "false")
+                              << ",\"prefix\":\"" << json_escape(e.prefix) << "\"}\n";
+                }
+            }
             emit(ok, args.competition_output);
             if (!ok) break;
             ++tokens_seen;

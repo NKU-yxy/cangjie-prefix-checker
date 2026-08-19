@@ -100,6 +100,7 @@ run_quiet "${native_cxx}" \
   cpp/solution.cpp \
   cpp/native_semantic.cpp \
   cpp/call_frontier.cpp \
+  cpp/continuation.cpp \
   "${xgrammar_sources[@]}" \
   -Wl,--gc-sections -ldl \
   -o solution

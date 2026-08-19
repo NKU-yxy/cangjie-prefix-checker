@@ -9606,12 +9606,18 @@ class IncrementalSemanticEngine::Impl {
         last_call_frontier_ = result;
     }
 
+    // V15 Patch 1: proof-carrying continuation of the last failed Probe.
+    const ContinuationProof& LastProof() const { return last_proof_; }
+    const std::vector<DecisionLedgerEntry>& DecisionLedger() const { return ledger_; }
+
     std::string context_path_;
     PostfixGraph postfix_graph_;
     FrontierInfo last_frontier_;
     RecoveryWitness last_witness_;
     WitnessStats witness_stats_;
     CallFrontierResult last_call_frontier_;
+    ContinuationProof last_proof_;
+    std::vector<DecisionLedgerEntry> ledger_;
     std::unordered_map<std::string, RecoveryWitness> witness_cache_;
     Model preload_;
     Model active_model_;
@@ -9772,6 +9778,104 @@ void DumpModelJson(std::ostream& os, const Model& model) {
     }
     os << '}';
     os << '}';
+}
+
+// V15 Patch 1: proof-carrying continuation (V15_Plan §五).  The ledger
+// records every baseline-vs-frontier decision; only proof_kind != None may
+// override the v12-F1-L baseline (DecideWithProof below).
+std::string SiteFromMessage(const std::string& message) {
+    if (message.find("initializer") != std::string::npos) return "let_initializer";
+    if (message.find("assignment") != std::string::npos) return "assignment_rhs";
+    if (message.find("condition") != std::string::npos) return "condition";
+    if (message.find("lambda") != std::string::npos) return "lambda";
+    if (message.find("return") != std::string::npos) return "return";
+    if (message.find("iterable") != std::string::npos) return "for_in_source";
+    if (message.find("argument") != std::string::npos ||
+        message.find("parameter") != std::string::npos) return "call_arg";
+    if (message.find("candidate") != std::string::npos ||
+        message.find("overload") != std::string::npos) return "call_close";
+    if (message.find("member") != std::string::npos) return "member_selection";
+    if (message.find("callable") != std::string::npos) return "callable";
+    if (message.find("type") != std::string::npos) return "type_check";
+    return "generic";
+}
+
+DecisionContext MakeDecisionContext(
+    const std::string& message,
+    std::string_view source,
+    const FrontierInfo& frontier,
+    const RecoveryWitness& witness,
+    const CallFrontierResult& call_frontier
+) {
+    DecisionContext ctx;
+    ctx.site = SiteFromMessage(message);
+    ctx.prefix = std::string(source);
+    ctx.baseline_reject = true;
+    ctx.symbol_kind = SymbolKindName(frontier.symbol_kind);
+    ctx.tail_kind = TailKindName(frontier.tail_kind);
+    ctx.boundary = BoundaryKindName(frontier.boundary_kind);
+    ctx.expected_type = witness.target;
+    ctx.actual_type = witness.source;
+    if (call_frontier.resolved) {
+        ctx.candidate_count = static_cast<int>(call_frontier.overload_count);
+        ctx.call_closed = call_frontier.call_closed;
+    }
+    return ctx;
+}
+
+// V15 Patch 1 stub: no proof machinery yet.  Patches 4-6 fill this with the
+// Alive-only suffix search (ValidSuffix, open expressions never Dead) and
+// the hard-commit candidate exhaustion (ClosedWorldExhaustive, only at
+// `)`, `]`, `}`, commit operators and the next-statement boundary).
+ContinuationProof ComputeProof(const DecisionContext& ctx) {
+    ContinuationProof proof;
+    proof.rule_id = "v15-stub";
+    return proof;
+}
+
+// The single v15 decision wrapper (V15_Plan §五 DecidePrefix).  `baseline`
+// is the v12-F1-L decision; the proof layer may only override when
+// proof_kind != None: Alive+ValidSuffix → Continuable (defer), Dead+
+// OfficialAudit/ClosedWorldExhaustive → Error, everything else → baseline.
+CheckStatus DecideWithProof(
+    const CheckStatus& baseline,
+    const DecisionContext& ctx,
+    ContinuationProof* proof_out,
+    DecisionLedgerEntry* entry_out
+) {
+    static std::size_t serial = 0;
+    ContinuationProof proof = ComputeProof(ctx);
+    if (proof_out) *proof_out = proof;
+
+    DecisionLedgerEntry entry;
+    entry.decision_id = ctx.site + "_" + std::to_string(++serial);
+    entry.site = ctx.site;
+    entry.prefix = ctx.prefix;
+    entry.baseline = ctx.baseline_reject ? "dead" : "alive";
+    entry.frontier = ContinuationStateName(proof.state);
+    entry.proof_kind = ProofKindName(proof.proof);
+    entry.symbol_kind = ctx.symbol_kind;
+    entry.tail_kind = ctx.tail_kind;
+    entry.boundary = ctx.boundary;
+    entry.candidate_count = ctx.candidate_count;
+    entry.expected_type = ctx.expected_type;
+    entry.actual_type = ctx.actual_type;
+
+    if (proof.state == ContinuationState::Alive &&
+        proof.proof == ProofKind::ValidSuffix) {
+        entry.overridden = true;
+        if (entry_out) *entry_out = std::move(entry);
+        return {};
+    }
+    if (proof.state == ContinuationState::Dead &&
+        (proof.proof == ProofKind::OfficialAudit ||
+         proof.proof == ProofKind::ClosedWorldExhaustive)) {
+        entry.overridden = true;
+        if (entry_out) *entry_out = std::move(entry);
+        return baseline;
+    }
+    if (entry_out) *entry_out = std::move(entry);
+    return baseline;
 }
 
 }  // namespace
@@ -9993,6 +10097,20 @@ CheckStatus IncrementalSemanticEngine::Probe(
         impl_->SetLastWitness(RecoveryWitness());
         impl_->SetLastCallFrontier(CallFrontierResult());
     }
+    // V15 Patch 1: proof-carrying override on the v12-F1-L baseline decision
+    // (V15_Plan §五).  With the Patch 1 stub this is byte-identical to the
+    // baseline; the ledger entry is observable via DecisionLedger().
+    if (!status.ok) {
+        DecisionContext ctx = MakeDecisionContext(
+            status.message, source, impl_->LastFrontier(), impl_->LastWitness(),
+            impl_->LastCallFrontier()
+        );
+        DecisionLedgerEntry entry;
+        status = DecideWithProof(status, ctx, &impl_->last_proof_, &entry);
+        impl_->ledger_.push_back(std::move(entry));
+    } else {
+        impl_->last_proof_ = ContinuationProof();
+    }
     return status;
 }
 
@@ -10026,6 +10144,14 @@ const WitnessStats& IncrementalSemanticEngine::WitnessStatistics() const {
 
 const CallFrontierResult& IncrementalSemanticEngine::LastCallFrontier() const {
     return impl_->LastCallFrontier();
+}
+
+const ContinuationProof& IncrementalSemanticEngine::LastProof() const {
+    return impl_->LastProof();
+}
+
+const std::vector<DecisionLedgerEntry>& IncrementalSemanticEngine::DecisionLedger() const {
+    return impl_->DecisionLedger();
 }
 
 // V14 Patch 2: FrontierInfo name helpers (external linkage per the header).

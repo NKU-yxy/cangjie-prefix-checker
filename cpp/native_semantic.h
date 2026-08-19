@@ -1,6 +1,7 @@
 #pragma once
 
 #include "call_frontier.h"
+#include "continuation.h"
 
 #include <cstddef>
 #include <memory>
@@ -174,6 +175,11 @@ class IncrementalSemanticEngine {
     // Empty when the last Probe succeeded or the frontier was not a callee.
     const CallFrontierResult& LastCallFrontier() const;
 
+    // V15 Patch 1: proof-carrying continuation of the last failed Probe.
+    // Unknown/None when the last Probe succeeded or no proof machinery ran.
+    const ContinuationProof& LastProof() const;
+    const std::vector<DecisionLedgerEntry>& DecisionLedger() const;
+
  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
@@ -188,6 +194,8 @@ class NativeSemanticChecker {
     const RecoveryWitness& LastWitness() const { return engine_.LastWitness(); }
     const WitnessStats& WitnessStatistics() const { return engine_.WitnessStatistics(); }
     const CallFrontierResult& LastCallFrontier() const { return engine_.LastCallFrontier(); }
+    const ContinuationProof& LastProof() const { return engine_.LastProof(); }
+    const std::vector<DecisionLedgerEntry>& DecisionLedger() const { return engine_.DecisionLedger(); }
 
  private:
     IncrementalLexer lexer_;
