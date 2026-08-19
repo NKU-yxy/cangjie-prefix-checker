@@ -60,6 +60,13 @@ struct DecisionContext {
     // fires at the commit point.
     bool element_open = false;       // fire sits inside an unclosed '['
     std::string element_expected;    // element type of the enclosing literal
+    // Patch 5: hard-commit call-close exhaustion.  At a committed ')' every
+    // overload of a resolvable call is fully eliminated → Dead is sound
+    // (ClosedWorldExhaustive).  The classifier never vetoes on unknown
+    // argument types (no unmodeled transition) or unbound type variables,
+    // and the overload view set is complete (no truncation).
+    int alive_count = -1;            // surviving call overloads (-1 = n/a)
+    std::vector<std::string> eliminated_reasons; // per-candidate reasons
 };
 
 // One ledger entry (V15_Plan Patch 1 schema).

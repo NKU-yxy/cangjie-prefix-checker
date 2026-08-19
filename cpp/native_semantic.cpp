@@ -9882,6 +9882,8 @@ DecisionContext MakeDecisionContext(
     if (call_frontier.resolved) {
         ctx.candidate_count = static_cast<int>(call_frontier.overload_count);
         ctx.call_closed = call_frontier.call_closed;
+        ctx.alive_count = static_cast<int>(call_frontier.alive_count);
+        ctx.eliminated_reasons = call_frontier.reasons;
     }
     // Patch 4: array-literal element fires.  The shadow witness target is the
     // outer Array type (ExpectedFromLine sees the let decl), which is wrong
@@ -9924,6 +9926,22 @@ ContinuationProof ComputeProof(const DecisionContext& ctx) {
         proof.proof = ProofKind::ValidSuffix;
         proof.rule_id = "v15-p4-array-element";
         proof.printable_suffix = "]";
+        return proof;
+    }
+    // Patch 5: hard-commit call-close exhaustion (V15_Plan §八, Patch 5
+    // section 948-970).  At a committed ')' every overload of a resolvable
+    // call is fully eliminated → no continuation can compile the call →
+    // Dead (ClosedWorldExhaustive).  Gates: the classifier never vetoes on
+    // unknown argument types (no unmodeled transition) or unbound type
+    // variables, and the overload view set is complete (no truncation);
+    // every Dead carries the full candidate list with elimination reasons.
+    if (ctx.site == "call_close" && ctx.call_closed &&
+        ctx.candidate_count > 0 && ctx.alive_count == 0) {
+        proof.state = ContinuationState::Dead;
+        proof.proof = ProofKind::ClosedWorldExhaustive;
+        proof.rule_id = "v15-p5-call-close";
+        proof.transition_set_complete = true;
+        proof.eliminated_candidates = ctx.eliminated_reasons;
         return proof;
     }
     proof.rule_id = "v15-stub";
@@ -10195,6 +10213,32 @@ CheckStatus IncrementalSemanticEngine::Probe(
         impl_->SetLastFrontier(FrontierInfo());
         impl_->SetLastWitness(RecoveryWitness());
         impl_->SetLastCallFrontier(CallFrontierResult());
+        // V15 Patch 5: hard-commit call-close exhaustion (plan §八).  The
+        // baseline accepts this source; only when it ends in a committed ')'
+        // may a new Dead be synthesized — open expressions are never Dead.
+        // The call frontier must resolve the callee to a complete overload
+        // set (no candidate truncation) and every candidate must be
+        // eliminated, each with a printable reason.  Keyword tails are safe
+        // by construction: "if (x)" classifies the frontier tail as Value,
+        // never Call.  The classifier never vetoes on unknown argument types
+        // (no unmodeled transition) or unbound type variables.
+        const std::string trimmed_source = Trim(source);
+        if (!trimmed_source.empty() && trimmed_source.back() == ')') {
+            const FrontierInfo cf = ClassifyFrontier(
+                source, impl_->active_model_, impl_->active_context_);
+            if (cf.tail_kind == TailKind::Call) {
+                const CallFrontierResult call = ComputeCallFrontier(
+                    cf, impl_->active_model_, impl_->active_context_);
+                if (call.resolved && call.call_closed &&
+                    call.overload_count > 0 && call.alive_count == 0) {
+                    status.ok = false;
+                    status.message =
+                        "call close: all overload candidates eliminated";
+                    impl_->SetLastFrontier(cf);
+                    impl_->SetLastCallFrontier(call);
+                }
+            }
+        }
     }
     // V15 Patch 1: proof-carrying override on the v12-F1-L baseline decision
     // (V15_Plan §五).  With the Patch 1 stub this is byte-identical to the
