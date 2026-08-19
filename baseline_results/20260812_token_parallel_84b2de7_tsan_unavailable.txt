@@ -1,8 +1,0 @@
-FATAL: ThreadSanitizer CHECK failed: ../../../../src/libsanitizer/tsan/tsan_platform_linux.cpp:296 "((personality(old_personality | ADDR_NO_RANDOMIZE))) != ((-1))" (0xffffffffffffffff, 0xffffffffffffffff)
-    #0 __tsan::TsanCheckFailed(char const*, int, char const*, unsigned long long, unsigned long long) ../../../../src/libsanitizer/tsan/tsan_rtl_report.cpp:47 (libtsan.so.0+0xa7e4c)
-    #1 __sanitizer::CheckFailed(char const*, int, char const*, unsigned long long, unsigned long long) ../../../../src/libsanitizer/sanitizer_common/sanitizer_termination.cpp:78 (libtsan.so.0+0xc8fcc)
-    #2 __tsan::InitializePlatform() ../../../../src/libsanitizer/tsan/tsan_platform_linux.cpp:296 (libtsan.so.0+0x968bc)
-    #3 __tsan::Initialize(__tsan::ThreadState*) ../../../../src/libsanitizer/tsan/tsan_rtl.cpp:389 (libtsan.so.0+0xa2fd4)
-    #4 <null> <null> (ld-linux-aarch64.so.1+0x57a4)
-    #5 <null> <null> (ld-linux-aarch64.so.1+0x17cc4)
-
