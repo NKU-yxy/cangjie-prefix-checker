@@ -1,0 +1,2476 @@
+{
+ "context": "/Users/yyyxxxyyy/Documents/Codex/2026-08-17/cloud-code-cli-api/project3230617-388044/context.json",
+ "probe_count": 106,
+ "solution": "solution",
+ "members": [
+  {
+   "owner": "Array",
+   "member": "size",
+   "runtime_kind": "field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 31
+    },
+    "C": {
+     "accept": false,
+     "fire": 34
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "get",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 33
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "fill",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "swap",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "slice",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 33
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "clone",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 33
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "concat",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 33
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "reverse",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "first",
+   "runtime_kind": "field (F1 moved)",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 33
+    },
+    "C": {
+     "accept": false,
+     "fire": 36
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "last",
+   "runtime_kind": "field (F1 moved)",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 33
+    },
+    "C": {
+     "accept": false,
+     "fire": 36
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Array",
+   "member": "indexOf",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 33
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "size",
+   "runtime_kind": "field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 26
+    },
+    "C": {
+     "accept": false,
+     "fire": 29
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "capacity",
+   "runtime_kind": "field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 26
+    },
+    "C": {
+     "accept": false,
+     "fire": 29
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "isEmpty",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 25
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "add",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 25
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 30
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_2": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_3": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "remove",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 25
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "clear",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 25
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "clone",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 28
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "reserve",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 25
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "reverse",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 25
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "toArray",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 28
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "get",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 28
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayList",
+   "member": "of",
+   "runtime_kind": "static_method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 15
+    },
+    "B": {
+     "accept": false,
+     "fire": 20
+    },
+    "C": {
+     "accept": false,
+     "fire": 21
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "size",
+   "runtime_kind": "field+method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 33
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "capacity",
+   "runtime_kind": "field+method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 33
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "size",
+   "runtime_kind": "field+method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 33
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "capacity",
+   "runtime_kind": "field+method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 33
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "get",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 32
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "add",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 29
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 36
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "accept": false,
+     "fire": 31
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "remove",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 29
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 33
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "addIfAbsent",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 31
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "keys",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 32
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "values",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 33
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "clone",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 34
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "clear",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 29
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "replace",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 29
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashMap",
+   "member": "contains",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 29
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "size",
+   "runtime_kind": "field+method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 27
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "capacity",
+   "runtime_kind": "field+method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 27
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "size",
+   "runtime_kind": "field+method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 27
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "capacity",
+   "runtime_kind": "field+method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 27
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "add",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 23
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 27
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "contains",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 23
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "remove",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 23
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 27
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "reserve",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 23
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "clone",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 25
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "toArray",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 25
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "HashSet",
+   "member": "clear",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 23
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "size",
+   "runtime_kind": "field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 22
+    },
+    "C": {
+     "accept": false,
+     "fire": 25
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "empty",
+   "runtime_kind": "static_field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 15
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "isEmpty",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 21
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "startsWith",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 21
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "endsWith",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 21
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "contains",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 21
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "concat",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 21
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "clone",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 21
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "get",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 24
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "replace",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 21
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "trimAscii",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 22
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "hashCode",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 22
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "compare",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 22
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "indexOf",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 24
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "fromUtf8",
+   "runtime_kind": "static_method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 14
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "String",
+   "member": "empty",
+   "runtime_kind": "static_method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": false,
+     "fire": 15
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "Optional",
+   "member": "getOrThrow",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 45
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "Optional",
+   "member": "isSome",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 43
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "Optional",
+   "member": "isNone",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 43
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "Optional",
+   "member": "orElse",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 44
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "KeysView",
+   "member": "size",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ValuesView",
+   "member": "size",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 31
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "Range",
+   "member": "size",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "size",
+   "runtime_kind": "field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 28
+    },
+    "C": {
+     "accept": false,
+     "fire": 31
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "capacity",
+   "runtime_kind": "field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 28
+    },
+    "C": {
+     "accept": false,
+     "fire": 31
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "isEmpty",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "add",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "peek",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "remove",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "clear",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "reserve",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "toArray",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "size",
+   "runtime_kind": "field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 28
+    },
+    "C": {
+     "accept": false,
+     "fire": 31
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "capacity",
+   "runtime_kind": "field",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 28
+    },
+    "C": {
+     "accept": false,
+     "fire": 31
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "isEmpty",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "addFirst",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 28
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "addLast",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 28
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "removeFirst",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 31
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "removeLast",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 31
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "clear",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "reserve",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "toArray",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Collection",
+   "member": "size",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": true,
+     "fire": null
+    },
+    "B": {
+     "accept": false,
+     "fire": 26
+    },
+    "C": {
+     "accept": false,
+     "fire": 29
+    },
+    "D": {
+     "accept": false,
+     "fire": 25
+    }
+   }
+  },
+  {
+   "owner": "Stack",
+   "member": "add",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 27
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Stack",
+   "member": "peek",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Stack",
+   "member": "remove",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 30
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Deque",
+   "member": "addFirst",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 28
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Deque",
+   "member": "addLast",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 28
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Deque",
+   "member": "removeFirst",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 31
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "Deque",
+   "member": "removeLast",
+   "runtime_kind": "method",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 31
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   }
+  },
+  {
+   "owner": "<global>",
+   "member": "println",
+   "runtime_kind": "function",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 11
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_2": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_3": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_4": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "<global>",
+   "member": "print",
+   "runtime_kind": "function",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 11
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_2": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_3": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_4": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_5": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "<global>",
+   "member": "eprintln",
+   "runtime_kind": "function",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 12
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_2": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "<global>",
+   "member": "eprint",
+   "runtime_kind": "function",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 12
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_2": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_3": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "<global>",
+   "member": "min",
+   "runtime_kind": "function",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 12
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": false,
+     "fire": 13
+    }
+   }
+  },
+  {
+   "owner": "<global>",
+   "member": "max",
+   "runtime_kind": "function",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 12
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": false,
+     "fire": 13
+    }
+   }
+  },
+  {
+   "owner": "<global>",
+   "member": "abs",
+   "runtime_kind": "function",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 12
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    },
+    "B_overload_1": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  },
+  {
+   "owner": "<global>",
+   "member": "clamp",
+   "runtime_kind": "function",
+   "probes": {
+    "A": {
+     "accept": false,
+     "fire": 12
+    },
+    "B": {
+     "accept": true,
+     "fire": null
+    },
+    "C": {
+     "accept": true,
+     "fire": null
+    },
+    "D": {
+     "accept": true,
+     "fire": null
+    }
+   }
+  }
+ ]
+}

@@ -55,3 +55,52 @@
   - `SiteFromMessage` 顺序 bug 修复：lambda 检查移到 return 之前（tick_callback 的 lambda 类型
     不匹配错误此前被误分类为 site=return）
 - 提交：`64e1134`
+
+---
+
+## Patch 2：Behavioral Context Extractor — ✅ 提取器完成（2026-08-19，diff=0 留待 Patch 4-7）
+
+### 工具：`tools/behavioral_context_audit.py`
+
+- 对官方 FINAL context 全部 **106 个成员**（11 nominal 的字段/静态字段/方法/静态方法 + 6 interface 方法 + 8 全局函数，overload 逐签名展开）生成 §6.1 四类探针：
+  - A `let value: R = x.member`（值读）；B `let value: R = x.member(<args>)`（调用）；
+    C `let f: (P...) -> R = x.member`（函数引用）；D 返回值后缀（方法先调用再 postfix）
+- 双裁决：官方 typechecker（`CANGJIE_TYPECHECKER_CONTEXT=final`）+ v15 solution 二进制（cl100k token 流，记录 fire 索引）
+- 分类表（§6.1）：A ok+B not-callable+C fail→field；A fail+B ok+C ok→method；A ok+B ok→callable_field；全 fail→error
+- 产物：`results/official_behavioral_context.json`（106 成员 × 探针裁决 + official_behavior_kind）、
+  `results/runtime_behavioral_context.json`（运行时模型 kind + 探针 fire）、
+  `results/behavioral_context_diff.md`（差异全表 + receiver-shape 维度 + 门禁判定）
+
+### 校准发现（探针构造本身，非运行时偏差）
+
+- **官方 checker 的 `_CONTEXT_PATH` monkeypatch 无效** —— 必须用 `CANGJIE_TYPECHECKER_CONTEXT=final` 环境变量（此前 probe_v10 跑的是 preliminary context）
+- **探针程序不能带 println 后缀**：Optional/函数类型无 toString 时错误会转移到 println 调用点
+- **D 探针方法必须先调用**：`recv.hashCode.toString()` 链在函数值上恒报 no member（第一版 43 个 mismatch 中 12 个为此类污染，修复后消除）
+- **运行时无法解析非标识符接收者**：`[1,2,3].size` 的 receiver 抓到 "3" → 成员解析失败（v14 已知限制，receiver-shape 维度单独记录）
+- Optional 无构造函数，唯一合法接收者是 `.first` 读取 → 两段绑定（`let a: Array<Int64> = Array<Int64>(1, 0)` + `let recv: Optional<Int64> = a.first`）
+
+### 发现清单（门禁：raw JSON 与官方行为不一致项全部列出 — 23 处）
+
+| owner | member | raw JSON | 官方行为 | 说明 |
+|---|---|---|---|---|
+| Array | first/last | method | **field** | 自动应用属性（F1 已在 project context 中实现 ✓） |
+| HashMap/HashSet | size/capacity | field+method | **field** | 同名双注册时官方字段优先 |
+| Collection | size | method | **field** | interface 方法按属性处理 |
+| String | empty | static_field | **callable_field** | `String.empty` 值读与 `String.empty()` 调用官方都接受 |
+| String | fromUtf8 | static_method | method | 参数检查宽松（`Array<Rune>` 位接受 `[1]`） |
+| ArrayList | of | static_method | **error** | 官方 checker 未实现 `ArrayList.of`（no member） |
+| 全局 | println/print/eprintln/eprint/abs/clamp | function | method | 与直觉一致 |
+| 全局 | min/max | function | error | 泛型 `T` 官方不可推断 → 所有调用/引用全拒 |
+
+### 运行时 vs 官方：21 处 mismatch（diff=0 门禁未达，修复归属见下）
+
+| 族 | 成员 | 官方 | 运行时 | 计数 | 修复归属 |
+|---|---|---|---|---|---|
+| A 字段+方法同名 | HashMap/HashSet size/capacity | `m.size()` REJECT not-callable（字段优先） | ACCEPT（调用路径走方法） | 14 | Patch 6 Core Semantic |
+| B 方法引用 | ArrayList.add / HashMap.add / HashMap.remove / HashSet.add / HashSet.remove | `let f: (T) -> Unit = recv.add` ACCEPT | 语句结束 fire（无函数类型注解支持） | 5 | Patch 7 Lambda/Infer |
+| C 泛型全局 | min/max | `min(1, 2, [3])` REJECT（T 不可推断） | ACCEPT（过度泛型推断） | 2 | Patch 6/7 |
+
+- receiver-shape 维度：11 个探针中 2 个 GAP（数组字面量 receiver、成员链 receiver），其余调用表达式 receiver 运行时均能解析
+- **结论**：diff=0 是 §十二放行标准（"Behavioral Context 非 F1 偏差：发现则必须全部修复"），由 Patch 4-7 逐族修复后回验；Patch 2 阶段不改判定路径
+- gate 复验：wrong 49/50（仅 toarray_assign 刻意偏离）+ wrong2 50/50，与 Patch 0/1 逐字节一致
+- 提交：`715b1a5`

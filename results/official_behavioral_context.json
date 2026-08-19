@@ -1,0 +1,2899 @@
+{
+ "context": "/Users/yyyxxxyyy/Documents/Codex/2026-08-17/cloud-code-cli-api/official-reference/typechecker/typechecker/context_final.json",
+ "probe_count": 106,
+ "members": [
+  {
+   "owner": "Array",
+   "member": "size",
+   "raw_json_kind": "field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "Array",
+   "member": "get",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "Array",
+   "member": "fill",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "Array",
+   "member": "swap",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "Array",
+   "member": "slice",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Array<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "Array",
+   "member": "clone",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Array<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "Array",
+   "member": "concat",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Array<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "Array",
+   "member": "reverse",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "Array",
+   "member": "first",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": false
+  },
+  {
+   "owner": "Array",
+   "member": "last",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": false
+  },
+  {
+   "owner": "Array",
+   "member": "indexOf",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "size",
+   "raw_json_kind": "field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "ArrayList",
+   "member": "capacity",
+   "raw_json_kind": "field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "ArrayList",
+   "member": "isEmpty",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "add",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_2": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_3": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "remove",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "clear",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "clone",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "ArrayList<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "reserve",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "reverse",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "toArray",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Array<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "get",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayList",
+   "member": "of",
+   "raw_json_kind": "static_method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NO_MEMBER"
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NO_MEMBER"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NO_MEMBER"
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "error",
+   "note": "A=E_SYNTH_NO_MEMBER B=E_SYNTH_NO_MEMBER C=E_SYNTH_NO_MEMBER",
+   "value_type": "ArrayList<Int64>",
+   "callable": false
+  },
+  {
+   "owner": "HashMap",
+   "member": "size",
+   "raw_json_kind": "field+method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "HashMap",
+   "member": "capacity",
+   "raw_json_kind": "field+method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "HashMap",
+   "member": "size",
+   "raw_json_kind": "field+method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "HashMap",
+   "member": "capacity",
+   "raw_json_kind": "field+method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "HashMap",
+   "member": "get",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "add",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "verdict": "REJECT",
+     "code": "E_CHECK_NO_MATCHING_CTOR"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "remove",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "addIfAbsent",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "keys",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "KeysView<String>",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "values",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "ValuesView<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "clone",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "HashMap<String, Int64>",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "clear",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "replace",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "HashMap",
+   "member": "contains",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "HashSet",
+   "member": "size",
+   "raw_json_kind": "field+method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "HashSet",
+   "member": "capacity",
+   "raw_json_kind": "field+method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "HashSet",
+   "member": "size",
+   "raw_json_kind": "field+method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "HashSet",
+   "member": "capacity",
+   "raw_json_kind": "field+method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "HashSet",
+   "member": "add",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "HashSet",
+   "member": "contains",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "HashSet",
+   "member": "remove",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "HashSet",
+   "member": "reserve",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "HashSet",
+   "member": "clone",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "HashSet<String>",
+   "callable": true
+  },
+  {
+   "owner": "HashSet",
+   "member": "toArray",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Array<String>",
+   "callable": true
+  },
+  {
+   "owner": "HashSet",
+   "member": "clear",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "size",
+   "raw_json_kind": "field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "String",
+   "member": "empty",
+   "raw_json_kind": "static_field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "callable_field",
+   "note": "A and B both accepted",
+   "value_type": "String",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "isEmpty",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "startsWith",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "endsWith",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "contains",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "concat",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "String",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "clone",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "String",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "get",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Rune>",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "replace",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "String",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "trimAscii",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "String",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "hashCode",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Int64",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "compare",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Int64",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "indexOf",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "fromUtf8",
+   "raw_json_kind": "static_method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "String",
+   "callable": true
+  },
+  {
+   "owner": "String",
+   "member": "empty",
+   "raw_json_kind": "static_method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "callable_field",
+   "note": "A and B both accepted",
+   "value_type": "String",
+   "callable": true
+  },
+  {
+   "owner": "Optional",
+   "member": "getOrThrow",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Int64",
+   "callable": true
+  },
+  {
+   "owner": "Optional",
+   "member": "isSome",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "Optional",
+   "member": "isNone",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "Optional",
+   "member": "orElse",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Int64",
+   "callable": true
+  },
+  {
+   "owner": "KeysView",
+   "member": "size",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Int64",
+   "callable": true
+  },
+  {
+   "owner": "ValuesView",
+   "member": "size",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Int64",
+   "callable": true
+  },
+  {
+   "owner": "Range",
+   "member": "size",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Int64",
+   "callable": true
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "size",
+   "raw_json_kind": "field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "capacity",
+   "raw_json_kind": "field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "isEmpty",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "add",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "peek",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "remove",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "clear",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "reserve",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayStack",
+   "member": "toArray",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Array<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "size",
+   "raw_json_kind": "field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "capacity",
+   "raw_json_kind": "field",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "isEmpty",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Bool",
+   "callable": true
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "addFirst",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "addLast",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "removeFirst",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "removeLast",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "clear",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "reserve",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "ArrayDeque",
+   "member": "toArray",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Array<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "Collection",
+   "member": "size",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "REJECT",
+     "code": "E_SYNTH_NOT_CALLABLE"
+    }
+   },
+   "official_behavior_kind": "field",
+   "note": "",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "Stack",
+   "member": "add",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "Stack",
+   "member": "peek",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "Stack",
+   "member": "remove",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "Deque",
+   "member": "addFirst",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "Deque",
+   "member": "addLast",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "Deque",
+   "member": "removeFirst",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "Deque",
+   "member": "removeLast",
+   "raw_json_kind": "method",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Optional<Int64>",
+   "callable": true
+  },
+  {
+   "owner": "<global>",
+   "member": "println",
+   "raw_json_kind": "function",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_2": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_3": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_4": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "<global>",
+   "member": "print",
+   "raw_json_kind": "function",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_2": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_3": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_4": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_5": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "<global>",
+   "member": "eprintln",
+   "raw_json_kind": "function",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_2": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "<global>",
+   "member": "eprint",
+   "raw_json_kind": "function",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "skipped": "no postfix member"
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_2": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_3": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Unit",
+   "callable": true
+  },
+  {
+   "owner": "<global>",
+   "member": "min",
+   "raw_json_kind": "function",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_CHECK_NO_MATCHING_CTOR"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "REJECT",
+     "code": "E_CHECK_NO_MATCHING_CTOR"
+    }
+   },
+   "official_behavior_kind": "error",
+   "note": "generic_uninferable A=E_SUBTYPE_MISMATCH B=E_CHECK_NO_MATCHING_CTOR C=E_SUBTYPE_MISMATCH",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "<global>",
+   "member": "max",
+   "raw_json_kind": "function",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "REJECT",
+     "code": "E_CHECK_NO_MATCHING_CTOR"
+    },
+    "C": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "D": {
+     "verdict": "REJECT",
+     "code": "E_CHECK_NO_MATCHING_CTOR"
+    }
+   },
+   "official_behavior_kind": "error",
+   "note": "generic_uninferable A=E_SUBTYPE_MISMATCH B=E_CHECK_NO_MATCHING_CTOR C=E_SUBTYPE_MISMATCH",
+   "value_type": "Int64",
+   "callable": false
+  },
+  {
+   "owner": "<global>",
+   "member": "abs",
+   "raw_json_kind": "function",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "B_overload_1": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Int64",
+   "callable": true
+  },
+  {
+   "owner": "<global>",
+   "member": "clamp",
+   "raw_json_kind": "function",
+   "probes": {
+    "A": {
+     "verdict": "REJECT",
+     "code": "E_SUBTYPE_MISMATCH"
+    },
+    "B": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "C": {
+     "verdict": "ACCEPT",
+     "code": ""
+    },
+    "D": {
+     "verdict": "ACCEPT",
+     "code": ""
+    }
+   },
+   "official_behavior_kind": "method",
+   "note": "",
+   "value_type": "Float64",
+   "callable": true
+  }
+ ]
+}
