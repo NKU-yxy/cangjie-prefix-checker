@@ -222,4 +222,59 @@
 
 ### 提交
 
-（commit hash 待补）
+`6414359`
+
+---
+
+## Patch 5：Hard-Commit CallFrontier（2026-08-19）
+
+### 设计（V15_Plan §八 + Patch 5 章节 948-970）
+
+- 候选集耗尽判定**只在硬提交点启用**：本次实现 = 调用闭合 `)`（§八 8.2 第一批位置；
+  `]` 索引闭合、`}` Lambda/函数闭合分别归入 Patch 6/7 的族级修复）。
+- 裸 callee 标识符**绝不**判 Dead（§八 8.1）—— 只有 `)` 已提交的完整调用才可能 Dead。
+- **成功路径 Dead**：Patch 1-4 的 DecideWithProof 只包裹失败路径；Patch 5 的新 Dead
+  必须在 Probe 成功路径合成 —— 源以 `)` 结尾时运行 ClassifyFrontier → tail==Call →
+  ComputeCallFrontier → `resolved && call_closed && overload_count>0 && alive_count==0`
+  → 构造失败 status（"call close: all overload candidates eliminated"，SiteFromMessage
+  已按 "candidate" 路由到 `call_close`）→ 落入既有 DecideWithProof 流程 → Dead +
+  ClosedWorldExhaustive（v15-p5-call-close）。
+- DecisionContext 新增 `alive_count` + `eliminated_reasons`（continuation.h），
+  ComputeProof 的 call_close 分支要求 `call_closed && candidate_count>0 && alive_count==0`。
+
+### Patch 5 四门禁
+
+| 门禁 | 保证 |
+| --- | --- |
+| 每个 Dead 列出所有候选 + 淘汰原因 | `reasons`（"#0 name(params) DEAD [reason=arity-exceeded/arg-mismatch/arity-short-at-close]"）→ `eliminated_candidates` |
+| 无 unresolved type variable | `HasUnboundTypeParam` 不淘汰（泛型参数永不 veto） |
+| 无未建模 transition | 未知参数类型（`""`）永不 veto（arg.empty() → continue） |
+| 无 candidate truncation | view 集完整收集（Method/StaticMember/Function/Type 构造器/Local/Global） |
+
+### 触发面验证（冒烟 tools/p5_smoke.py）
+
+- 合法调用 `g(1)` / 默认参数 `g(1)` / 多候选 `g(1)` / 泛型 `g<T>("s")` / named
+  `Array<Int64>(2, repeat: 0)` / 索引 `a[0]` / `if (x)` 尾 —— 全部不触发 ✓
+- 死调用（arg 类型、arity、显式泛型矛盾、方法 arity）—— baseline 在**参数时刻**
+  已全部 fire（argument type mismatch / wrong argument arity），Patch 5 不产生重复
+  Dead（正确：不重复 fire、不提前/延后 fire）
+- `if (...)` 安全：ClassifyTail 对 `x` 后跟 `)` 分类为 Value，永不进入 Call 分支
+- 引擎既有行为确认：无 `: Unit` 返回注解的顶层 func 不注册（v12 既有，corpus 一致）
+
+### 门禁验证（results/patch4_rescan.json 复扫）
+
+- corpus 1497 全量复扫：**0 新增 fire**（官方合法程序零误杀）；deferred 237 / kept 7 /
+  moved 0 与 Patch 4 完全一致
+- wrong **49/50**（唯一 FAIL 仍为 err_arraylist_toarray_assign 既有 let_initializer
+  偏离，Patch 6 范围）+ wrong2 **50/50** —— 与 Patch 4 一致，无回归
+
+### 范围说明
+
+baseline（v12-F1-L）对调用闭合 `)` 的参数级错误检测已完备（逐参数时刻检查），
+Patch 5 在现有 corpus/wrong 集上输出与 baseline 一致 —— 本 Patch 是**机制 Patch**
+（成功路径硬提交 Dead 骨架 + 四门禁），真实 Dead 增量由 Patch 6/7 的族级消除
+（HashMap/HashSet size、method_ref、expected-return 族等）注入该骨架。
+
+### 提交
+
+待提交（修复 6414359 之上）
