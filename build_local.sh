@@ -127,9 +127,11 @@ run_quiet "${native_cxx}" \
   -I"${xgrammar_root}/third_party/dlpack" \
   cpp/solution.cpp \
   cpp/native_semantic.cpp \
+  cpp/call_frontier.cpp \
+  cpp/continuation.cpp \
   "${xgrammar_sources[@]}" \
   -Wl,-dead_strip -ldl \
   -o solution
 
-strip --strip-unneeded solution
+strip solution 2>/dev/null || true
 chmod +x solution

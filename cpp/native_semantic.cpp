@@ -9783,7 +9783,70 @@ void DumpModelJson(std::ostream& os, const Model& model) {
 // V15 Patch 1: proof-carrying continuation (V15_Plan §五).  The ledger
 // records every baseline-vs-frontier decision; only proof_kind != None may
 // override the v12-F1-L baseline (DecideWithProof below).
+
+// Patch 4: array-literal element fires.  The engine's InferImpl '[' branch
+// checks each element's type while the literal is still open (before ']' is
+// committed).  V15 treats that state as an open expression: the element is
+// not committed until ']' (a hard boundary), and the baseline re-checks the
+// closed literal at ']', so a genuinely incompatible element still fires at
+// the commit point.  Alive is therefore the only sound verdict here.
+//
+// The open/closed test uses the whole-line bracket balance, NOT a prefix up
+// to frontier_end: for a closed-literal fire the frontier sits on the element
+// expression (e.g. the string content of `"x"` inside `[1, "x"]`), which is
+// byte-before the closing ']' — a prefix scan would misread the committed
+// literal as open and wrongly defer (false accept).  A closed literal leaves
+// the line balanced; an open literal leaves a net '[', regardless of where
+// inside the element the frontier lands.  (Brackets inside string literals
+// are counted — they only ever bias toward "closed", the safe direction.)
+bool ArrayLiteralOpenAt(std::string_view line, std::size_t frontier_end) {
+    (void)frontier_end;
+    int balance = 0;
+    for (const char ch : line) {
+        if (ch == '[') ++balance;
+        else if (ch == ']') --balance;
+    }
+    return balance > 0;
+}
+
+// Element type of the literal enclosing the frontier, for the ledger:
+// nearest "name: TYPE =" declaration whose '=' is followed by the open '['
+// (e.g. "let arr: Array<Int64> = [recv" → "Int64").  "" = not derivable.
+std::string ArrayElementExpectedFromLine(
+    std::string_view line, std::size_t frontier_end
+) {
+    const std::size_t limit = std::min(frontier_end, line.size());
+    std::size_t open = std::string_view::npos;
+    {
+        int balance = 0;
+        for (std::size_t i = limit; i-- > 0;) {
+            if (line[i] == ']') ++balance;
+            else if (line[i] == '[') {
+                if (balance == 0) {
+                    open = i;
+                    break;
+                }
+                --balance;
+            }
+        }
+    }
+    if (open == std::string_view::npos) return "";
+    std::size_t eq = open;
+    while (eq > 0 && line[eq] != '=') --eq;
+    if (eq == 0 || line[eq] != '=') return "";
+    std::size_t colon = eq;
+    while (colon > 0 && line[colon] != ':') --colon;
+    if (colon == 0 || line[colon] != ':') return "";
+    const std::string type = CompactType(Trim(
+        std::string_view(line.data() + colon + 1, eq - colon - 1)
+    ));
+    const auto args = TypeArgs(type);
+    if (args.empty()) return "";
+    return args.front();
+}
+
 std::string SiteFromMessage(const std::string& message) {
+    if (message.find("array element") != std::string::npos) return "array_element";
     if (message.find("initializer") != std::string::npos) return "let_initializer";
     if (message.find("assignment") != std::string::npos) return "assignment_rhs";
     if (message.find("condition") != std::string::npos) return "condition";
@@ -9820,6 +9883,20 @@ DecisionContext MakeDecisionContext(
         ctx.candidate_count = static_cast<int>(call_frontier.overload_count);
         ctx.call_closed = call_frontier.call_closed;
     }
+    // Patch 4: array-literal element fires.  The shadow witness target is the
+    // outer Array type (ExpectedFromLine sees the let decl), which is wrong
+    // for the ledger: the true expected type is the ELEMENT type.
+    if (ctx.site == "array_element") {
+        ctx.element_open = ArrayLiteralOpenAt(frontier.line, frontier.frontier_end);
+        if (ctx.element_open) {
+            ctx.element_expected = ArrayElementExpectedFromLine(
+                frontier.line, frontier.frontier_end
+            );
+            if (!ctx.element_expected.empty()) {
+                ctx.expected_type = ctx.element_expected;
+            }
+        }
+    }
     return ctx;
 }
 
@@ -9829,6 +9906,26 @@ DecisionContext MakeDecisionContext(
 // `)`, `]`, `}`, commit operators and the next-statement boundary).
 ContinuationProof ComputeProof(const DecisionContext& ctx) {
     ContinuationProof proof;
+    // Patch 4: array-literal element fires (Alive-only override).
+    //
+    // The engine checks element types while the literal is still open.  The
+    // element expression is not committed until ']' — a hard commit boundary
+    // — and the baseline InferImpl '[' branch re-checks the closed literal
+    // there, so a genuinely incompatible element still fires at ']' with the
+    // same message.  Deferring the inside-element fire can only move a
+    // decision later (never earlier) and never produces a new Dead: the
+    // ']'-time check is the untouched baseline check.
+    //
+    // printable_suffix "]" is the continuation that commits the literal; the
+    // offline gate re-runs the official checker on the full deferred program
+    // (prefix + program tail) and requires ACCEPT for every new defer.
+    if (ctx.site == "array_element" && ctx.element_open) {
+        proof.state = ContinuationState::Alive;
+        proof.proof = ProofKind::ValidSuffix;
+        proof.rule_id = "v15-p4-array-element";
+        proof.printable_suffix = "]";
+        return proof;
+    }
     proof.rule_id = "v15-stub";
     return proof;
 }
@@ -9860,6 +9957,8 @@ CheckStatus DecideWithProof(
     entry.candidate_count = ctx.candidate_count;
     entry.expected_type = ctx.expected_type;
     entry.actual_type = ctx.actual_type;
+    entry.rule_id = proof.rule_id;
+    entry.printable_suffix = proof.printable_suffix;
 
     if (proof.state == ContinuationState::Alive &&
         proof.proof == ProofKind::ValidSuffix) {

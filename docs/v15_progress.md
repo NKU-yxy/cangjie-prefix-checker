@@ -159,3 +159,67 @@
   ✅ 语法节点每类 ≥2、✅ 全部官方 ACCEPT、✅ 语料 1497、244 early fires 已聚类
 - gate 复验：wrong 49/50（仅 toarray_assign 刻意偏离）+ wrong2 50/50 不变
 - 提交：`1d76072`
+
+---
+
+## Patch 4：Alive-Only Override — ✅ 完成（2026-08-19）
+
+### 目标（V15_Plan §Patch 4 原文）
+
+> 将所有具备官方合法 suffix 的 baseline 过早报错修复。这一 Patch 禁止产生任何新 `Dead`。
+> 门禁：每个新 defer 都能打印完整 suffix；每个 suffix 经官方 typechecker 验证合法。
+
+### 实现（override 层，未改任何判定代码）
+
+- **site 分类**：`SiteFromMessage` 新增 `"array element"` → `array_element`（置于最前，
+  此前落入 type_check）
+- **开放/闭合判定** `ArrayLiteralOpenAt`：整行 `[`/`]` 平衡 > 0 → 字面量开放。
+  ⚠ 校准发现：不能用 frontier 前缀扫描——closed-literal fire 的 frontier 落在元素
+  表达式上（如 `[1, "x"]` 中字符串内容），闭合 `]` 在其字节之后，前缀扫描会误判为
+  open → 假接受。整行平衡则闭合字面量必平衡、开放字面量必有净 `[`（字符串内括号
+  只会偏向 closed，即安全方向）
+- **元素类型** `ArrayElementExpectedFromLine`：从 `name: TYPE = [` 声明提取
+  `Array<E>` 的 E，修正 ledger 的 expected_type（此前 witness_target 错误地为外层
+  Array 类型）
+- **ComputeProof**：`site==array_element && element_open` → `Alive + ValidSuffix`
+  rule `v15-p4-array-element`，printable_suffix = `]`（提交字面量的最小续写）。
+  其余全部保持 baseline（stub），零新 Dead
+- **Ledger trace** 增加 `rule` + `suffix` 字段（门禁"每个新 defer 都能打印完整 suffix"）
+- 决策机理：defer 后 `]`（硬提交边界）到达时，baseline 的 `[` 分支对**闭合**字面量
+  重新检查——真实不兼容的元素在 `]` 处原样 fire（同 message），官方合法程序通过
+
+### 负测试（defer 不吞错误，全部 fire 位置 = baseline）
+
+| 程序 | baseline | Patch 4 |
+|---|---|---|
+| `["x"]`（元素错） | fire@15 | fire@15 ✓ |
+| `[1, "x"]`（元素错） | fire@18 | fire@18 ✓ |
+| `[[1,2],["x"]]`（嵌套元素错） | fire@22 | fire@22 ✓ |
+| `[recv.size]`（合法） | fire@32 | **接受** ✓ |
+| `[1,2]` / `[[1,2],[3]]`（合法） | — | 接受 ✓ |
+
+⚠ Patch 4 首个版本假接受 `[1, "x"]`（闭字面量 fire 被误 override）——整行平衡修复后
+消除，负测试回归通过。
+
+### 门禁验证（results/patch4_rescan.json）
+
+- corpus 1497 全量复扫：**237 deferred**（全部 array-element cell）、7 kept 同位置
+  （4 method_ref + clamp + array_index_literal + g_expected_ret —— Patch 4 范围外，
+  留待 Patch 6/7）、**0 moved、0 新增 fire（无新 Dead）**
+- 237 个 defer 的完整 suffix（程序尾部）逐一经**官方 checker 验证 ACCEPT**（237/237）
+- gate 复验：wrong **49/50**（唯一 FAIL 仍为 err_arraylist_toarray_assign 既有刻意
+  偏离 308 vs 309）+ wrong2 **50/50**，与 Patch 0-3 逐字节一致
+- 性能：gate 总耗时与 Patch 3 相当（噪声级差异）
+- 1 个 crashed（syntax__if_else_nested）为 Patch 3 既有记录，非本 Patch 引入
+
+### 基础设施修复（本机 macOS 构建）
+
+- `build_local.sh`：补充 `cpp/call_frontier.cpp` + `cpp/continuation.cpp` 编译源
+  （此前缺 → 链接失败），`strip --strip-unneeded` → `strip ... || true`（macOS strip
+  不认 --strip-unneeded）
+- 基线段对照：`/tmp/cj_base/solution_base`（git HEAD 源码直编，验证负测试 baseline
+  行为，确认 237 defer 全部官方合法）
+
+### 提交
+
+（commit hash 待补）

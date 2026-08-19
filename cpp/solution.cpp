@@ -1318,7 +1318,10 @@ int main(int argc, char** argv) {
                               << ",\"expected\":\"" << json_escape(e.expected_type) << "\""
                               << ",\"actual\":\"" << json_escape(e.actual_type) << "\""
                               << ",\"overridden\":" << (e.overridden ? "true" : "false")
-                              << ",\"prefix\":\"" << json_escape(e.prefix) << "\"}\n";
+                              << ",\"prefix\":\"" << json_escape(e.prefix) << "\""
+                              << ",\"rule\":\"" << json_escape(e.rule_id) << "\""
+                              << ",\"suffix\":\"" << json_escape(e.printable_suffix)
+                              << "\"}\n";
                 }
             }
             emit(ok, args.competition_output);
