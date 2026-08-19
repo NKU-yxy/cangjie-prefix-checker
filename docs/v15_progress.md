@@ -158,4 +158,4 @@
 - 门禁：✅ 每 member ≥8 shapes（官方 error 成员豁免 3 个：ArrayList.of/min/max）、
   ✅ 语法节点每类 ≥2、✅ 全部官方 ACCEPT、✅ 语料 1497、244 early fires 已聚类
 - gate 复验：wrong 49/50（仅 toarray_assign 刻意偏离）+ wrong2 50/50 不变
-- 提交：`<pending>`
+- 提交：`1d76072`
