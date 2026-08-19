@@ -103,4 +103,4 @@
 - receiver-shape 维度：11 个探针中 2 个 GAP（数组字面量 receiver、成员链 receiver），其余调用表达式 receiver 运行时均能解析
 - **结论**：diff=0 是 §十二放行标准（"Behavioral Context 非 F1 偏差：发现则必须全部修复"），由 Patch 4-7 逐族修复后回验；Patch 2 阶段不改判定路径
 - gate 复验：wrong 49/50（仅 toarray_assign 刻意偏离）+ wrong2 50/50，与 Patch 0/1 逐字节一致
-- 提交：`715b1a5`
+- 提交：`c2f8dcd`
