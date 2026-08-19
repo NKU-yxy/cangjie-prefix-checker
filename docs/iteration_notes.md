@@ -899,3 +899,56 @@ typechecker 实测裁决为**字段语义**：
   recovery 净负（+1/-4）不进入基线；narrow-recovery 单点收益（仅 stack_toarray_
   string 形态）成为提交 3 候选。
 - 决策（Plan 13）：net +1 > 0 且无回退 → **v12-F1-L 63/100 升为新基线**。
+
+---
+
+## v14-AORTA 官方结果（2026-08-19 07:17:40 提交）— **59.00 WA，净 −4，低于 v12-F1-L 基线 63**
+
+- 得分 **59.00** WA（v12-F1-L = 63，v10 = 60，v11 = 59）→ **不升基线，v12-F1-L
+  63/100 保持官方基线**。通过 59/100，全部耗时 0.240–0.304 s（均值 0.266 s，
+  无超时）。
+- 完整通过名单（含官网单例耗时）：`results/results_20260819_v14_AORTA.md`；
+  名单纯文本（便于 diff）：`results/v14_official_passes.txt`。
+
+### 三分核对（63 → 59）：−5 / +1（59 = 63 − 5 + 1，集合闭合 ✓）
+
+| 方向 | 用例 | 归因（假说，待验证） |
+|---|---|---|
+| − | err_abs_bool_helper | F1 族：v12 相对 v11 找回的 4 个 String/helper 之一 |
+| − | err_abs_to_string | 同上 |
+| − | err_arraylist_get_throw_str | 同上 |
+| − | err_deque_capacity_string | 同上 |
+| − | err_array_last_abs | F1 第二收益（Array.last + abs 组合形态） |
+| + | err_stack_toarray_string | **窄 recovery 单点收益兑现**（见下） |
+
+- **丢失 5 例 = 恰为 v12 相对 v11 的全部 +5**（v12-F1-only 记录：「v12 独有
+  5 = 4 个 String/helper 找回 + err_array_last_abs」）——patch 0-8 把 F1 在
+  隐藏集上的增益**全部清零**，F1 族是本次回退的完整载体。
+- **stack_toarray_string 通过 = v12-F1-L 预留判别标尺兑现**：该例 v11（全
+  recovery）独有、两个无 recovery 的 v12 变体均无；v14 无全 recovery，但
+  Patch 5 的 LetRhsRecoverable（模型 BFS ≤32 状态）恰是「窄 recovery 单点
+  收益」提交方向（v12-F1-L 记录原句应验）。recovery 归因确认：窄 recovery
+  拿得到该例，且无 v11 全 recovery 的 −4 连带损失。
+- **6 例（5 丢失 + 1 新增）均不在本地 wrong/wrong2**（本地集全搜零命中）——
+  本地 100/100 门禁对隐藏集零区分力。
+
+### 回退根因（假说，未证实）
+
+- v14 相对 v12-F1-L 唯一改动判定路径的 patch 是 **Patch 5**（激活：let-decl
+  裸标识符 RHS 的 defer/fire 重锚定，LetRhsRecoverable + Dead 提前 fire）；
+  Patch 6 行为字节等价（仅注释），Patch 1-4 shadow，7-8 打包性能。F1 族
+  （first/last 字段 + abs/toString 恢复路径）与 let-RHS 标识符判定强相关 →
+  最大嫌疑 = Patch 5 在隐藏变体上把 F1 家族 gold 锚点 defer 过头或提前 fire。
+  **未证实**：需本地重建 5 类形态（官方 typechecker 打标差分）定位。
+- 假设官方隐藏集跨提交不变（59 = 63 − 5 + 1 精确闭合支持；官网只报通过名单，
+  无法直接验证）。
+
+### 决策（Plan 13：net < 0）
+
+- **v14-AORTA 不升基线；v12-F1-L 63/100 保持官方基线**。机制净账 = −4
+  （F1 族 5 例回退 − 窄 recovery 1 例收益）。
+- 下一步候选（待用户指示）：
+  1. 重建 5 例形态差分（abs/toString/get_throw/capacity/last 族 × let-RHS
+     标识符），官方 typechecker 打标定位 Patch 5 回归位点；
+  2. 若确认 Patch 5 回归 → v15 = v12-F1-L + 修正版 Patch 5（或回退其 let-RHS
+     重锚定部分，保留其余激活）。
