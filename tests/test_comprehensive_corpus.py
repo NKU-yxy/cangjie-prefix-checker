@@ -65,15 +65,15 @@ class ComprehensiveCorpusTests(unittest.TestCase):
             self.manifest["expectation_tier_counts"],
             dict(sorted(expectation_tier_counts.items())),
         )
-        self.assertEqual(complete_counts, {"complete": 334, "incomplete": 39})
+        self.assertEqual(complete_counts, {"complete": 338, "incomplete": 39})
         self.assertEqual(oracle_counts, {
             "checked": 227,
-            "skipped_complete": 107,
+            "skipped_complete": 111,
             "skipped_incomplete": 39,
         })
         self.assertEqual(expectation_tier_counts, {
             "authoritative": 219,
-            "diagnostic_spec_pending": 145,
+            "diagnostic_spec_pending": 149,
             "diagnostic_scale": 9,
         })
 

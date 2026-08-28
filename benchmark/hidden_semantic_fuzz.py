@@ -36,6 +36,8 @@ if str(ROOT) not in sys.path:
 if str(VENDOR) not in sys.path:
     sys.path.insert(0, str(VENDOR))
 
+from tools.native_build import native_driver_command
+
 
 @dataclass(frozen=True)
 class GeneratedCase:
@@ -510,18 +512,14 @@ def run_python_prefix(source: str, chunks: Sequence[bytes], context: dict) -> Ru
 
 
 def _compile_driver(target: Path, sanitize: bool) -> None:
-    flags = ["-std=c++17", "-O2", "-DNDEBUG", "-Icpp"]
+    flags = ["-std=c++17", "-O2", "-DNDEBUG"]
     if sanitize:
         flags = [
             "-std=c++17", "-O1", "-g", "-fno-omit-frame-pointer",
-            "-fsanitize=address,undefined", "-Icpp",
+            "-fsanitize=address,undefined",
         ]
     subprocess.run(
-        [
-            "c++", *flags,
-            "tools/native_semantic_driver.cpp", "cpp/native_semantic.cpp",
-            "-o", str(target),
-        ],
+        native_driver_command(target, compile_flags=flags),
         cwd=ROOT,
         check=True,
     )

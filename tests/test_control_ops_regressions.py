@@ -5,12 +5,18 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DRIVER_SOURCE = ROOT / "tools" / "native_semantic_driver.cpp"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.native_build import native_driver_command
+
+
 CONTEXT_CANDIDATES = (
     ROOT / "generated" / "context.bin",
     ROOT.parent / "candidate_generic_header" / "generated" / "context.bin",
@@ -287,17 +293,7 @@ class ControlOpsRegressionTests(unittest.TestCase):
         )
         cls.driver = Path(cls._temporary_directory.name) / "native_semantic_driver"
         build = subprocess.run(
-            [
-                compiler,
-                "-std=c++17",
-                "-O2",
-                "-DNDEBUG",
-                "-Icpp",
-                str(DRIVER_SOURCE),
-                "cpp/native_semantic.cpp",
-                "-o",
-                str(cls.driver),
-            ],
+            native_driver_command(cls.driver, compiler=compiler),
             cwd=ROOT,
             text=True,
             stdout=subprocess.PIPE,

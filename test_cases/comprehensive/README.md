@@ -1,7 +1,7 @@
 # 固定综合测试语料
 
 本目录包含一套可重复生成、可人工阅读的仓颉前缀检查器回归语料。当前固定语料共有
-`373` 例和 `305` 个强制覆盖目标，覆盖三类期望：
+`377` 例和 `350` 个强制覆盖目标，覆盖三类期望：
 
 - `valid/`：完整且合法，所有 token 前缀都应继续接受；
 - `invalid/`：包含已经提交、无法由后续输入修复的错误，应在错误之后拒绝且不能提前拒绝；
@@ -26,7 +26,7 @@ reference-derived 类型 oracle 的
 完整的机器可校验覆盖表见 [`COVERAGE.md`](COVERAGE.md)。生成器发现任一强制目标
 未被样例标记覆盖时会直接失败。
 
-当前 `334` 个完整程序中有 `227` 个由仓库内 vendored reference-derived 类型 oracle
+当前 `338` 个完整程序中有 `227` 个由仓库内 vendored reference-derived 类型 oracle
 辅助复核。它不是赛事服务端判题器。其余完整例
 不会默默跳过：每例都必须在 `oracle_skip_reason` 中保存机器可读原因。当前使用的
 原因码为：
@@ -37,12 +37,12 @@ reference-derived 类型 oracle 的
 
 ## 证据层级与门禁效力
 
-373 例按证据强度分成三个互斥层级：
+377 例按证据强度分成三个互斥层级：
 
 | 层级 | 数量 | 定义 | 正式效力 |
 |---|---:|---|---|
 | `authoritative` | 219 | `oracle=true` 且不属于 `scale_stress` | manifest 标签是硬门禁 |
-| `diagnostic_spec_pending` | 145 | 非规模，但标签尚缺独立赛事规范/oracle 证明 | 差异必须记录，不单独否决 |
+| `diagnostic_spec_pending` | 149 | 非规模，但标签尚缺独立赛事规范/oracle 证明 | 差异必须记录，不单独否决 |
 | `diagnostic_scale` | 9 | 全部 `scale_stress`，无论 oracle 标记 | 只诊断规模、超时与非线性增长 |
 
 生产 grammar 层只证明样例标签与当前生产 grammar 一致，不是独立语法 oracle。竞赛
@@ -50,8 +50,8 @@ reference-derived 类型 oracle 的
 `oracle=false` 样例被项目 grammar 接受，就把它自动提升为赛事服务端硬规范。
 
 官方公开 50 例精确首错仍是最高优先级门禁。新增综合语料不得覆盖或放宽官方结果。
-对于性能候选，authoritative 必须 `219/219`；同时，全部 364 个非规模样例必须与最近
-一个已接受 control 严格逐 token 等价。后者用于锁定既有行为，不代表把 145 个
+对于性能候选，authoritative 必须 `219/219`；同时，全部 368 个非规模样例必须与最近
+一个已接受 control 严格逐 token 等价。后者用于锁定既有行为，不代表把 149 个
 spec-pending 标签升级为 authoritative。
 
 ## 一键运行
@@ -78,10 +78,10 @@ python3 tools/run_comprehensive_cases.py \
 完整运行默认还检查 13 种协议输入边界，包括空行、非十进制、负数、溢出、越界 ID、
 首个错误后立即停止和正负协议翻转。
 
-全量 373 例双协议诊断会执行 `746` 次完整源码、`240` 次独立安全前缀和
-`26` 次输入边界，单个 solution 共 `1012` 个新进程。上述正式非规模门禁对
-364 例执行 `728 + 238 + 26 = 992` 个进程；带 reference control 时 candidate 与
-control 各运行一遍，合计 `1984` 个。每个 reject 的
+全量 377 例双协议诊断会执行 `754` 次完整源码、`240` 次独立安全前缀和
+`26` 次输入边界，单个 solution 共 `1020` 个新进程。上述正式非规模门禁对
+368 例执行 `736 + 238 + 26 = 1000` 个进程；带 reference control 时 candidate 与
+control 各运行一遍，合计 `2000` 个。每个 reject 的
 `source[:safe_prefix_bytes]` 都会被独立重新编码并要求全程接受；默认与 competition
 transcript 必须逐项互补，首次拒绝 token 和字节位置必须相同。
 
@@ -98,7 +98,7 @@ python3 tools/run_comprehensive_cases.py \
   --json /tmp/comprehensive-reference-diff.json
 ```
 
-该模式对全部 364 个非规模样例严格比较完整源码、安全前缀和输入边界的逐 token
+该模式对全部 368 个非规模样例严格比较完整源码、安全前缀和输入边界的逐 token
 stdout、首次拒绝位置、退出状态、stderr 与进程异常。正确性修复本来就需要改变旧行为
 时，不应把已知错误的旧 control 当成等价标准；修复应先独立达到 authoritative
 `219/219`，再建立新的性能 control。
@@ -185,7 +185,8 @@ python3 tools/run_fresh_comprehensive_cases.py \
 
 ## 当前生产版本状态
 
-2026-08-13 在官方 Linux AArch64 镜像测试生产逻辑 `58f03c7`（仓库锚点
+以下结果仅对应 2026-08-13 的旧 373 例语料快照，不代表当前 377 例语料的复验结果。
+当时在官方 Linux AArch64 镜像测试生产逻辑 `58f03c7`（仓库锚点
 `3d745b6`）：静态 grammar `364/364`、vendored oracle `227/227`、原有官方
 `50/50` 精确首错、原 oracle 语料 `45/45` 和项目语料 `57/57` 均通过。最终
 `oracle-backed` 运行摘要为 `371/373`，其中：
@@ -197,5 +198,5 @@ python3 tools/run_fresh_comprehensive_cases.py \
 若统一按全部 manifest 标签观察，原始匹配数为 `329/373`，但不能据此把全部标签当作
 赛事规范。恢复性能优化只需先修复两个 authoritative 缺陷并建立 `219/219` control；
 40 个规范待确认差异和 2 个规模超时继续保留诊断，不要求通过修改实现凑成
-`373/373`。禁止删除样例、篡改证据层级、放宽安全前缀或按样例特化。完整清单见
-[`../../baseline_results/20260813_comprehensive_373_integration_verdict.md`](../../baseline_results/20260813_comprehensive_373_integration_verdict.md)。
+`373/373`。禁止删除样例、篡改证据层级、放宽安全前缀或按样例特化。旧版结果报告已
+作为参赛资料归档，不再由公开仓库承载。

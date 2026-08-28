@@ -22,6 +22,28 @@ run_quiet() {
 
 mkdir -p generated
 
+# The native semantic engine is split across the sources listed here. Tests and
+# benchmarks read the same manifest through tools/native_build.py, so adding a
+# new implementation file only requires updating one list.
+native_source_manifest="cpp/native_semantic_sources.txt"
+if [[ ! -s "${native_source_manifest}" ]]; then
+  echo "missing native source manifest: ${native_source_manifest}" >&2
+  exit 1
+fi
+native_semantic_sources=()
+while IFS= read -r native_source || [[ -n "${native_source}" ]]; do
+  [[ -z "${native_source}" || "${native_source}" == \#* ]] && continue
+  if [[ ! -f "${native_source}" ]]; then
+    echo "native source manifest references missing file: ${native_source}" >&2
+    exit 1
+  fi
+  native_semantic_sources+=("${native_source}")
+done < "${native_source_manifest}"
+if [[ ${#native_semantic_sources[@]} -eq 0 ]]; then
+  echo "native source manifest is empty: ${native_source_manifest}" >&2
+  exit 1
+fi
+
 # --- 1) token table (runtime: generated/cl100k_base.bin) -------------------
 # The shipped assets/cl100k_base.bin.xz is self-contained; python3 is present on
 # the judge because the interaction harness itself is a python script.
@@ -105,9 +127,7 @@ run_quiet "${native_cxx}" \
   -I"${xgrammar_root}/third_party/picojson" \
   -I"${xgrammar_root}/third_party/dlpack" \
   cpp/solution.cpp \
-  cpp/native_semantic.cpp \
-  cpp/call_frontier.cpp \
-  cpp/continuation.cpp \
+  "${native_semantic_sources[@]}" \
   "${xgrammar_sources[@]}" \
   "${native_link_flags[@]}" \
   -o solution

@@ -25,8 +25,8 @@ Usage (inside the official judge container):
   python3 benchmark/context_api_differential.py \
     --solution /workspace/solution \
     --wrong-dir /ref/wrong --error-json /ref/wrong_error_positions.json \
-    --failure-json /workspace/baseline_results/context_api_failures.json \
-    --report-md /workspace/baseline_results/context_api_report.md
+    --failure-json /tmp/context_api_failures.json \
+    --report-md /tmp/context_api_report.md
 
 Exit code 0 even when divergences are found; the report carries findings.
 """

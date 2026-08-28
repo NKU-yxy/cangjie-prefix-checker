@@ -11,6 +11,10 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.native_build import native_driver_command
 
 
 CONTEXT = {
@@ -66,10 +70,7 @@ def main() -> int:
             check=True,
         )
         subprocess.run(
-            [
-                "c++", "-std=c++17", "-O2", "-DNDEBUG", "-Icpp",
-                "tools/native_semantic_driver.cpp", "cpp/native_semantic.cpp", "-o", str(driver),
-            ],
+            native_driver_command(driver),
             cwd=ROOT,
             check=True,
         )

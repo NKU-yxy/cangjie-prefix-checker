@@ -12,20 +12,29 @@ class ContextLoaderTests(unittest.TestCase):
         context = load_context(os.path.join(ROOT, "context.json"))
 
         println = [item for item in context["functions"] if item["name"] == "println"]
-        self.assertEqual(3, len(println))
+        self.assertEqual(5, len(println))
         self.assertEqual(
-            {"String", "Int64", "Float64"},
+            {"String", "Int64", "Float64", "Bool", "Rune"},
             {item["param_types"][0] for item in println},
         )
+
+        function_names = {item["name"] for item in context["functions"]}
+        self.assertTrue({"min", "max", "abs", "clamp"}.issubset(function_names))
 
         array = next(item for item in context["classes"] if item["name"] == "Array")
         self.assertEqual("Int64", array["fields"]["size"])
         self.assertEqual(3, len(array["constructors"]))
         self.assertIn("fill", {item["name"] for item in array["methods"]})
-        self.assertEqual("T", array["iterable_element"])
+        self.assertIn("indexOf", {item["name"] for item in array["methods"]})
+        self.assertIn("Iterable<T>", array["supers"])
+
+        nominal_names = {item["name"] for item in context["classes"]}
+        self.assertTrue({"ArrayStack", "ArrayDeque"}.issubset(nominal_names))
 
         hashable = next(item for item in context["interfaces"] if item["name"] == "Hashable")
         self.assertIn("hashCode", {item["name"] for item in hashable["methods"]})
+        interface_names = {item["name"] for item in context["interfaces"]}
+        self.assertTrue({"Stack", "Deque"}.issubset(interface_names))
 
     def test_classes_alias_and_structured_types_are_supported(self):
         context = normalize_context({

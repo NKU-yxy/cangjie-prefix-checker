@@ -1123,6 +1123,26 @@ def _context_api_cases() -> list[CorpusCase]:
         "context:global:print:overload:3",
         "context:global:eprint:overload:3",
     )
+    accept(
+        "global-output-extended-overloads",
+        "main(): Unit { println(true)\n println(r'x')\n print(true)\n print(r'y') }\n",
+        "context:global:println:overload:3",
+        "context:global:println:overload:4",
+        "context:global:print:overload:4",
+        "context:global:print:overload:5",
+        oracle=False,
+    )
+    accept(
+        "global-numeric-helpers",
+        "main(): Unit { let low: Int64 = min<Int64>(1, 2, [3])\n let high: Int64 = max<Int64>(1, 2, [3])\n let integer: Int64 = abs(1)\n let decimal: Float64 = abs(1.5)\n let bounded: Float64 = clamp(1.5, 0.0, 2.0) }\n",
+        "context:global:min",
+        "context:global:max",
+        "context:global:abs",
+        "context:global:abs:overload:0",
+        "context:global:abs:overload:1",
+        "context:global:clamp",
+        oracle=False,
+    )
 
     accept(
         "array-constructor-overloads",
@@ -1158,6 +1178,52 @@ def _context_api_cases() -> list[CorpusCase]:
         "array-list-static-of",
         "main(): Unit { let values: ArrayList<Int64> = ArrayList.of([1, 2]) }\n",
         "context:ArrayList:static_method:of",
+        oracle=False,
+    )
+
+    accept(
+        "stack-and-deque-complete-api",
+        "main(): Unit { let stack: ArrayStack<Int64> = ArrayStack<Int64>()\n let reservedStack: ArrayStack<Int64> = ArrayStack<Int64>(8)\n stack.add(1)\n let stackTop: Optional<Int64> = stack.peek()\n let stackRemoved: Optional<Int64> = stack.remove()\n let stackEmpty: Bool = stack.isEmpty()\n stack.reserve(16)\n let stackValues: Array<Int64> = stack.toArray()\n let stackSize: Int64 = stack.size\n let stackCapacity: Int64 = stack.capacity\n stack.clear()\n let stackContract: Stack<Int64> = stack\n stackContract.add(2)\n stackContract.peek()\n stackContract.remove()\n let deque: ArrayDeque<Int64> = ArrayDeque<Int64>()\n let reservedDeque: ArrayDeque<Int64> = ArrayDeque<Int64>(8)\n deque.addFirst(1)\n deque.addLast(2)\n let dequeFirst: Optional<Int64> = deque.removeFirst()\n let dequeLast: Optional<Int64> = deque.removeLast()\n let dequeEmpty: Bool = deque.isEmpty()\n deque.reserve(16)\n let dequeValues: Array<Int64> = deque.toArray()\n let dequeSize: Int64 = deque.size\n let dequeCapacity: Int64 = deque.capacity\n deque.clear()\n let dequeContract: Deque<Int64> = deque\n dequeContract.addFirst(3)\n dequeContract.addLast(4)\n dequeContract.removeFirst()\n dequeContract.removeLast() }\n",
+        "context:ArrayStack:ctor",
+        "context:ArrayStack:ctor:0",
+        "context:ArrayStack:ctor:1",
+        "context:ArrayStack:field:size",
+        "context:ArrayStack:field:capacity",
+        *(f"context:ArrayStack:method:{name}" for name in (
+            "add", "peek", "remove", "isEmpty", "reserve", "toArray", "clear",
+        )),
+        "context:ArrayDeque:ctor",
+        "context:ArrayDeque:ctor:0",
+        "context:ArrayDeque:ctor:1",
+        "context:ArrayDeque:field:size",
+        "context:ArrayDeque:field:capacity",
+        *(f"context:ArrayDeque:method:{name}" for name in (
+            "addFirst", "addLast", "removeFirst", "removeLast", "isEmpty",
+            "reserve", "toArray", "clear",
+        )),
+        "context:interface:Stack",
+        "context:interface:Stack:method:add",
+        "context:interface:Stack:method:peek",
+        "context:interface:Stack:method:remove",
+        "context:interface:Deque",
+        "context:interface:Deque:method:addFirst",
+        "context:interface:Deque:method:addLast",
+        "context:interface:Deque:method:removeFirst",
+        "context:interface:Deque:method:removeLast",
+        oracle=False,
+    )
+
+    accept(
+        "extended-container-and-optional-api",
+        'main(): Unit { let array: Array<Int64> = [1, 2]\n let arrayIndex: Optional<Int64> = array.indexOf(2)\n let list: ArrayList<Int64> = ArrayList<Int64>([1, 2])\n let listValue: Optional<Int64> = list.get(0)\n let map: HashMap<String, Int64> = HashMap<String, Int64>()\n let hasKey: Bool = map.contains("key")\n let set: HashSet<Int64> = HashSet<Int64>()\n set.clear()\n let some: Bool = arrayIndex.isSome()\n let none: Bool = arrayIndex.isNone()\n let fallback: Int64 = arrayIndex.orElse(0)\n let textIndex: Optional<Int64> = "alpha".indexOf("ph") }\n',
+        "context:Array:method:indexOf",
+        "context:ArrayList:method:get",
+        "context:HashMap:method:contains",
+        "context:HashSet:method:clear",
+        "context:Optional:method:isSome",
+        "context:Optional:method:isNone",
+        "context:Optional:method:orElse",
+        "context:String:method:indexOf",
         oracle=False,
     )
 
@@ -1965,7 +2031,8 @@ def _serialized(
         )
     return (
         files,
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        # Keep the checked-in manifest compact enough for readable reviews.
+        json.dumps(manifest, ensure_ascii=False, indent=1) + "\n",
         "\n".join(coverage_lines).rstrip() + "\n",
     )
 

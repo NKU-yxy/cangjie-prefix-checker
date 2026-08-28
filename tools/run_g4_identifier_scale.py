@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Collect raw G4 long-identifier scale observations without issuing a verdict.
 
-The subprocess/RSS execution core is reused from the immutable G1 audit
-collector at
-``baseline_results/20260814_g1_independent_acceptance/evidence/tools/audit_harness.py``.
+The subprocess/RSS execution core is reused from the immutable audit collector
+at ``tools/audit_harness.py``.
 That source is verified before import against SHA-256
 ``5c8fe5e6dc44c3aa5048702fdaf33738110bcca8df1776435e21bd82759057a3``.
 The reuse keeps timeout cleanup, exact transcript retention, and 5 ms
@@ -35,7 +34,7 @@ from typing import Any, Sequence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 G1_CORE_RELATIVE_PATH = Path(
-    "baseline_results/20260814_g1_independent_acceptance/evidence/tools/audit_harness.py"
+    "tools/audit_harness.py"
 )
 G1_CORE_SHA256 = "5c8fe5e6dc44c3aa5048702fdaf33738110bcca8df1776435e21bd82759057a3"
 

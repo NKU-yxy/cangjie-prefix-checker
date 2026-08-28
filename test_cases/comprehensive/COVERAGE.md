@@ -1,12 +1,12 @@
 # 综合语料覆盖矩阵
 
-- 样例总数：`373`
-- 完整合法：`214`
+- 样例总数：`377`
+- 完整合法：`218`
 - 完整错误：`120`
 - 可补全前缀：`39`
-- vendored reference-derived 类型 oracle 复核：`227/334`
-- 强制覆盖目标：`305/305`
-- 语料源码 SHA-256：`764af01cd910c341662a84bcab497cfdcf003150c434684a4d0838d80fc3967d`
+- vendored reference-derived 类型 oracle 复核：`227/338`
+- 强制覆盖目标：`350/350`
+- 语料源码 SHA-256：`1e9de408125719c639b07d41d1504bda017192fa3ea177df4190e6deea48204e`
 
 ## 按测试族统计
 
@@ -14,7 +14,7 @@
 |---|---:|
 | `classes_interfaces` | 9 |
 | `collections` | 10 |
-| `context_api` | 19 |
+| `context_api` | 23 |
 | `context_api_negative` | 6 |
 | `control_flow` | 9 |
 | `declaration_matrix` | 23 |
@@ -54,23 +54,35 @@
 - `context:Array:ctor:1` (1)
 - `context:Array:ctor:2` (1)
 - `context:Array:field:size` (1)
-- `context:Array:iterable` (1)
 - `context:Array:method:clone` (1)
 - `context:Array:method:concat` (1)
 - `context:Array:method:fill` (1)
 - `context:Array:method:first` (1)
 - `context:Array:method:get` (1)
+- `context:Array:method:indexOf` (1)
 - `context:Array:method:last` (1)
 - `context:Array:method:reverse` (1)
 - `context:Array:method:slice` (1)
 - `context:Array:method:swap` (1)
+- `context:ArrayDeque:ctor` (1)
+- `context:ArrayDeque:ctor:0` (1)
+- `context:ArrayDeque:ctor:1` (1)
+- `context:ArrayDeque:field:capacity` (1)
+- `context:ArrayDeque:field:size` (1)
+- `context:ArrayDeque:method:addFirst` (1)
+- `context:ArrayDeque:method:addLast` (1)
+- `context:ArrayDeque:method:clear` (1)
+- `context:ArrayDeque:method:isEmpty` (1)
+- `context:ArrayDeque:method:removeFirst` (1)
+- `context:ArrayDeque:method:removeLast` (1)
+- `context:ArrayDeque:method:reserve` (1)
+- `context:ArrayDeque:method:toArray` (1)
 - `context:ArrayList:ctor` (1)
 - `context:ArrayList:ctor:0` (1)
 - `context:ArrayList:ctor:1` (1)
 - `context:ArrayList:ctor:2` (1)
 - `context:ArrayList:field:capacity` (1)
 - `context:ArrayList:field:size` (1)
-- `context:ArrayList:iterable` (1)
 - `context:ArrayList:method:add` (1)
 - `context:ArrayList:method:add:overload:0` (1)
 - `context:ArrayList:method:add:overload:1` (1)
@@ -78,12 +90,25 @@
 - `context:ArrayList:method:add:overload:3` (1)
 - `context:ArrayList:method:clear` (1)
 - `context:ArrayList:method:clone` (1)
+- `context:ArrayList:method:get` (1)
 - `context:ArrayList:method:isEmpty` (1)
 - `context:ArrayList:method:remove` (1)
 - `context:ArrayList:method:reserve` (1)
 - `context:ArrayList:method:reverse` (1)
 - `context:ArrayList:method:toArray` (1)
 - `context:ArrayList:static_method:of` (1)
+- `context:ArrayStack:ctor` (1)
+- `context:ArrayStack:ctor:0` (1)
+- `context:ArrayStack:ctor:1` (1)
+- `context:ArrayStack:field:capacity` (1)
+- `context:ArrayStack:field:size` (1)
+- `context:ArrayStack:method:add` (1)
+- `context:ArrayStack:method:clear` (1)
+- `context:ArrayStack:method:isEmpty` (1)
+- `context:ArrayStack:method:peek` (1)
+- `context:ArrayStack:method:remove` (1)
+- `context:ArrayStack:method:reserve` (1)
+- `context:ArrayStack:method:toArray` (1)
 - `context:HashMap:ctor` (1)
 - `context:HashMap:ctor:0` (1)
 - `context:HashMap:ctor:1` (1)
@@ -98,6 +123,7 @@
 - `context:HashMap:method:capacity` (1)
 - `context:HashMap:method:clear` (1)
 - `context:HashMap:method:clone` (1)
+- `context:HashMap:method:contains` (1)
 - `context:HashMap:method:get` (1)
 - `context:HashMap:method:keys` (1)
 - `context:HashMap:method:remove` (1)
@@ -113,12 +139,11 @@
 - `context:HashSet:ctor:3` (1)
 - `context:HashSet:field:capacity` (1)
 - `context:HashSet:field:size` (1)
-- `context:HashSet:iterable` (1)
 - `context:HashSet:method:add` (1)
 - `context:HashSet:method:add:overload:0` (1)
 - `context:HashSet:method:add:overload:1` (1)
-- `context:HashSet:method:addIfAbsent` (1)
 - `context:HashSet:method:capacity` (1)
+- `context:HashSet:method:clear` (1)
 - `context:HashSet:method:clone` (1)
 - `context:HashSet:method:contains` (1)
 - `context:HashSet:method:remove` (1)
@@ -127,10 +152,11 @@
 - `context:HashSet:method:reserve` (1)
 - `context:HashSet:method:size` (1)
 - `context:HashSet:method:toArray` (1)
-- `context:KeysView:iterable` (1)
 - `context:KeysView:method:size` (1)
 - `context:Optional:method:getOrThrow` (1)
-- `context:Range:iterable` (1)
+- `context:Optional:method:isNone` (1)
+- `context:Optional:method:isSome` (1)
+- `context:Optional:method:orElse` (1)
 - `context:Range:method:size` (1)
 - `context:String:ctor` (1)
 - `context:String:ctor:0` (1)
@@ -143,6 +169,7 @@
 - `context:String:method:endsWith` (1)
 - `context:String:method:get` (1)
 - `context:String:method:hashCode` (1)
+- `context:String:method:indexOf` (1)
 - `context:String:method:isEmpty` (1)
 - `context:String:method:replace` (1)
 - `context:String:method:startsWith` (1)
@@ -150,8 +177,11 @@
 - `context:String:static_field:empty` (1)
 - `context:String:static_method:empty` (1)
 - `context:String:static_method:fromUtf8` (1)
-- `context:ValuesView:iterable` (1)
 - `context:ValuesView:method:size` (1)
+- `context:global:abs` (1)
+- `context:global:abs:overload:0` (1)
+- `context:global:abs:overload:1` (1)
+- `context:global:clamp` (1)
 - `context:global:eprint` (2)
 - `context:global:eprint:overload:0` (1)
 - `context:global:eprint:overload:1` (1)
@@ -161,22 +191,37 @@
 - `context:global:eprintln:overload:0` (1)
 - `context:global:eprintln:overload:1` (1)
 - `context:global:eprintln:overload:2` (1)
+- `context:global:max` (1)
+- `context:global:min` (1)
 - `context:global:print` (2)
 - `context:global:print:overload:0` (1)
 - `context:global:print:overload:1` (1)
 - `context:global:print:overload:2` (1)
 - `context:global:print:overload:3` (1)
+- `context:global:print:overload:4` (1)
+- `context:global:print:overload:5` (1)
 - `context:global:println` (1)
 - `context:global:println:overload:0` (1)
 - `context:global:println:overload:1` (1)
 - `context:global:println:overload:2` (1)
+- `context:global:println:overload:3` (1)
+- `context:global:println:overload:4` (1)
 - `context:interface:Collection` (1)
 - `context:interface:Collection:method:size` (1)
+- `context:interface:Deque` (1)
+- `context:interface:Deque:method:addFirst` (1)
+- `context:interface:Deque:method:addLast` (1)
+- `context:interface:Deque:method:removeFirst` (1)
+- `context:interface:Deque:method:removeLast` (1)
 - `context:interface:Equatable` (1)
 - `context:interface:Equatable:method:equals` (1)
 - `context:interface:Hashable` (1)
 - `context:interface:Hashable:method:hashCode` (1)
 - `context:interface:Iterable` (1)
+- `context:interface:Stack` (1)
+- `context:interface:Stack:method:add` (1)
+- `context:interface:Stack:method:peek` (1)
+- `context:interface:Stack:method:remove` (1)
 
 ### grammar
 

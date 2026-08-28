@@ -36,9 +36,9 @@
 
 默认生产入口在构建后为运行时纯 C++ 实现。
 
-## 2. 当前状态
+## 2. 状态
 
-当前结果：
+以下为参赛阶段保留的结果记录，当前开发分支以实际测试命令输出为准：
 
 - 公开错误样例精确首错 `50/50`；
 - 官方语义语料 `45/45`；
@@ -50,6 +50,11 @@
 - `180` 个合法程序在所有观测前缀上零误报；
 - 真实 `solution` 协议随机样例 `48/48`；
 - ASan/UBSan 随机样例 `24 × 5`通过。
+
+2026-08-28 重构前基础设施基线：默认构建通过；context 差分 `7/7`；非规模语料的
+grammar 检查 `368/368`；Python 全量测试可完整执行 `70` 项，已无链接或依赖导入错误，
+但仍有 `45` 个既有 native 语义断言失败；fragment 差分保留 `7` 组已知语义差异。
+这些语义问题将在后续独立提交中处理，不混入测试基础设施提交。
 
 
 ## 3. 核心能力
@@ -166,24 +171,30 @@ git pull --ff-only origin master
 
 ### 7.2 `requirements.txt`
 
-仓库根目录的 `requirements.txt` 包含构建、测试和 Python 差分工具所需依赖：
+仓库根目录的 `requirements.txt` 汇总测试和 Python 差分工具所需依赖：
 
 ```text
-tiktoken>=0.7.0
-lark>=1.1.0
-apache-tvm-ffi>=0.1.9
-pydantic>=2.0
-numpy>=1.24
-typing-extensions>=4.9.0
+-r requirements-base.txt
+-r requirements-xgrammar.txt
 ```
 
-安装依赖：
+其中 `requirements-base.txt` 固定 tiktoken 0.13.0，并声明 Lark、TVM FFI、Pydantic、NumPy 等常规依赖；`requirements-xgrammar.txt` 固定 XGrammar 0.2.1，与 `third_party/xgrammar_core/UPSTREAM.md` 记录的 C++ 源码版本一致。
+
+推荐使用轻量安装脚本：
+
+```bash
+./tools/install_python_test_deps.sh --user
+```
+
+项目只使用 XGrammar 的 RAW tokenizer/grammar matcher API。轻量脚本会正常安装基础依赖，再以 `--no-deps` 安装 XGrammar，并使用仓库根目录的 `torch.py`、`transformers.py` 兼容模块，避免下载测试不需要的 PyTorch、Transformers 和 Triton。也可以通过 `PYTHON=/path/to/python` 指定解释器。
+
+如需 XGrammar 上游声明的完整机器学习集成依赖，则执行：
 
 ```bash
 python3 -m pip install --user -r requirements.txt
 ```
 
-`requirements.txt` 仅供开发期 Python 差分工具使用；正式的 `build.sh` 不安装依赖、不访问网络，使用仓库内置的 XGrammar 源码、token 表压缩包和上下文生成工具。
+这些 requirements 仅供开发期 Python 差分工具和测试使用；正式的 `build.sh` 不安装依赖、不访问网络，使用仓库内置的 XGrammar C++ 源码、token 表压缩包和上下文生成工具。
 
 ## 8. 构建
 
@@ -322,8 +333,8 @@ python3 benchmark/native_context_differential.py
 python3 benchmark/hidden_semantic_fuzz.py --seed 20260805 --cases-per-family 12 --solution ./solution
 ```
 
-仓库还提供 `373` 个固定综合样例，覆盖 `214` 个完整合法程序、`120` 个已提交错误和
-`39` 个仍可继续补全的截断前缀。覆盖矩阵锁定 `305` 个语法、语义、运算符、类型及
+仓库还提供 `377` 个固定综合样例，覆盖 `218` 个完整合法程序、`120` 个已提交错误和
+`39` 个仍可继续补全的截断前缀。覆盖矩阵锁定 `350` 个语法、语义、运算符、类型及
 `context.json` API 标签。运行器使用生产 grammar 和 vendored reference-derived 类型
 oracle 辅助复核标签，并通过真实 `cl100k_base` 逐 token 协议检查首次拒绝、独立安全
 前缀、双协议一致性及非法协议输入。
@@ -331,7 +342,7 @@ oracle 辅助复核标签，并通过真实 `cl100k_base` 逐 token 协议检查
 综合语料按证据强度分层，而不是把生产 grammar 对自身标签的一致性检查误作赛事规范：
 
 - `authoritative=219`：`oracle=true` 且非 `scale_stress`，属于新增正确性硬门禁；
-- `diagnostic_spec_pending=145`：尚缺独立赛事规范/oracle 证明，差异必须报告但不单独
+- `diagnostic_spec_pending=149`：尚缺独立赛事规范/oracle 证明，差异必须报告但不单独
   否决优化；
 - `diagnostic_scale=9`：规模、超时与非线性增长诊断，不进入硬门禁。
 
@@ -350,7 +361,7 @@ python3 tools/run_comprehensive_cases.py \
 
 这套综合语料不进入官方 50 例的 `SUM`、`MEDIAN`、`P95` 或 `MAX`。行为保持不变的
 性能候选必须达到 authoritative `219/219`，并使用
-`--reference-solution /control/solution` 对全部 `364` 个非规模样例与当前 control 做
+`--reference-solution /control/solution` 对全部 `368` 个非规模样例与当前 control 做
 严格逐 token 差分；这会锁住 spec-pending 的既有行为，但不会把其标签升级成赛事规范。
 
 日常快速回归可以排除专门用于发现非线性耗时的规模压力族；需要每次生成不同程序时，
@@ -364,7 +375,7 @@ python3 tools/run_fresh_comprehensive_cases.py --solution ./solution --quick
 样例分类、筛选方式、JSON 报告和确定性重新生成方法见
 [`test_cases/comprehensive/README.md`](test_cases/comprehensive/README.md)。
 
-截至 2026-08-13，当前生产逻辑已在官方 Linux AArch64 环境通过原有官方 `50/50`
+以下是 2026-08-13 旧 373 例语料快照的历史结果：当时生产逻辑已在官方 Linux AArch64 环境通过原有官方 `50/50`
 精确首错、oracle `45/45` 和项目语料 `57/57`。最终分层运行的 `oracle-backed` 摘要为
 `371/373`：authoritative 为 `217/219`，存在 2 个明确 false reject；145 个
 spec-pending 样例有 40 个标签差异，仅作诊断；9 个 scale 样例有 2 个 30 秒超时，也
@@ -377,8 +388,8 @@ spec-pending 样例有 40 个标签差异，仅作诊断；9 个 scale 样例有
 评委按“大型语句块规模稳健性”目标验收通过，并在本地提交
 `f5f2468c343e7ccc18d48cba0eab0a10920ee1c6` 恢复为当前 accepted control。
 300 locals 已从超过 35 秒降至约 0.45 秒；4KB identifier 仍会超时，
-它是后续独立 G4 风险项，不得表述为已由 G1 解决。完整证据见
-[`baseline_results/20260814_g1_independent_acceptance/`](baseline_results/20260814_g1_independent_acceptance/)。
+它是后续独立 G4 风险项，不得表述为已由 G1 解决。对应证据已作为参赛资料归档，
+不再由公开仓库承载。
 
 若已在项目同级目录准备竞赛配套的 `cangjie-fragment-checker` 仓库，可运行公开样例精确首错差分和冷进程性能测试：
 
@@ -437,9 +448,9 @@ CANGJIE_DEBUG_SEMANTIC=1 ./solution < token_ids.txt
 
 确认 `grammar/cangjie.gbnf` 存在，并从项目根目录启动程序。
 
-### XGrammar 或 TVM FFI 共享库无法加载
+### Python 测试提示无法导入 XGrammar 或 TVM FFI
 
-重新执行 `./build.sh`。构建脚本会定位 XGrammar 与 TVM FFI 的共享库并写入运行时搜索路径。Linux 环境还应确认 XGrammar 和 TVM FFI 来自当前 Python 环境。
+执行 `./tools/install_python_test_deps.sh --user`，并确认运行测试和安装依赖使用的是同一个 Python 解释器。原生 `solution` 由 `build.sh` 直接编译仓库内置的 XGrammar C++ core，不依赖 Python XGrammar 或 TVM FFI 共享库。
 
 ### 应该使用哪一种输出协议
 
@@ -459,6 +470,6 @@ CANGJIE_DEBUG_SEMANTIC=1 ./solution < token_ids.txt
 - [tiktoken](https://github.com/openai/tiktoken)：用于构建期生成 `cl100k_base` token 查表数据，采用 MIT License；
 - [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker)：竞赛配套公开样例、交互测试工具和 typechecker 来源。
 
-第三方依赖、许可证、分发方式和本队原创边界统一记录在 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中。最终提交框架不包含 XGrammar、TVM FFI、tiktoken 或 Lark 的源码副本；前三者按构建或运行需要从外部环境安装，Lark 仅用于开发测试。
+第三方依赖、许可证、分发方式和本队原创边界统一记录在 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中。仓库包含构建所需的 XGrammar C++ core 精简源码；Python XGrammar、TVM FFI、tiktoken 和 Lark 不随仓库分发，仅供开发测试时按 requirements 安装。
 
-最终提交框架包含 `third_party/cangjie_typechecker/`。该目录基于竞赛配套公开仓库 [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker) 中的 typechecker，由本队作少量开发期适配，仅用于完整程序解析、差分测试、随机程序合法性标注和实验复现，不参与 `solution` 的编译、链接或运行。该目录及其本地修改均不作为本队原创成果，也不计入本队原创代码量；具体来源、修改文件和边界见目录内 README 与 `THIRD_PARTY_NOTICES.md`。生产运行路径由本队编写的 C++ 检查器、面向赛题子集适配的仓颉 GBNF、构建与数据生成工具，以及外部安装的 XGrammar/TVM FFI 依赖构成。
+最终提交框架包含 `third_party/cangjie_typechecker/`。该目录基于竞赛配套公开仓库 [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker) 中的 typechecker，由本队作少量开发期适配，仅用于完整程序解析、差分测试、随机程序合法性标注和实验复现，不参与 `solution` 的编译、链接或运行。该目录及其本地修改均不作为本队原创成果，也不计入本队原创代码量；具体来源、修改文件和边界见目录内 README 与 `THIRD_PARTY_NOTICES.md`。生产运行路径由本队编写的 C++ 检查器、面向赛题子集适配的仓颉 GBNF、构建与数据生成工具，以及仓库内置的 XGrammar C++ core 构成。

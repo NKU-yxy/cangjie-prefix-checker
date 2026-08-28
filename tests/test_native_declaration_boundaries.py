@@ -5,11 +5,18 @@ from pathlib import Path
 import random
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.native_build import native_driver_command
+
+
 CONTEXT = ROOT / "generated" / "context.bin"
 
 
@@ -124,18 +131,16 @@ class NativeDeclarationBoundaryTests(unittest.TestCase):
         )
         cls.driver = Path(cls._temporary_directory.name) / "native_semantic_driver"
         build = subprocess.run(
-            [
-                compiler,
-                "-std=c++17",
-                "-O2",
-                "-DNDEBUG",
-                "-DCANGJIE_ENABLE_REGEX_SHADOW",
-                "-Icpp",
-                "tools/native_semantic_driver.cpp",
-                "cpp/native_semantic.cpp",
-                "-o",
-                str(cls.driver),
-            ],
+            native_driver_command(
+                cls.driver,
+                compiler=compiler,
+                compile_flags=(
+                    "-std=c++17",
+                    "-O2",
+                    "-DNDEBUG",
+                    "-DCANGJIE_ENABLE_REGEX_SHADOW",
+                ),
+            ),
             cwd=ROOT,
             text=True,
             stdout=subprocess.PIPE,
