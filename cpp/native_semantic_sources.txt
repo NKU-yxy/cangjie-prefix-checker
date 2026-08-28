@@ -1,5 +1,7 @@
 # Native semantic implementation sources shared by build.sh, tests, and benchmarks.
 # Paths are relative to the repository root. Keep one source file per line.
 cpp/native_semantic.cpp
+cpp/native_checker.cpp
+cpp/semantic_names.cpp
 cpp/call_frontier.cpp
 cpp/continuation.cpp
