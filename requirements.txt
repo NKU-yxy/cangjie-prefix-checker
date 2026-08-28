@@ -1,2 +1,9 @@
--r requirements-base.txt
--r requirements-xgrammar.txt
+# Python dependencies used by the test suite and differential tools.
+# Keep XGrammar aligned with third_party/xgrammar_core/UPSTREAM.md.
+xgrammar==0.2.1
+tiktoken==0.13.0
+lark>=1.1.0,<2
+apache-tvm-ffi>=0.1.9,<0.2
+pydantic>=2.0,<3
+numpy>=1.24
+typing-extensions>=4.9.0

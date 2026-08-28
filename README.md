@@ -174,25 +174,30 @@ git pull --ff-only origin master
 仓库根目录的 `requirements.txt` 汇总测试和 Python 差分工具所需依赖：
 
 ```text
--r requirements-base.txt
--r requirements-xgrammar.txt
+xgrammar==0.2.1
+tiktoken==0.13.0
+lark>=1.1.0,<2
+apache-tvm-ffi>=0.1.9,<0.2
+pydantic>=2.0,<3
+numpy>=1.24
+typing-extensions>=4.9.0
 ```
 
-其中 `requirements-base.txt` 固定 tiktoken 0.13.0，并声明 Lark、TVM FFI、Pydantic、NumPy 等常规依赖；`requirements-xgrammar.txt` 固定 XGrammar 0.2.1，与 `third_party/xgrammar_core/UPSTREAM.md` 记录的 C++ 源码版本一致。
+这是仓库唯一的 Python 环境依赖清单。其中 XGrammar 固定为 0.2.1，与 `third_party/xgrammar_core/UPSTREAM.md` 记录的 C++ 源码版本一致；tiktoken 固定为 0.13.0，以保证 token ID 相关测试可以复现。
 
-推荐使用轻量安装脚本：
+可以直接安装：
+
+```bash
+python3 -m pip install --user -r requirements.txt
+```
+
+也可以使用项目提供的等价安装脚本：
 
 ```bash
 ./tools/install_python_test_deps.sh --user
 ```
 
-项目只使用 XGrammar 的 RAW tokenizer/grammar matcher API。轻量脚本会正常安装基础依赖，再以 `--no-deps` 安装 XGrammar，并使用仓库根目录的 `torch.py`、`transformers.py` 兼容模块，避免下载测试不需要的 PyTorch、Transformers 和 Triton。也可以通过 `PYTHON=/path/to/python` 指定解释器。
-
-如需 XGrammar 上游声明的完整机器学习集成依赖，则执行：
-
-```bash
-python3 -m pip install --user -r requirements.txt
-```
+安装脚本只读取 `requirements.txt`，不会维护第二份依赖清单；可以通过 `PYTHON=/path/to/python` 指定解释器。
 
 这些 requirements 仅供开发期 Python 差分工具和测试使用；正式的 `build.sh` 不安装依赖、不访问网络，使用仓库内置的 XGrammar C++ 源码、token 表压缩包和上下文生成工具。
 
@@ -450,7 +455,7 @@ CANGJIE_DEBUG_SEMANTIC=1 ./solution < token_ids.txt
 
 ### Python 测试提示无法导入 XGrammar 或 TVM FFI
 
-执行 `./tools/install_python_test_deps.sh --user`，并确认运行测试和安装依赖使用的是同一个 Python 解释器。原生 `solution` 由 `build.sh` 直接编译仓库内置的 XGrammar C++ core，不依赖 Python XGrammar 或 TVM FFI 共享库。
+执行 `python3 -m pip install --user -r requirements.txt`，并确认运行测试和安装依赖使用的是同一个 Python 解释器。原生 `solution` 由 `build.sh` 直接编译仓库内置的 XGrammar C++ core，不依赖 Python XGrammar 或 TVM FFI 共享库。
 
 ### 应该使用哪一种输出协议
 
