@@ -1,0 +1,51 @@
+#pragma once
+
+#include <cstddef>
+#include <iosfwd>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+namespace cangjie {
+
+// 保存一个函数或构造函数的规范化签名。
+struct FunctionSig {
+    std::string name;
+    std::vector<std::string> type_params;
+    std::vector<std::string> param_names;
+    std::vector<std::string> param_types;
+    std::string result = "Unit";
+    std::size_t required = 0;  // 没有默认值的必传参数数量。
+    bool is_static = false;
+};
+
+// 保存类、接口或结构体的成员和继承信息。
+struct NominalInfo {
+    std::string name;
+    bool is_interface = false;
+    std::vector<std::string> type_params;
+    std::vector<std::string> supers;
+    std::unordered_map<std::string, std::string> fields;
+    std::unordered_map<std::string, std::string> static_fields;
+    std::unordered_map<std::string, std::vector<FunctionSig>> methods;
+    std::unordered_map<std::string, std::vector<FunctionSig>> static_methods;
+    std::vector<FunctionSig> constructors;
+};
+
+// 汇总当前上下文和源码中可见的符号模型。
+struct Model {
+    std::unordered_map<std::string, std::vector<FunctionSig>> functions;
+    std::unordered_map<std::string, NominalInfo> nominals;
+    std::unordered_map<std::string, std::string> globals;
+};
+
+bool IsInteger(std::string_view type);
+bool IsFloat(std::string_view type);
+bool IsNumeric(std::string_view type);
+bool SameNumericFamily(std::string_view left, std::string_view right);
+bool IsFunctionType(std::string_view type);
+void LoadContextTable(const std::string& path, Model* model);
+void DumpModelJson(std::ostream& os, const Model& model);
+
+}  // namespace cangjie

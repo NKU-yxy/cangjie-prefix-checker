@@ -2,6 +2,12 @@
 # Paths are relative to the repository root. Keep one source file per line.
 cpp/native_semantic.cpp
 cpp/native_checker.cpp
+cpp/incremental_lexer.cpp
+cpp/semantic_declarations.cpp
 cpp/semantic_names.cpp
+cpp/semantic_model.cpp
+cpp/semantic_model_json.cpp
+cpp/semantic_text.cpp
+cpp/semantic_types.cpp
 cpp/call_frontier.cpp
 cpp/continuation.cpp
