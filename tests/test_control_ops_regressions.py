@@ -285,8 +285,6 @@ class ControlOpsRegressionTests(unittest.TestCase):
             raise unittest.SkipTest("C++ compiler is unavailable")
         if tiktoken is None:
             raise unittest.SkipTest(f"missing tiktoken: {TIKTOKEN_IMPORT_ERROR}")
-        if not DRIVER_SOURCE.is_file():
-            raise unittest.SkipTest(f"missing native driver source: {DRIVER_SOURCE}")
         cls.encoding = tiktoken.get_encoding("cl100k_base")
         cls._temporary_directory = tempfile.TemporaryDirectory(
             prefix="cangjie-control-ops-regressions-"

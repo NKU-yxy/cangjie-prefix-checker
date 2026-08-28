@@ -58,4 +58,4 @@ const char* FrontierVerdictName(FrontierVerdict verdict) {
     return "none";
 }
 
-}  // namespace cangjie
+}

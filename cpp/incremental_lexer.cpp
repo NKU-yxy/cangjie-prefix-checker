@@ -18,7 +18,7 @@ bool IsIdentifierContinue(unsigned char ch) {
     return std::isalnum(ch) || ch == '_';
 }
 
-}  // namespace
+}
 
 // 把新字节切成稳定 token，并保留尚未完成的词素。
 IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
@@ -171,4 +171,4 @@ IncrementalLexer::Result IncrementalLexer::Feed(std::string_view bytes) {
     return result;
 }
 
-}  // namespace cangjie
+}

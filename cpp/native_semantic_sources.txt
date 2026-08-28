@@ -1,9 +1,14 @@
-# Native semantic implementation sources shared by build.sh, tests, and benchmarks.
-# Paths are relative to the repository root. Keep one source file per line.
+# 原生语义检查器的统一源文件清单，供构建、测试和基准程序共用。
+# 路径相对仓库根目录，每行只填写一个源文件。
 cpp/native_semantic.cpp
 cpp/native_checker.cpp
 cpp/incremental_lexer.cpp
+cpp/semantic_checks.cpp
+cpp/semantic_context.cpp
+cpp/semantic_constructor.cpp
+cpp/semantic_control_flow.cpp
 cpp/semantic_declarations.cpp
+cpp/semantic_expression.cpp
 cpp/semantic_names.cpp
 cpp/semantic_model.cpp
 cpp/semantic_model_json.cpp

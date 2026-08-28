@@ -29,4 +29,4 @@ CheckStatus NativeSemanticChecker::Check(std::string_view bytes) {
     return status;
 }
 
-}  // namespace cangjie
+}

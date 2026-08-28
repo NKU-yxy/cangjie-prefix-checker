@@ -87,6 +87,7 @@ bool HasMultilineFunctionHeader(std::string_view source) {
     return false;
 }
 
+// 返回严格类或接口声明的复用正则。
 const std::regex& StrictNominalPattern() {
     static const std::regex pattern(
         R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
@@ -94,6 +95,7 @@ const std::regex& StrictNominalPattern() {
     return pattern;
 }
 
+// 返回宽松类声明的复用正则。
 const std::regex& BroadClassPattern() {
     static const std::regex pattern(
         R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*)[^{}]*\{)"
@@ -101,6 +103,7 @@ const std::regex& BroadClassPattern() {
     return pattern;
 }
 
+// 返回单行显式返回类型函数的复用正则。
 const std::regex& ExplicitFunctionSingleLinePattern() {
     static const std::regex pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{}\n]+?)\s*\{)"
@@ -108,6 +111,7 @@ const std::regex& ExplicitFunctionSingleLinePattern() {
     return pattern;
 }
 
+// 返回多行显式返回类型函数的复用正则。
 const std::regex& ExplicitFunctionMultilinePattern() {
     static const std::regex pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*:\s*([^{}]+?)\s*\{)"
@@ -115,6 +119,7 @@ const std::regex& ExplicitFunctionMultilinePattern() {
     return pattern;
 }
 
+// 返回单行可选返回类型函数的复用正则。
 const std::regex& OptionalFunctionSingleLinePattern() {
     static const std::regex pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
@@ -122,6 +127,7 @@ const std::regex& OptionalFunctionSingleLinePattern() {
     return pattern;
 }
 
+// 返回多行可选返回类型函数的复用正则。
 const std::regex& OptionalFunctionMultilinePattern() {
     static const std::regex pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()]*>)?\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
@@ -129,6 +135,7 @@ const std::regex& OptionalFunctionMultilinePattern() {
     return pattern;
 }
 
+// 返回当前单行函数头的复用正则。
 const std::regex& CurrentFunctionSingleLinePattern() {
     static const std::regex pattern(
         R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()\n]*>)?|\bmain|\binit)\s*\(([^{};\n]*)\)\s*(?::\s*([^{}\n]+?))?\s*\{)"
@@ -136,6 +143,7 @@ const std::regex& CurrentFunctionSingleLinePattern() {
     return pattern;
 }
 
+// 返回当前多行函数头的复用正则。
 const std::regex& CurrentFunctionMultilinePattern() {
     static const std::regex pattern(
         R"((?:\bfunc\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>{}()]*>)?|\bmain|\binit)\s*\(([^{};]*?)\)\s*(?::\s*([^{}]+?))?\s*\{)"
@@ -157,6 +165,7 @@ std::size_t DeclarationSnapshot::RecordCount() const {
 using DelimiterCloseCache =
     std::unordered_map<std::size_t, std::optional<std::size_t>>;
 
+// 从缓存读取或计算声明花括号的闭合位置。
 std::optional<std::size_t> CachedDelimiterClose(
     std::string_view source,
     std::size_t open,
@@ -180,6 +189,7 @@ std::optional<std::size_t> CachedDelimiterClose(
     return close;
 }
 
+// 使用指定正则扫描一类声明并保存捕获信息。
 std::vector<DeclarationRecord> ScanDeclarationFamily(
     const std::string& source,
     const std::regex& pattern,
@@ -357,6 +367,7 @@ DeclarationSnapshot BuildDeclarationSnapshot(std::string_view source) {
     return snapshot;
 }
 
+// 安全读取声明记录中的指定捕获组。
 const SnapshotCapture& SnapshotCaptureAt(
     const DeclarationRecord& record,
     std::size_t index
@@ -383,6 +394,7 @@ struct LegacyDeclarationRecord {
     std::vector<LegacyCapture> captures;
 };
 
+// 使用旧实现扫描一类声明以供差分校验。
 std::vector<LegacyDeclarationRecord> LegacyScanDeclarationFamily(
     std::string_view source,
     const std::regex& pattern,
@@ -423,6 +435,7 @@ std::vector<LegacyDeclarationRecord> LegacyScanDeclarationFamily(
     return records;
 }
 
+// 判断新旧扫描器生成的单条声明记录是否一致。
 bool SameDeclarationRecord(
     const DeclarationRecord& left,
     const LegacyDeclarationRecord& right
@@ -445,6 +458,7 @@ bool SameDeclarationRecord(
     return true;
 }
 
+// 判断新旧扫描器生成的声明记录列表是否一致。
 bool SameDeclarationRecords(
     const std::vector<DeclarationRecord>& left,
     const std::vector<LegacyDeclarationRecord>& right
@@ -456,6 +470,7 @@ bool SameDeclarationRecords(
     return true;
 }
 
+// 验证声明快照与旧正则实现完全一致。
 void VerifyDeclarationSnapshot(
     std::string_view source,
     const DeclarationSnapshot& snapshot
@@ -489,7 +504,7 @@ void VerifyDeclarationSnapshot(
                       const std::regex& pattern,
                       bool multiline_only,
                       const char* family,
-                      const std::string* match_mask) {
+                      const std::string* match_mask = nullptr) {
         const std::vector<LegacyDeclarationRecord> expected = LegacyScanDeclarationFamily(
             source, pattern, multiline_only, match_mask
         );
@@ -552,6 +567,7 @@ void CollectFunctions(const DeclarationSnapshot& snapshot, Model* model) {
 }
 
 #ifdef CANGJIE_ENABLE_REGEX_SHADOW
+// 使用正则旧实现收集函数声明。
 void CollectFunctionsRegex(std::string_view source, Model* model) {
     static const std::regex single_line_pattern(
         R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^>{}()\n]*>)?\s*\(([^{};\n]*)\)\s*:\s*([^{}\n]+?)\s*\{)"
@@ -591,6 +607,7 @@ void CollectImports(std::string_view source, Model* model) {
     }
 }
 
+// 扫描已遮蔽源码中的顶层字段，并按需记录字段和方法顺序。
 std::unordered_map<std::string, SourceFieldInfo> ScanTopLevelSourceFieldsMasked(
     std::string_view masked_body,
     std::vector<std::string>* ordered_field_names,
@@ -659,9 +676,6 @@ std::unordered_map<std::string, SourceFieldInfo> ScanTopLevelSourceFieldsMasked(
         if (initializer != std::string::npos) type_end = initializer;
         if (semicolon != std::string::npos) type_end = std::min(type_end, semicolon);
         result[member.field_name] = SourceFieldInfo{
-            // Bare `name: Type` fields participate in lookup and collision
-            // checks, but only an explicit `let` needs constructor definite
-            // assignment.  Preserve the legacy bare-field behavior here.
             member.mutability != "let",
             member.is_static,
             initializer != std::string::npos &&
@@ -672,6 +686,7 @@ std::unordered_map<std::string, SourceFieldInfo> ScanTopLevelSourceFieldsMasked(
     return result;
 }
 
+// 遮蔽注释和字符串后扫描源码中的顶层字段。
 std::unordered_map<std::string, SourceFieldInfo> ScanTopLevelSourceFields(
     std::string_view body
 ) {
@@ -776,6 +791,7 @@ void CollectNominals(
 }
 
 #ifdef CANGJIE_ENABLE_REGEX_SHADOW
+// 使用正则旧实现收集类和接口声明。
 void CollectNominalsRegex(std::string_view source, Model* model) {
     static const std::regex nominal_pattern(
         R"(\b(class|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<[^:>{}()]*>)?([^{}]*)\{)"
@@ -879,6 +895,7 @@ bool SameFunctionSignature(const FunctionSig& left, const FunctionSig& right) {
         left.is_static == right.is_static;
 }
 
+// 判断两个函数签名列表是否逐项一致。
 bool SameSignatureVector(
     const std::vector<FunctionSig>& left,
     const std::vector<FunctionSig>& right
@@ -890,6 +907,7 @@ bool SameSignatureVector(
     return true;
 }
 
+// 判断两个重载签名映射是否完全一致。
 bool SameSignatureMap(
     const std::unordered_map<std::string, std::vector<FunctionSig>>& left,
     const std::unordered_map<std::string, std::vector<FunctionSig>>& right
@@ -935,4 +953,4 @@ bool SameModel(const Model& left, const Model& right) {
 #endif
 
 
-}  // namespace cangjie
+}

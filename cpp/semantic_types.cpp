@@ -169,4 +169,4 @@ std::pair<std::vector<std::string>, std::string> FunctionTypeParts(std::string_v
 }
 
 
-}  // namespace cangjie
+}

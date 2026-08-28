@@ -23,19 +23,19 @@ enum class TokenKind {
 };
 
 struct TokenEvent {
-    TokenKind kind = TokenKind::Symbol;
-    std::string text;
-    bool complete = true;
+    TokenKind kind = TokenKind::Symbol; // token 类别。
+    std::string text;                   // token 原始文本。
+    bool complete = true;               // token 是否已确定边界。
 };
 
 struct PartialLexeme {
-    std::string text;
-    std::vector<TokenKind> candidates;
+    std::string text;                       // 尚未稳定的词素文本。
+    std::vector<TokenKind> candidates;      // 词素可能形成的 token 类别。
 };
 
 struct CheckStatus {
-    bool ok = true;
-    std::string message;
+    bool ok = true;       // 当前前缀是否仍可接受。
+    std::string message;  // 拒绝原因。
 };
 
 struct Checkpoint {
@@ -43,67 +43,59 @@ struct Checkpoint {
     std::size_t source_bytes = 0;
 };
 
-// V14 Patch 2: shadow frontier classification, recorded per fire and never
-// consulted by the decision path (shadow-only until Patch 5 activation).
 enum class SymbolKind {
-    None,         // no identifier at the frontier (non-identifier fire)
-    Local,        // local variable / parameter
-    Global,       // global variable
-    Function,     // global or user function (callee or value position)
-    Method,       // instance method
-    Field,        // instance field
-    StaticMember, // static method or static field
-    Type,         // nominal type name
-    Primitive,    // primitive type name
-    Unknown,      // not resolvable
+    None,
+    Local,
+    Global,
+    Function,
+    Method,
+    Field,
+    StaticMember,
+    Type,
+    Primitive,
+    Unknown,
 };
 
 enum class TailKind {
     None,
-    Call,         // '(' follows (possibly after type arguments)
-    Member,       // '.' follows
-    Type,         // in type position (after ':' / inside type arguments)
-    Value,        // plain value position
+    Call,
+    Member,
+    Type,
+    Value,
 };
 
 enum class BoundaryKind {
     None,
-    Statement,    // expression statement
-    AssignRhs,    // right of '='
-    Return,       // after 'return'
-    Condition,    // if/while condition
-    LoopHead,     // for header
-    CallArg,      // argument of an enclosing call
-    MemberSel,    // after '.'
-    Decl,         // var/let name or type annotation
+    Statement,
+    AssignRhs,
+    Return,
+    Condition,
+    LoopHead,
+    CallArg,
+    MemberSel,
+    Decl,
 };
 
-// Shadow-only verdict; Unknown symbols are never adjudicated Dead (Patch 2
-// completion standard: no UnknownSymbol directly judged Dead).
 enum class FrontierVerdict { None, Alive, Dead, Unknown };
 
-// V14 Patch 3: RecoveryWitness (shadow).  A witness is a bounded postfix
-// path from the frontier expression's type to the expected type; it answers
-// "can this frontier still be extended to a valid program?"  Only observed,
-// never consulted by the decision path (activation is Patch 5).
 enum class EdgeKind {
-    Field,        // ".name" — instance field (incl. F1 first/last auto-apply)
-    MethodValue,  // ".name" — zero-arg method read as a value (function ref)
-    MethodCall,   // ".name(...)" — instance method call
-    FunctionCall, // "(...)" — call a function value
-    Index,        // "[...]" — index operator
+    Field,
+    MethodValue,
+    MethodCall,
+    FunctionCall,
+    Index,
 };
 
 struct SuffixStep {
     EdgeKind kind = EdgeKind::Field;
-    std::string member;  // member name / index type text ("" for function call)
-    std::string result;  // type after this step
+    std::string member;
+    std::string result;
 };
 
 struct RecoveryWitness {
     bool found = false;
-    std::string source;  // frontier type ("" = none)
-    std::string target;  // expected type ("" = no expected context)
+    std::string source;
+    std::string target;
     std::vector<SuffixStep> steps;
     std::string printable_suffix;
 };
@@ -115,21 +107,25 @@ struct WitnessStats {
 };
 
 struct FrontierInfo {
-    std::string symbol;    // frontier identifier text ("" for non-identifier fires)
+    std::string symbol;
     SymbolKind symbol_kind = SymbolKind::None;
     TailKind tail_kind = TailKind::None;
     BoundaryKind boundary_kind = BoundaryKind::None;
-    std::string receiver;  // TypeHead of the member receiver, if member selection
-    std::string receiver_type;  // full receiver type (Patch 3 witness input)
-    std::string line;      // raw statement line the frontier was read from
-    std::size_t frontier_start = 0;  // frontier identifier byte offset in the
-    std::size_t frontier_end = 0;    // fire-time source (Patch 3 validator)
+    std::string receiver;
+    std::string receiver_type;
+    std::string line;
+    std::size_t frontier_start = 0;
+    std::size_t frontier_end = 0;
     FrontierVerdict verdict = FrontierVerdict::None;
 };
 
+// 返回符号种类的稳定文本名称。
 const char* SymbolKindName(SymbolKind kind);
+// 返回尾部结构种类的稳定文本名称。
 const char* TailKindName(TailKind kind);
+// 返回语句边界种类的稳定文本名称。
 const char* BoundaryKindName(BoundaryKind kind);
+// 返回前沿判定结果的稳定文本名称。
 const char* FrontierVerdictName(FrontierVerdict verdict);
 
 class IncrementalLexer {
@@ -148,7 +144,9 @@ class IncrementalLexer {
 
 class IncrementalSemanticEngine {
  public:
+    // 创建增量语义引擎并加载指定上下文表。
     explicit IncrementalSemanticEngine(std::string context_path = {});
+    // 释放语义引擎持有的模型和缓存。
     ~IncrementalSemanticEngine();
 
     IncrementalSemanticEngine(const IncrementalSemanticEngine&) = delete;
@@ -163,26 +161,23 @@ class IncrementalSemanticEngine {
     // 回滚到之前保存的检查进度
     void Rollback(const Checkpoint& checkpoint);
 
-    // Dump the preloaded context model as canonical Context IR JSON
-    // (context-ir-v1, same schema as tools/export_official_context_ir.py).
+    // 把预加载模型输出为 Context IR JSON。
     void DumpContextIrJson(std::ostream& os) const;
 
-    // Shadow frontier classification of the last failed Probe (Patch 2).
-    // Empty FrontierInfo when the last Probe succeeded or had no identifier.
+    // 返回最近一次失败的前沿分类。
     const FrontierInfo& LastFrontier() const;
 
-    // Shadow recovery witness of the last failed Probe (Patch 3).  Empty
-    // when the last Probe succeeded or no witness machinery applied.
+    // 返回最近一次失败的恢复见证。
     const RecoveryWitness& LastWitness() const;
+    // 返回恢复见证查询统计。
     const WitnessStats& WitnessStatistics() const;
 
-    // Shadow per-overload call frontier of the last failed Probe (Patch 4).
-    // Empty when the last Probe succeeded or the frontier was not a callee.
+    // 返回最近一次调用的重载前沿。
     const CallFrontierResult& LastCallFrontier() const;
 
-    // V15 Patch 1: proof-carrying continuation of the last failed Probe.
-    // Unknown/None when the last Probe succeeded or no proof machinery ran.
+    // 返回最近一次续写证明。
     const ContinuationProof& LastProof() const;
+    // 返回全部前缀决策账本记录。
     const std::vector<DecisionLedgerEntry>& DecisionLedger() const;
 
  private:
@@ -196,20 +191,27 @@ class NativeSemanticChecker {
     explicit NativeSemanticChecker(std::string context_path = {});
     // 检查一段新输入的字节：先增量词法，再对整体前缀做语义检查
     CheckStatus Check(std::string_view bytes);
+    // 把预加载模型输出为 Context IR JSON。
     void DumpContextIrJson(std::ostream& os) const { engine_.DumpContextIrJson(os); }
+    // 返回最近一次失败的前沿分类。
     const FrontierInfo& LastFrontier() const { return engine_.LastFrontier(); }
+    // 返回最近一次失败的恢复见证。
     const RecoveryWitness& LastWitness() const { return engine_.LastWitness(); }
+    // 返回恢复见证查询统计。
     const WitnessStats& WitnessStatistics() const { return engine_.WitnessStatistics(); }
+    // 返回最近一次调用的重载前沿。
     const CallFrontierResult& LastCallFrontier() const { return engine_.LastCallFrontier(); }
+    // 返回最近一次续写证明。
     const ContinuationProof& LastProof() const { return engine_.LastProof(); }
+    // 返回全部前缀决策账本记录。
     const std::vector<DecisionLedgerEntry>& DecisionLedger() const { return engine_.DecisionLedger(); }
 
  private:
     IncrementalLexer lexer_;
     IncrementalSemanticEngine engine_;
-    std::string source_;
-    bool failed_ = false;
-    std::string failure_message_;
+    std::string source_;          // 已接收的完整源码前缀。
+    bool failed_ = false;         // 检查器是否已进入不可恢复失败状态。
+    std::string failure_message_; // 首次失败原因。
 };
 
-}  // namespace cangjie
+}

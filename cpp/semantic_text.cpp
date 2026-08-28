@@ -371,4 +371,107 @@ std::string MaskNonCodeText(std::string_view text) {
 }
 
 
-}  // namespace cangjie
+// 判断源码中是否存在未闭合的字符串字面量（此时前缀仍可续写）
+bool HasUnclosedString(std::string_view source) {
+    bool in_string = false;
+    bool triple_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    for (std::size_t index = 0; index < source.size(); ++index) {
+        const char ch = source[index];
+        const char next = index + 1 < source.size() ? source[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n') line_comment = false;
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (triple_string) {
+                if (index + 2 < source.size() &&
+                    source.substr(index, 3) == "\"\"\"") {
+                    in_string = false;
+                    triple_string = false;
+                    index += 2;
+                }
+            } else if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+        } else if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+        } else if (ch == '"') {
+            triple_string = index + 2 < source.size() &&
+                source.substr(index, 3) == "\"\"\"";
+            in_string = true;
+            if (triple_string) index += 2;
+        }
+    }
+    return in_string;
+}
+
+
+// 统计指定位置之前尚未闭合的花括号深度。
+int BraceDepthBefore(std::string_view text, std::size_t end) {
+    int depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    bool line_comment = false;
+    int block_comment_depth = 0;
+    end = std::min(end, text.size());
+    for (std::size_t index = 0; index < end; ++index) {
+        const char ch = text[index];
+        const char next = index + 1 < end ? text[index + 1] : '\0';
+        if (line_comment) {
+            if (ch == '\n' || ch == '\r') line_comment = false;
+            continue;
+        }
+        if (block_comment_depth > 0) {
+            if (ch == '/' && next == '*') {
+                ++block_comment_depth;
+                ++index;
+            } else if (ch == '*' && next == '/') {
+                --block_comment_depth;
+                ++index;
+            }
+            continue;
+        }
+        if (in_string) {
+            if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            line_comment = true;
+            ++index;
+        } else if (ch == '/' && next == '*') {
+            block_comment_depth = 1;
+            ++index;
+        } else if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            ++depth;
+        } else if (ch == '}' && depth > 0) {
+            --depth;
+        }
+    }
+    return depth;
+}
+
+
+}

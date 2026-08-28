@@ -40,12 +40,19 @@ struct Model {
     std::unordered_map<std::string, std::string> globals;
 };
 
+// 判断类型是否为有符号整数类型。
 bool IsInteger(std::string_view type);
+// 判断类型是否为浮点类型。
 bool IsFloat(std::string_view type);
+// 判断类型是否可参与数值运算。
 bool IsNumeric(std::string_view type);
+// 判断两个数值类型是否可直接兼容。
 bool SameNumericFamily(std::string_view left, std::string_view right);
+// 判断规范化文本是否为函数类型。
 bool IsFunctionType(std::string_view type);
+// 从二进制上下文表加载预置模型。
 void LoadContextTable(const std::string& path, Model* model);
+// 把模型输出为稳定的 Context IR JSON。
 void DumpModelJson(std::ostream& os, const Model& model);
 
-}  // namespace cangjie
+}

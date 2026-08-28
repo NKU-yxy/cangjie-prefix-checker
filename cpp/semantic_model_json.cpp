@@ -9,10 +9,6 @@
 
 namespace cangjie {
 
-// Canonical Context IR (context-ir-v1) JSON serializers.  The emitted schema
-// mirrors tools/export_official_context_ir.py exactly: sig keys in the order
-// (name, return_type, type_params, param_names, param_types, required_params),
-// overload lists keep model declaration order, name maps sorted.
 
 // 把字符串写为 JSON 字符串（含转义）
 void JsonWriteString(std::ostream& os, std::string_view value) {
@@ -71,6 +67,7 @@ void DumpSignatureListJson(std::ostream& os, const std::vector<FunctionSig>& sig
     os << ']';
 }
 
+// 按名称排序后输出函数重载映射。
 void DumpSignatureMapJson(
     std::ostream& os,
     const std::unordered_map<std::string, std::vector<FunctionSig>>& map
@@ -91,6 +88,7 @@ void DumpSignatureMapJson(
     os << '}';
 }
 
+// 按名称排序后输出字段类型映射。
 void DumpFieldMapJson(
     std::ostream& os,
     const std::unordered_map<std::string, std::string>& map
@@ -156,5 +154,4 @@ void DumpModelJson(std::ostream& os, const Model& model) {
 }
 
 
-}  // namespace cangjie
-
+}

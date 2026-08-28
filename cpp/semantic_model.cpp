@@ -94,7 +94,7 @@ class ContextTableReader {
     std::size_t cursor_ = 0; // 下一个待读取字节的位置。
 };
 
-}  // namespace
+}
 
 // 判断类型是否为有符号整数类型。
 bool IsInteger(std::string_view type) {
@@ -162,4 +162,4 @@ void LoadContextTable(const std::string& path, Model* model) {
     }
 }
 
-}  // namespace cangjie
+}

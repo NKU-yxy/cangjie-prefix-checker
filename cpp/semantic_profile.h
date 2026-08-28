@@ -16,9 +16,11 @@ namespace cangjie {
 #ifdef CANGJIE_ENABLE_PROFILE
 class ProfileScopeTimer {
  public:
+    // 创建作用域计时器并绑定累计目标。
     explicit ProfileScopeTimer(std::uint64_t* target)
         : target_(target), started_(std::chrono::steady_clock::now()) {}
 
+    // 结束计时并把纳秒数累加到目标。
     ~ProfileScopeTimer() {
         if (!target_) return;
         *target_ += static_cast<std::uint64_t>(
@@ -29,11 +31,12 @@ class ProfileScopeTimer {
     }
 
  private:
-    std::uint64_t* target_;
-    std::chrono::steady_clock::time_point started_;
+    std::uint64_t* target_;  // 接收累计耗时的计数器。
+    std::chrono::steady_clock::time_point started_;  // 作用域开始时间。
 };
 
 struct ProfileCounters {
+    // 开关与各阶段的调用次数、数据量和耗时。
     bool enabled = std::getenv("CANGJIE_PROFILE") != nullptr;
     std::uint64_t accepted_events = 0;
     std::uint64_t probe_calls = 0;
@@ -118,12 +121,14 @@ struct ProfileCounters {
     std::uint64_t nominal_subtype_calls = 0;
     std::uint64_t nominal_subtype_ns = 0;
     std::uint64_t nominal_subtype_generation_unique = 0;
+    // 当前一轮类型推断中用于统计唯一输入的键集合。
     std::unordered_set<std::string> compact_type_keys;
     std::unordered_set<std::string> type_head_keys;
     std::unordered_set<std::string> type_args_keys;
     std::unordered_set<std::string> compatible_keys;
     std::unordered_set<std::string> nominal_subtype_keys;
 
+    // 开始新一轮类型推断并清空去重键集合。
     void BeginTypeGeneration() {
         ++type_generations;
         compact_type_keys.clear();
@@ -133,6 +138,7 @@ struct ProfileCounters {
         nominal_subtype_keys.clear();
     }
 
+    // 在启用性能统计时输出全部计数器。
     void Print() const {
         if (!enabled) return;
         std::cerr
@@ -286,4 +292,4 @@ class RegexShadowProfileGuard {
 };
 #endif
 
-}  // namespace cangjie
+}
