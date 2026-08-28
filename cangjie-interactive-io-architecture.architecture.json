@@ -1,0 +1,338 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "仓颉前缀检查器：交互式 I/O 与双路架构",
+    "locale": "zh-CN",
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/NKU-yxy/cangjie-prefix-checker",
+      "revision": "7b528a4c9faef21e9f7ad5b5320050419399019b"
+    },
+    "views": [
+      {
+        "id": "end_to_end",
+        "label": "端到端 I/O",
+        "focus": ["io_stdin", "vocab_lookup", "utf8_gate", "grammar_lane", "lexical_lane", "semantic_lane", "context_catalog", "stdout_verdict"],
+        "note": "跟随一轮 token ID 从查表、边界适配、双路检查到 stdout 裁决。"
+      },
+      {
+        "id": "boundary_alignment",
+        "label": "三重边界对齐",
+        "focus": ["vocab_lookup", "utf8_gate", "lexical_lane"],
+        "note": "区分 BPE token、UTF-8 码点与仓颉词素三种独立边界。"
+      },
+      {
+        "id": "syntax_track",
+        "label": "XGrammar 语法支路",
+        "focus": ["utf8_gate", "grammar_lane", "stdout_verdict"],
+        "note": "查看右递归语句列表的平坦闭包与 ASCII 标识符有限商探针如何产出 syntax_ok。"
+      },
+      {
+        "id": "semantic_track",
+        "label": "增量语义主贡献",
+        "focus": ["utf8_gate", "lexical_lane", "semantic_lane", "context_catalog", "stdout_verdict"],
+        "note": "稳定 TokenEvent 进入 Accept，未完成 PartialLexeme 进入 Probe。"
+      },
+      {
+        "id": "protocol_cycle",
+        "label": "裁决与下一轮",
+        "focus": ["io_stdin", "grammar_lane", "semantic_lane", "stdout_verdict"],
+        "note": "两路 AND 后按赛题协议输出：1 读取下一 ID，0 首错终止。"
+      }
+    ]
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [56, 56],
+    "cols": 6,
+    "gapX": 58,
+    "gapY": 12,
+    "cellW": 160,
+    "cellH": 88
+  },
+  "components": [
+    {
+      "id": "io_stdin",
+      "type": "external",
+      "label": "stdin：cl100k Token ID",
+      "sublabel": "每行一个十进制 ID",
+      "tag": "I/O · 输入",
+      "sources": [
+        {
+          "path": "cpp/solution.cpp",
+          "line": 1251,
+          "end_line": 1261,
+          "label": "逐行读取并解析 token ID"
+        }
+      ],
+      "row": 1,
+      "col": 0,
+      "size": [160, 84]
+    },
+    {
+      "id": "vocab_lookup",
+      "type": "database",
+      "label": "TokenTable::decode",
+      "sublabel": "ID → 表内字节片段",
+      "tag": "cl100k_base.bin",
+      "sources": [
+        {
+          "path": "cpp/solution.cpp",
+          "line": 159,
+          "end_line": 209,
+          "label": "TokenTable 加载与 decode"
+        }
+      ],
+      "row": 1,
+      "col": 1,
+      "size": [155, 84]
+    },
+    {
+      "id": "utf8_gate",
+      "type": "backend",
+      "label": "UTF-8 跨分片对齐层",
+      "sublabel": "补齐码点后释放稳定前缀",
+      "tag": "目标态 · C++ 待迁移",
+      "sources": [
+        {
+          "path": "tools/generate_cl100k_table.py",
+          "line": 35,
+          "end_line": 46,
+          "label": "当前逐 token replacement decode"
+        },
+        {
+          "path": "src/native_semantic_worker.py",
+          "line": 100,
+          "end_line": 113,
+          "label": "Python 增量 UTF-8 原型"
+        },
+        {
+          "path": "tests/test_native_solution.py",
+          "line": 67,
+          "end_line": 85,
+          "label": "Unicode 跨 token 回归测试"
+        }
+      ],
+      "row": 1,
+      "col": 2,
+      "size": [175, 88]
+    },
+    {
+      "id": "grammar_lane",
+      "type": "backend",
+      "label": "改进的 XGrammar 语法检查",
+      "sublabel": "平坦语句闭包 · ASCII 标识符有限商",
+      "tag": "syntax_ok",
+      "sources": [
+        {
+          "path": "cpp/solution.cpp",
+          "line": 326,
+          "end_line": 385,
+          "label": "NativeSyntaxChecker"
+        },
+        {
+          "path": "grammar/cangjie.gbnf",
+          "line": 209,
+          "end_line": 211,
+          "label": "statement 平坦闭包"
+        },
+        {
+          "path": "cpp/solution.cpp",
+          "line": 469,
+          "end_line": 558,
+          "label": "可回滚有限商探针"
+        }
+      ],
+      "row": 0,
+      "col": 3,
+      "size": [190, 88]
+    },
+    {
+      "id": "lexical_lane",
+      "type": "backend",
+      "label": "IncrementalLexer::Feed",
+      "sublabel": "TokenEvent[] + PartialLexeme",
+      "tag": "语义支路入口",
+      "sources": [
+        {
+          "path": "cpp/incremental_lexer.cpp",
+          "line": 24,
+          "end_line": 170,
+          "label": "跨轮 pending 与词素分流"
+        },
+        {
+          "path": "cpp/native_semantic.h",
+          "line": 25,
+          "end_line": 34,
+          "label": "TokenEvent / PartialLexeme"
+        }
+      ],
+      "row": 2,
+      "col": 3,
+      "size": [175, 88]
+    },
+    {
+      "id": "semantic_lane",
+      "type": "backend",
+      "label": "增量语义检查引擎",
+      "sublabel": "Accept(stable) + Probe(partial)",
+      "tag": "Main Contribution",
+      "sources": [
+        {
+          "path": "cpp/native_checker.cpp",
+          "line": 12,
+          "end_line": 29,
+          "label": "Feed → Accept → Probe"
+        },
+        {
+          "path": "cpp/native_semantic.cpp",
+          "line": 1356,
+          "end_line": 1368,
+          "label": "IncrementalSemanticEngine"
+        },
+        {
+          "path": "cpp/semantic_expression.cpp",
+          "line": 31,
+          "end_line": 48,
+          "label": "表达式增量类型推断"
+        }
+      ],
+      "row": 2,
+      "col": 4,
+      "size": [185, 88]
+    },
+    {
+      "id": "context_catalog",
+      "type": "database",
+      "label": "Context Model",
+      "sublabel": "作用域 · 类型 · 调用签名",
+      "tag": "generated/context.bin",
+      "sources": [
+        {
+          "path": "cpp/semantic_model.cpp",
+          "line": 128,
+          "end_line": 155,
+          "label": "加载二进制 Context Model"
+        },
+        {
+          "path": "cpp/native_semantic.cpp",
+          "line": 1096,
+          "end_line": 1108,
+          "label": "语义引擎预加载模型"
+        }
+      ],
+      "row": 2,
+      "col": 5,
+      "size": [185, 88]
+    },
+    {
+      "id": "stdout_verdict",
+      "type": "backend",
+      "label": "AND 裁决 → stdout",
+      "sublabel": "赛题模式：1 继续 · 0 终止",
+      "tag": "syntax_ok && semantic_ok",
+      "sources": [
+        {
+          "path": "cpp/solution.cpp",
+          "line": 1265,
+          "end_line": 1288,
+          "label": "语法、语义与 AND 裁决"
+        },
+        {
+          "path": "cpp/solution.cpp",
+          "line": 1179,
+          "end_line": 1182,
+          "label": "赛题输出协议转换"
+        },
+        {
+          "path": "cpp/solution.cpp",
+          "line": 1353,
+          "end_line": 1355,
+          "label": "逐轮输出与首错终止"
+        }
+      ],
+      "row": 1,
+      "col": 5,
+      "size": [185, 88]
+    }
+  ],
+  "connections": [
+    {
+      "id": "read_token_id",
+      "from": "io_stdin",
+      "to": "vocab_lookup",
+      "label": "ID"
+    },
+    {
+      "id": "decode_bytes",
+      "from": "vocab_lookup",
+      "to": "utf8_gate",
+      "label": "字节",
+      "variant": "dashed"
+    },
+    {
+      "id": "syntax_branch",
+      "from": "utf8_gate",
+      "to": "grammar_lane",
+      "label": "UTF-8 前缀",
+      "variant": "emphasis",
+      "labelAt": [689, 52]
+    },
+    {
+      "id": "semantic_branch",
+      "from": "utf8_gate",
+      "to": "lexical_lane",
+      "label": "字符流",
+      "variant": "emphasis"
+    },
+    {
+      "id": "lexical_events",
+      "from": "lexical_lane",
+      "to": "semantic_lane",
+      "label": "Feed 结果",
+      "labelDy": 68,
+      "variant": "emphasis"
+    },
+    {
+      "id": "context_input",
+      "from": "context_catalog",
+      "to": "semantic_lane"
+    },
+    {
+      "id": "syntax_result",
+      "from": "grammar_lane",
+      "to": "stdout_verdict",
+      "label": "syntax_ok",
+      "variant": "emphasis"
+    },
+    {
+      "id": "semantic_result",
+      "from": "semantic_lane",
+      "to": "stdout_verdict",
+      "label": "semantic_ok",
+      "labelAt": [1130, 152],
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "核心贡献：增量词法与增量语义",
+      "items": [
+        "跨轮增量词法：pending_ 保留未闭合的标识符、字符串、注释与运算符，只提交边界已确定的 TokenEvent，并输出 PartialLexeme 候选",
+        "稳定/未完成双通道：稳定 Token 进入 Accept；未完成词素连同源码前缀进入 Probe，按脏标记增量更新声明模型、作用域与当前语句",
+        "可恢复前缀不误杀：检查类型、赋值、调用重载与控制流；失败后再计算恢复见证和续写证明，只有确认无法续写时才输出 0"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "XGrammar 框架的两项核心改进",
+      "items": [
+        "G1｜语句列表平坦化：把右递归 statements 改写为 statement (ws statement)*，避免大型 block 随语句数累积递归匹配状态；300 个局部声明由超过 35 秒降至约 0.45 秒",
+        "G4｜ASCII 标识符有限商：保留仍可能形成关键字/文法字面量的后缀，其余长标识符折叠为安全代表串；用 AcceptString + Rollback(1) 探测未完成后缀，限制匹配状态增长"
+      ]
+    }
+  ]
+}

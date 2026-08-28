@@ -11,3 +11,4 @@ solution_cpp
 *.dylib
 *.dll
 baseline_results/20260815_g4_identifier_independent_acceptance/g4-029-identifier-independent-acceptance.tar.gz
+cangjie-interactive-io-architecture.visual-check.*
