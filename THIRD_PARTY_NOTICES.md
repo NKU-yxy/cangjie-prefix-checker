@@ -1,8 +1,8 @@
 # 第三方依赖与来源声明
 
-最终提交包中的 C++ 入口、增量语义检查器、仓颉 GBNF 适配、构建脚本和
-查表生成工具均由本队独立实现。以下第三方项目按其许可证随包分发或在
-生成阶段使用。
+根目录 `LICENSE` 中的 Apache License 2.0 适用于本项目原创代码，以及本队
+有权独立授权的原创修改。该许可证不会覆盖或重新许可第三方代码。以下第三方
+项目按各自的上游许可证随包分发或在生成阶段使用。
 
 ## XGrammar C++ Core
 
@@ -19,6 +19,13 @@
 XGrammar 使用的 DLPack 头文件按 Apache License 2.0 分发，其许可证位于
 `third_party/xgrammar_core/third_party/dlpack/LICENSE`。PicoJSON 头文件
 保留了其 BSD-2-Clause 版权与许可证全文。
+
+## Apache TVM FFI
+
+- 版本：`>=0.1.9,<0.2`（Python 开发与测试环境）
+- 来源：<https://tvm.apache.org/ffi/index.html>
+- 许可证：Apache License 2.0
+- 分发方式：通过 `requirements.txt` 安装；仓库不分发预编译共享库。
 
 ## tiktoken
 
@@ -38,3 +45,13 @@ XGrammar 使用的 DLPack 头文件按 Apache License 2.0 分发，其许可证�
 `2cf015b7f60f4d6fbb89a805e4d11daeaae0e70061f6a5813c94dcf0586ec113`。
 竞赛配套参考 Typechecker 仅用于开发期差分测试，不参与最终程序的编译、
 链接或运行，也不包含在提交包中。
+
+## Vendored Cangjie Typechecker
+
+- 来源：<https://gitcode.com/bhzhan/cangjie-fragment-checker>
+- 用途：开发期完整程序解析、差分测试和随机语料标注。
+- 上游许可证：当前保留的公开快照没有独立 LICENSE/NOTICE，本仓库不将其
+  上游代码声明或重新许可为 Apache License 2.0。
+- 本地修改：本队拥有版权且可独立授权的原创修改采用 Apache License 2.0；
+  该声明不扩大上游代码的授权范围。
+- 生产边界：不参与 `solution` 的编译、链接或运行。

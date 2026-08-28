@@ -7,4 +7,7 @@ generated/
 dist/
 solution
 solution_cpp
+*.so
+*.dylib
+*.dll
 baseline_results/20260815_g4_identifier_independent_acceptance/g4-029-identifier-independent-acceptance.tar.gz

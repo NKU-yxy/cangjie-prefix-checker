@@ -8,11 +8,6 @@
 >
 > 学校：南开大学
 
-## 0. 初赛原视频链接
-因为Gitlab上传对文件大小有所限制，于是上传的讲解视频进行了压缩，原先高清的讲解视频链接如下：
-通过网盘分享的文件：T2026100552010674_圆周运动_讲解视频_高清版本.mp4
-链接: https://pan.baidu.com/s/19iBwn5oMeXHBQ_7GzI058g?pwd=g568 提取码: g568
-
 ## 1. 项目简介
 
 本项目是一个面向仓颉语言子集的流式前缀检查器。评测程序会逐个输入 `cl100k_base` token ID，检查器需要在每个 token 到达后立即判断：
@@ -130,23 +125,9 @@ XGrammar/
 └── third_party/cangjie_typechecker/
 ```
 
-## 6. 获取源码
+## 6. 开发准备
 
-项目仓库：[https://gitlab.eduxiji.net/T2026100552010674/project3230617-388044.git](https://gitlab.eduxiji.net/T2026100552010674/project3230617-388044.git)
-
-仓库只维护 `master` 分支。推荐使用以下命令获取完整源码：
-
-```bash
-git clone --branch master --single-branch https://gitlab.eduxiji.net/T2026100552010674/project3230617-388044.git
-cd project3230617-388044
-```
-
-已有本地仓库时，可更新 `master` 分支：
-
-```bash
-git switch master
-git pull --ff-only origin master
-```
+获取源码后进入仓库根目录。后续构建、测试和示例命令均默认从项目根目录执行。
 
 ## 7. 环境与依赖
 
@@ -471,10 +452,14 @@ CANGJIE_DEBUG_SEMANTIC=1 ./solution < token_ids.txt
 ## 15. 第三方依赖与来源
 
 - [XGrammar v0.2.1](https://github.com/mlc-ai/xgrammar)：提供通用 GBNF 编译和字符级语法匹配能力，采用 Apache License 2.0；
-- [Apache TVM FFI](https://tvm.apache.org/ffi/index.html)：提供 XGrammar 原生共享库依赖；
+- [Apache TVM FFI](https://tvm.apache.org/ffi/index.html)：Python 测试环境中 XGrammar 的依赖，采用 Apache License 2.0；仓库不分发其预编译共享库；
 - [tiktoken](https://github.com/openai/tiktoken)：用于构建期生成 `cl100k_base` token 查表数据，采用 MIT License；
 - [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker)：竞赛配套公开样例、交互测试工具和 typechecker 来源。
 
 第三方依赖、许可证、分发方式和本队原创边界统一记录在 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中。仓库包含构建所需的 XGrammar C++ core 精简源码；Python XGrammar、TVM FFI、tiktoken 和 Lark 不随仓库分发，仅供开发测试时按 requirements 安装。
 
-最终提交框架包含 `third_party/cangjie_typechecker/`。该目录基于竞赛配套公开仓库 [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker) 中的 typechecker，由本队作少量开发期适配，仅用于完整程序解析、差分测试、随机程序合法性标注和实验复现，不参与 `solution` 的编译、链接或运行。该目录及其本地修改均不作为本队原创成果，也不计入本队原创代码量；具体来源、修改文件和边界见目录内 README 与 `THIRD_PARTY_NOTICES.md`。生产运行路径由本队编写的 C++ 检查器、面向赛题子集适配的仓颉 GBNF、构建与数据生成工具，以及仓库内置的 XGrammar C++ core 构成。
+最终提交框架包含 `third_party/cangjie_typechecker/`。该目录基于竞赛配套公开仓库 [cangjie-fragment-checker](https://gitcode.com/bhzhan/cangjie-fragment-checker) 中的 typechecker，由本队作少量开发期适配，仅用于完整程序解析、差分测试、随机程序合法性标注和实验复现，不参与 `solution` 的编译、链接或运行。该目录的上游快照没有可核验的许可证，因此不属于本项目 Apache License 2.0 的授权范围；本队原创修改在可独立授权的范围内采用 Apache License 2.0。具体来源、修改文件和边界见目录内 README 与 `THIRD_PARTY_NOTICES.md`。生产运行路径由本队编写的 C++ 检查器、面向赛题子集适配的仓颉 GBNF、构建与数据生成工具，以及仓库内置的 XGrammar C++ core 构成。
+
+## 16. 许可证
+
+除第三方组件及另有声明的文件外，本项目原创代码采用 [Apache License 2.0](LICENSE)。第三方组件继续适用各自的上游许可证或授权条件，详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)；根目录许可证不会覆盖或重新许可第三方代码。

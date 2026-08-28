@@ -30,3 +30,8 @@ team work or counted in the team's original-code volume. The upstream snapshot
 did not contain a separate LICENSE/NOTICE file, so this repository does not
 infer or assert a general open-source licence. See the top-level
 `THIRD_PARTY_NOTICES.md` for the complete attribution and submission boundary.
+
+Original modifications authored by this project are offered under the root
+Apache License 2.0 to the extent that they can be licensed independently. This
+does not assert that the upstream snapshot is Apache-2.0 licensed, and does not
+expand the permissions granted for upstream files.
