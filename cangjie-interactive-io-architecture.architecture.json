@@ -8,7 +8,7 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/NKU-yxy/cangjie-prefix-checker",
-      "revision": "b16f0564827633e892a7e9d5554803eaabc4a71d"
+      "revision": "aa79c2de334f9730a178d730f6bc77ad434264f4"
     },
     "views": [
       {
@@ -62,9 +62,21 @@
       "sources": [
         {
           "path": "cpp/solution.cpp",
-          "line": 1251,
-          "end_line": 1261,
-          "label": "逐行读取并解析 token ID"
+          "line": 1186,
+          "end_line": 1265,
+          "label": "Native 入口初始化与逐行 token ID 读取"
+        },
+        {
+          "path": "solution.py",
+          "line": 67,
+          "end_line": 105,
+          "label": "Python 协议入口、解码与逐轮派发"
+        },
+        {
+          "path": "local-testset/scripts/token_interaction_test.py",
+          "line": 79,
+          "end_line": 117,
+          "label": "stdin/stdout 逐 token 交互验收"
         }
       ],
       "row": 1,
@@ -79,10 +91,22 @@
       "tag": "cl100k_base.bin",
       "sources": [
         {
+          "path": "tools/generate_cl100k_table.py",
+          "line": 22,
+          "end_line": 55,
+          "label": "生成 cl100k ID→字节紧凑表"
+        },
+        {
           "path": "cpp/solution.cpp",
-          "line": 159,
-          "end_line": 209,
-          "label": "TokenTable 加载与 decode"
+          "line": 143,
+          "end_line": 215,
+          "label": "TokenTable 校验、加载与 decode"
+        },
+        {
+          "path": "solution.py",
+          "line": 72,
+          "end_line": 102,
+          "label": "tiktoken 运行时查表解码基线"
         }
       ],
       "row": 1,
@@ -98,21 +122,21 @@
       "sources": [
         {
           "path": "tools/generate_cl100k_table.py",
-          "line": 35,
-          "end_line": 46,
-          "label": "当前逐 token replacement decode"
+          "line": 26,
+          "end_line": 54,
+          "label": "token 字节表生成与当前解码基线"
         },
         {
           "path": "src/native_semantic_worker.py",
-          "line": 100,
-          "end_line": 113,
-          "label": "Python 增量 UTF-8 原型"
+          "line": 68,
+          "end_line": 151,
+          "label": "分帧读取与增量 UTF-8 解码原型"
         },
         {
           "path": "tests/test_native_solution.py",
-          "line": 67,
+          "line": 33,
           "end_line": 85,
-          "label": "Unicode 跨 token 回归测试"
+          "label": "跨 cl100k 边界的 Unicode 回归"
         }
       ],
       "row": 1,
@@ -128,21 +152,21 @@
       "sources": [
         {
           "path": "cpp/solution.cpp",
-          "line": 326,
-          "end_line": 385,
-          "label": "NativeSyntaxChecker"
+          "line": 226,
+          "end_line": 882,
+          "label": "NativeSyntaxChecker 与 G4 有限商热路径"
         },
         {
           "path": "grammar/cangjie.gbnf",
-          "line": 209,
-          "end_line": 211,
-          "label": "statement 平坦闭包"
+          "line": 1,
+          "end_line": 356,
+          "label": "完整仓颉 GBNF 与 G1 平坦 statements"
         },
         {
-          "path": "cpp/solution.cpp",
-          "line": 469,
-          "end_line": 558,
-          "label": "可回滚有限商探针"
+          "path": "tools/run_grammar_shadow_matrix.py",
+          "line": 23,
+          "end_line": 512,
+          "label": "G1/G4 跨分片回归与规模矩阵"
         }
       ],
       "row": 0,
@@ -158,15 +182,21 @@
       "sources": [
         {
           "path": "cpp/incremental_lexer.cpp",
-          "line": 24,
-          "end_line": 170,
-          "label": "跨轮 pending 与词素分流"
+          "line": 11,
+          "end_line": 171,
+          "label": "Native pending、稳定 Token 与 PartialLexeme"
         },
         {
-          "path": "cpp/native_semantic.h",
-          "line": 25,
-          "end_line": 34,
-          "label": "TokenEvent / PartialLexeme"
+          "path": "src/incremental_lexer.py",
+          "line": 12,
+          "end_line": 300,
+          "label": "跨分片稳定边界与候选词素原型"
+        },
+        {
+          "path": "tests/test_incremental_lexer.py",
+          "line": 14,
+          "end_line": 80,
+          "label": "标识符、数值、字符串与注释分片回归"
         }
       ],
       "row": 2,
@@ -181,22 +211,22 @@
       "tag": "Main Contribution",
       "sources": [
         {
-          "path": "cpp/native_checker.cpp",
-          "line": 12,
-          "end_line": 29,
-          "label": "Feed → Accept → Probe"
-        },
-        {
           "path": "cpp/native_semantic.cpp",
-          "line": 1356,
-          "end_line": 1368,
-          "label": "IncrementalSemanticEngine"
+          "line": 1096,
+          "end_line": 1629,
+          "label": "增量引擎、Probe、恢复证明与回滚"
         },
         {
           "path": "cpp/semantic_expression.cpp",
-          "line": 31,
-          "end_line": 48,
-          "label": "表达式增量类型推断"
+          "line": 17,
+          "end_line": 1239,
+          "label": "表达式、调用与类型推断实现"
+        },
+        {
+          "path": "cpp/semantic_checks.cpp",
+          "line": 24,
+          "end_line": 1004,
+          "label": "声明、控制流与类型规则检查"
         }
       ],
       "row": 2,
@@ -211,16 +241,22 @@
       "tag": "generated/context.bin",
       "sources": [
         {
-          "path": "cpp/semantic_model.cpp",
-          "line": 128,
-          "end_line": 155,
-          "label": "加载二进制 Context Model"
+          "path": "tools/generate_context_table.py",
+          "line": 22,
+          "end_line": 90,
+          "label": "Context JSON→二进制模型生成"
         },
         {
-          "path": "cpp/native_semantic.cpp",
-          "line": 1096,
-          "end_line": 1108,
-          "label": "语义引擎预加载模型"
+          "path": "cpp/semantic_model.cpp",
+          "line": 15,
+          "end_line": 163,
+          "label": "二进制模型、函数签名与名义类型加载"
+        },
+        {
+          "path": "cpp/semantic_context.cpp",
+          "line": 191,
+          "end_line": 1531,
+          "label": "作用域、符号、调用前沿与恢复上下文"
         }
       ],
       "row": 2,
@@ -236,21 +272,21 @@
       "sources": [
         {
           "path": "cpp/solution.cpp",
-          "line": 1265,
-          "end_line": 1288,
-          "label": "语法、语义与 AND 裁决"
-        },
-        {
-          "path": "cpp/solution.cpp",
-          "line": 1179,
-          "end_line": 1182,
-          "label": "赛题输出协议转换"
-        },
-        {
-          "path": "cpp/solution.cpp",
-          "line": 1353,
+          "line": 1178,
           "end_line": 1355,
-          "label": "逐轮输出与首错终止"
+          "label": "双路 AND、协议输出与首错终止"
+        },
+        {
+          "path": "solution.py",
+          "line": 53,
+          "end_line": 105,
+          "label": "Python 协议入口与 0/1 输出"
+        },
+        {
+          "path": "local-testset/scripts/token_interaction_test.py",
+          "line": 79,
+          "end_line": 117,
+          "label": "逐 token 输出与首错停止验收"
         }
       ],
       "row": 1,
